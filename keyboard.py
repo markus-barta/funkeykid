@@ -31,6 +31,7 @@ class KeyboardListener:
         self._last_key_time = {}
         self._last_any_key_time = 0
         self._callback = None
+        self._connection_callback = None
         self._running = False
         self._thread = None
         # Live status
@@ -44,6 +45,10 @@ class KeyboardListener:
     def on_key(self, callback):
         """Register callback: callback(key_name: str)"""
         self._callback = callback
+
+    def on_connection_change(self, callback):
+        """Register callback: callback(connected: bool, status: dict)"""
+        self._connection_callback = callback
 
     def start(self):
         """Start listening in a background thread."""
@@ -200,9 +205,12 @@ class KeyboardListener:
                 device = None
 
             if not device:
+                was_connected = self.connected
                 self.connected = False
                 self.device_path = None
                 self._device = None
+                if was_connected and self._connection_callback:
+                    self._connection_callback(False, self.get_status())
                 print(f"[keyboard] Waiting for '{self.device_name}'...", flush=True)
                 time.sleep(5)
                 continue
@@ -211,6 +219,8 @@ class KeyboardListener:
             self.connected = True
             self.device_path = device.path
             self.battery_level = self._read_battery(device)
+            if self._connection_callback:
+                self._connection_callback(True, self.get_status())
             print(f"[keyboard] Opened: {device.name} at {device.path} (battery={self.battery_level})", flush=True)
 
             try:
@@ -248,6 +258,8 @@ class KeyboardListener:
                 self.connected = False
                 self.device_path = None
                 self._device = None
+                if self._connection_callback:
+                    self._connection_callback(False, self.get_status())
                 time.sleep(5)
 
     def simulate_key(self, key_name):

@@ -6,12 +6,17 @@ import subprocess
 import random
 import time
 import uuid
+import weakref
 from pathlib import Path
 
 from aiohttp import web
 
 from keyboard import KeyboardListener
 from display import Display
+
+# SSE: connected clients
+sse_clients = weakref.WeakSet()
+_loop = None  # asyncio event loop ref for thread-safe SSE
 
 DATA_DIR = os.environ.get("FUNKEYKID_DATA", "/data")
 SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
@@ -128,6 +133,7 @@ def change_volume(delta):
     current_volume = max(0, min(100, current_volume + delta))
     settings["volume"] = current_volume
     print(f"[volume] {current_volume}%", flush=True)
+    sse_broadcast("volume", {"volume": current_volume})
     if display:
         display.publish_volume(current_volume)
 
@@ -183,6 +189,13 @@ def handle_key(key_name):
 
     print(f"[key] {key_name} → {word} (sound={sound}, image={image})", flush=True)
 
+    # Broadcast to web UI via SSE
+    sse_broadcast("keypress", {
+        "letter": key_name, "word": word, "sound": sound, "image": image,
+        "entry_index": cycle_index.get(key_name, 0),
+        "timestamp": time.time(),
+    })
+
     # Play sound
     if sound:
         play_sound(os.path.join(SOUNDS_DIR, sound))
@@ -190,6 +203,49 @@ def handle_key(key_name):
     # Display
     if display:
         display.publish_letter(key_name, word, image)
+
+
+# ── SSE (Server-Sent Events) ──────────────────────────────────────────────────
+
+def sse_broadcast(event_type, data):
+    """Broadcast an event to all connected SSE clients. Thread-safe."""
+    if not _loop or not sse_clients:
+        return
+    msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+    for q in list(sse_clients):
+        try:
+            _loop.call_soon_threadsafe(q.put_nowait, msg)
+        except Exception:
+            pass
+
+
+async def api_sse(request):
+    """SSE endpoint — streams real-time events to the web UI."""
+    resp = web.StreamResponse()
+    resp.content_type = "text/event-stream"
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    await resp.prepare(request)
+
+    q = asyncio.Queue()
+    sse_clients.add(q)
+
+    # Send initial status immediately
+    status = keyboard.get_status() if keyboard else {"connected": False}
+    status["volume"] = current_volume
+    status["mqtt_connected"] = display._mqtt_connected if display else False
+    await resp.write(f"event: status\ndata: {json.dumps(status)}\n\n".encode())
+
+    try:
+        while True:
+            msg = await q.get()
+            await resp.write(msg.encode())
+    except (asyncio.CancelledError, ConnectionResetError):
+        pass
+    finally:
+        sse_clients.discard(q)
+
+    return resp
 
 
 # ── Web API ──────────────────────────────────────────────────────────────────
@@ -483,6 +539,7 @@ def _reload_runtime():
 def create_app():
     app = web.Application()
     # Status
+    app.router.add_get("/api/events", api_sse)
     app.router.add_get("/api/status", api_get_status)
     app.router.add_get("/api/diagnostics", api_get_diagnostics)
     app.router.add_post("/api/reconnect", api_reconnect_keyboard)
@@ -539,13 +596,21 @@ def main():
     debounce = settings.get("debounce_seconds", 0.8)
     keyboard = KeyboardListener(device_name, layout=layout, debounce_seconds=debounce)
     keyboard.on_key(handle_key)
+    keyboard.on_connection_change(
+        lambda connected, status: sse_broadcast("connection", status)
+    )
     keyboard.start()
     print(f"[funkeykid] Keyboard: {device_name} (layout={layout})", flush=True)
 
     # Web server
     app = create_app()
     print(f"[funkeykid] Web UI: http://0.0.0.0:{PORT}", flush=True)
-    web.run_app(app, host="0.0.0.0", port=PORT, print=None)
+
+    # Capture the event loop for thread-safe SSE broadcasts
+    global _loop
+    _loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_loop)
+    web.run_app(app, host="0.0.0.0", port=PORT, print=None, loop=_loop)
 
 
 if __name__ == "__main__":

@@ -385,8 +385,57 @@ function funkeykid() {
 
     async init() {
       await this.refresh();
-      setInterval(() => this.pollStatus(), 1500);
-      this.pollStatus();
+      this.connectSSE();
+      // Fallback poll every 10s (SSE handles real-time, poll is backup)
+      setInterval(() => this.pollStatus(), 10000);
+      // Update "ago" text every second
+      setInterval(() => this.updateAgo(), 1000);
+    },
+
+    connectSSE() {
+      const es = new EventSource('/api/events');
+      es.addEventListener('status', (e) => {
+        const s = JSON.parse(e.data);
+        Object.assign(this.hw, s);
+        this.updateAgo();
+      });
+      es.addEventListener('keypress', (e) => {
+        const d = JSON.parse(e.data);
+        this.hw.last_key = d.letter;
+        this.hw.last_key_at = d.timestamp;
+        this.updateAgo();
+        // Flash test preview if on test tab
+        if (this.tab === 'test') {
+          this.lastTestLetter = d.letter;
+          this.lastTestWord = d.word;
+          this.lastTestImage = d.image;
+          this.pressedKey = d.letter;
+          setTimeout(() => this.pressedKey = null, 300);
+        }
+      });
+      es.addEventListener('connection', (e) => {
+        const s = JSON.parse(e.data);
+        Object.assign(this.hw, s);
+        const msg = s.connected ? 'Tastatur verbunden!' : 'Tastatur getrennt';
+        this.showToast(msg, s.connected ? 'success' : 'error');
+        if (this.showDiag) this.loadDiagnostics();
+      });
+      es.addEventListener('volume', (e) => {
+        const d = JSON.parse(e.data);
+        this.hw.volume = d.volume;
+      });
+      es.onerror = () => {
+        // SSE reconnects automatically, just update status
+        setTimeout(() => this.pollStatus(), 2000);
+      };
+    },
+
+    updateAgo() {
+      if (this.hw.last_key_at) {
+        const ago = Math.round(Date.now()/1000 - this.hw.last_key_at);
+        this.hw.last_key_ago = ago < 5 ? 'gerade eben' : ago < 60 ? `vor ${ago}s` :
+          ago < 3600 ? `vor ${Math.round(ago/60)}min` : `vor ${Math.round(ago/3600)}h`;
+      }
     },
 
     async refresh() {
@@ -402,7 +451,6 @@ function funkeykid() {
         this.activeSetId = s.active_set || Object.keys(sets)[0] || '';
         this.sounds = snd;
         this.images = img;
-        // Load active set detail
         if (this.activeSetId) {
           this.activeSet = await fetch(`/api/sets/${this.activeSetId}`).then(r => r.json());
         }
@@ -415,12 +463,7 @@ function funkeykid() {
       try {
         const s = await fetch('/api/status').then(r => r.json());
         Object.assign(this.hw, s);
-        if (s.last_key_at) {
-          const ago = Math.round(Date.now()/1000 - s.last_key_at);
-          this.hw.last_key_ago = ago < 5 ? 'gerade eben' : ago < 60 ? `vor ${ago}s` :
-            ago < 3600 ? `vor ${Math.round(ago/60)}min` : `vor ${Math.round(ago/3600)}h`;
-        }
-        // Auto-load diag if panel is open
+        this.updateAgo();
         if (this.showDiag && !this._diagLoading) this.loadDiagnostics();
       } catch {}
     },

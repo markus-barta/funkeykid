@@ -177,8 +177,15 @@
                   <input type="text" class="input input-sm input-bordered flex-1 font-bold" x-model="entry.word"
                          placeholder="Wort eingeben...">
                   <button class="btn btn-xs btn-ghost opacity-40 hover:opacity-100" @click="archiveEntry(idx)" title="Archivieren"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/></svg></button>
+                  <button class="btn btn-xs btn-warning btn-outline" x-show="!entry.sound && !entry.image"
+                          @click="blacklistWord(entry.word); editEntries.splice(idx, 1)"
+                          title="Ablehnen & nicht mehr vorschlagen">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                  </button>
                   <button class="btn btn-xs btn-error btn-outline" @click="editEntries.splice(idx, 1)"
-                          title="Löschen">✕</button>
+                          title="Entfernen">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                  </button>
                 </div>
 
                 <!-- Row 2: Sound + Image with search filter -->
@@ -281,6 +288,19 @@
               <span x-text="_suggesting ? 'KI denkt...' : 'KI-Vorschlag'"></span>
             </button>
           </div>
+
+          <!-- Blacklist (collapsed by default) -->
+          <details class="mt-3" x-show="_blacklist.length > 0">
+            <summary class="text-xs opacity-40 cursor-pointer">Abgelehnte Wörter (<span x-text="_blacklist.length"></span>)</summary>
+            <div class="flex flex-wrap gap-1 mt-1">
+              <template x-for="(w, i) in _blacklist" :key="i">
+                <span class="badge badge-sm badge-ghost gap-1">
+                  <span x-text="w"></span>
+                  <button class="opacity-50 hover:opacity-100" @click="_blacklist.splice(i, 1); fetch('/api/blacklist/' + editingLetter, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({words:_blacklist})})">×</button>
+                </span>
+              </template>
+            </div>
+          </details>
 
           <div class="modal-action">
             <button class="btn btn-ghost" @click="editingLetter=null">Abbrechen</button>
@@ -489,6 +509,7 @@ function funkeykid() {
     editingLetter: null,
     editEntries: [],
     _suggesting: false,
+    _blacklist: [],
     genJobs: {},
     favorites: [],
 
@@ -657,13 +678,14 @@ function funkeykid() {
 
     // ── Letter editing ──
     async editLetter(letter) {
-      // Refresh file lists before editing to ensure dropdowns are current
-      const [snd, img] = await Promise.all([
+      const [snd, img, bl] = await Promise.all([
         fetch('/api/sounds').then(r => r.json()),
         fetch('/api/images').then(r => r.json()),
+        fetch('/api/blacklist/' + letter).then(r => r.json()),
       ]);
       this.sounds = snd;
       this.images = img;
+      this._blacklist = bl || [];
       this.editingLetter = letter;
       const entries = this.getEntries(letter);
       this.editEntries = entries.length ? JSON.parse(JSON.stringify(entries)) :
@@ -793,16 +815,27 @@ function funkeykid() {
             _imageDesc: r.image_description || '',
           };
           this.editEntries.push(entry);
-          this.showToast(`✨ Vorschlag: ${r.word}`);
-          // Auto-generate sound + image
-          const idx = this.editEntries.length - 1;
-          this.generateSound(entry, idx);
-          this.generateImage(entry, idx);
+          this.showToast('Vorschlag: ' + r.word + ' — Sound & Bild separat generieren');
         } else {
           this.showToast(r.error || 'Kein Vorschlag', 'error');
         }
       } catch (e) { this.showToast(e.message, 'error'); }
       this._suggesting = false;
+    },
+
+    async blacklistWord(word) {
+      if (!this.editingLetter || !word) return;
+      const letter = this.editingLetter;
+      // Add to blacklist
+      let bl = this._blacklist || [];
+      if (!bl.includes(word)) bl.push(word);
+      this._blacklist = bl;
+      await fetch('/api/blacklist/' + letter, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ words: bl }),
+      });
+      this.showToast('"' + word + '" wird nicht mehr vorgeschlagen');
     },
 
     async archiveEntry(idx) {

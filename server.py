@@ -736,17 +736,21 @@ async def api_suggest_word(request):
     letter = data.get("letter", "A").upper()
     language = data.get("language", "de-AT")
 
-    # Collect already-used words for this letter
+    # Collect ALL used words for this letter (from all sets)
     used_words = set()
     for s in settings.get("sets", {}).values():
         for entry in s.get("letters", {}).get(letter, {}).get("entries", []):
             used_words.add(entry.get("word", "").lower())
 
+    # Also include blacklisted words
+    blacklist = set(w.lower() for w in settings.get("blacklist", {}).get(letter, []))
+    excluded = sorted(used_words | blacklist)
+
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key:
         return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
 
-    used_list = ", ".join(sorted(used_words)) if used_words else "keine"
+    excluded_list = ", ".join(excluded) if excluded else "keine"
     prompt = f"""Schlage EIN deutsches Wort vor, das mit dem Buchstaben {letter} beginnt.
 
 Anforderungen:
@@ -755,7 +759,8 @@ Anforderungen:
 - Das Wort muss ein konkretes Ding/Tier/Objekt sein (kein abstraktes Konzept)
 - Es muss ein dazu passendes, klar erkennbares Geräusch geben
 - Nicht anstößig, kindgerecht
-- NICHT eines dieser bereits verwendeten Wörter: {used_list}
+- VERBOTEN — diese Wörter dürfen NICHT vorgeschlagen werden: {excluded_list}
+- Wenn du eines dieser verbotenen Wörter vorschlägst, ist die Antwort FALSCH
 
 Antworte NUR mit einem JSON-Objekt in diesem Format (keine Erklärung):
 {{"word": "Wort", "sound_description": "Beschreibung des Geräuschs auf Englisch für Sound-KI", "image_description": "Beschreibung des Bildes auf Englisch für Bild-KI"}}"""
@@ -763,7 +768,7 @@ Antworte NUR mit einem JSON-Objekt in diesem Format (keine Erklärung):
     try:
         import urllib.request
         payload = json.dumps({
-            "model": "openai/gpt-4.1-nano",
+            "model": "openai/gpt-4.1-mini",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.9,
         }).encode()
@@ -785,6 +790,24 @@ Antworte NUR mit einem JSON-Objekt in diesem Format (keine Erklärung):
         return web.json_response({"error": "KI-Antwort nicht parsebar", "raw": content[:200]}, status=500)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
+
+
+async def api_get_blacklist(request):
+    """Get blacklisted words for a letter."""
+    letter = request.match_info["letter"].upper()
+    words = settings.get("blacklist", {}).get(letter, [])
+    return web.json_response(words)
+
+
+async def api_put_blacklist(request):
+    """Set blacklisted words for a letter."""
+    letter = request.match_info["letter"].upper()
+    data = await request.json()
+    if "blacklist" not in settings:
+        settings["blacklist"] = {}
+    settings["blacklist"][letter] = data.get("words", [])
+    save_settings()
+    return web.json_response({"ok": True})
 
 
 async def api_archive_file(request):
@@ -884,6 +907,8 @@ def create_app():
     app.router.add_post("/api/generate/sound", api_generate_sound)
     app.router.add_post("/api/generate/image", api_generate_image)
     app.router.add_post("/api/suggest-word", api_suggest_word)
+    app.router.add_get("/api/blacklist/{letter}", api_get_blacklist)
+    app.router.add_put("/api/blacklist/{letter}", api_put_blacklist)
     app.router.add_get("/api/jobs", lambda r: web.json_response(list(gen_jobs.values())))
     app.router.add_get("/api/favorites", lambda r: web.json_response(favorites))
     app.router.add_post("/api/archive", api_archive_file)

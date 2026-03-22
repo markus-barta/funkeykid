@@ -1,0 +1,25 @@
+{
+  "language": "de-AT",
+  "keyboard_device": "ACME BK03",
+  "sound_dir": "/var/lib/funkeykid-sounds",
+  "debounce_seconds": 1.0,
+  "modes": {
+    "sound": true,
+    "display": true,
+    "speak": false
+  },
+  "mqtt": {
+    "host": "localhost",
+    "port": 1883,
+    "user": "smarthome",
+    "topic_prefix": "home/hsb1/funkeykid"
+  },
+  "tts": {
+    "engine": "elevenlabs",
+    "voice_id": "YOUR_VOICE_ID",
+    "cache_dir": "/var/lib/funkeykid-sounds/tts-cache"
+  },
+  "pixoo": {
+    "mqtt_topic": "home/hsb1/funkeykid/display"
+  }
+}

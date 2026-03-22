@@ -1,0 +1,32 @@
+# Sound files (copyright protected, deploy via rsync)
+sounds/*.mp3
+sounds/*.wav
+sounds/*.ogg
+!sounds/.gitkeep
+
+# TTS cache
+sounds/tts-cache/
+
+# Runtime config (may contain secrets references)
+config.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+*.egg-info/
+
+# Nix
+result
+result-*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store

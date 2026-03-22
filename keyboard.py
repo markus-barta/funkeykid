@@ -57,9 +57,12 @@ class KeyboardListener:
     def _find_device(self):
         """Find input device by name."""
         for path in evdev.list_devices():
-            dev = evdev.InputDevice(path)
-            if dev.name == self.device_name:
-                return dev
+            try:
+                dev = evdev.InputDevice(path)
+                if dev.name == self.device_name:
+                    return dev
+            except (OSError, FileNotFoundError):
+                continue
         return None
 
     def _translate_key(self, raw_key):
@@ -118,9 +121,14 @@ class KeyboardListener:
         }
 
     def _run(self):
-        """Main event loop — retry on disconnect."""
+        """Main event loop — retry on disconnect. Never exits unless stopped."""
         while self._running:
-            device = self._find_device()
+            try:
+                device = self._find_device()
+            except Exception as e:
+                print(f"[keyboard] Error scanning devices: {e}", flush=True)
+                device = None
+
             if not device:
                 self.connected = False
                 self.device_path = None

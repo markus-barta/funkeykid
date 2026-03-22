@@ -122,7 +122,8 @@ def play_sound(sound_file):
     stop_all_sounds()
     pa_vol = int(current_volume / 100 * 65536)
     env = os.environ.copy()
-    env["PULSE_SERVER"] = "unix:/run/user/1000/pulse/native"
+    # Use container's PULSE_SERVER (set via docker-compose, points to kiosk's PipeWire)
+    # Don't override if already set correctly
     try:
         proc = subprocess.Popen(
             ["paplay", f"--volume={pa_vol}", str(sound_file)],

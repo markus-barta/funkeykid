@@ -34,9 +34,13 @@ active_processes = []
 current_volume = 100
 startup_time = time.time()
 STARTUP_GRACE_SECONDS = 3  # Ignore keypresses for 3s after start (prevents stale BT events)
-# Per-letter cycling state: {letter: index}
+# Per-letter cycling state: {letter: index} — persists across letter switches
 cycle_index = {}
 last_letter = None
+# Favorites: list of {letter, entry_index} — up to 10
+favorites = []
+# AI generation jobs tracking
+gen_jobs = {}  # {job_id: {type, word, status, filename, error}}
 
 
 def load_settings():
@@ -158,17 +162,38 @@ def change_volume(delta):
         display.publish_volume(current_volume)
 
 
+def _play_entry(key_name, entry, entry_index=0):
+    """Play a specific entry — sound + display + SSE broadcast."""
+    word = entry.get("word", key_name)
+    sound = entry.get("sound", "")
+    image = entry.get("image", "")
+
+    print(f"[key] {key_name} → {word} (sound={sound}, image={image})", flush=True)
+
+    try:
+        sse_broadcast("keypress", {
+            "letter": key_name, "word": word, "sound": sound, "image": image,
+            "entry_index": entry_index, "timestamp": time.time(),
+        })
+    except Exception as e:
+        print(f"[sse] broadcast error: {e}", flush=True)
+
+    if sound:
+        sound_path = os.path.join(SOUNDS_DIR, sound)
+        print(f"[key] Playing: {sound_path}", flush=True)
+        play_sound(sound_path)
+    if display:
+        display.publish_letter(key_name, word, image)
+
+
 def handle_key(key_name, raw_key=None):
     """Handle a key press — cycles through enabled entries per letter."""
-    global last_letter, cycle_index
+    global last_letter, cycle_index, favorites
     raw_key = raw_key or key_name
-    # Ignore stale keypresses right after startup/restart
     if time.time() - startup_time < STARTUP_GRACE_SECONDS:
-        print(f"[key] Ignored {key_name} (startup grace period)", flush=True)
         return
     print(f"[key] handle_key({key_name}, raw={raw_key})", flush=True)
 
-    # Always broadcast to status bar (even unmapped keys)
     sse_broadcast("rawkey", {"key": key_name, "raw": raw_key, "timestamp": time.time()})
 
     # Space = stop
@@ -185,12 +210,22 @@ def handle_key(key_name, raw_key=None):
         change_volume(-10)
         return
 
+    # Tab = toggle favorite for last played letter
+    if key_name == "TAB":
+        _toggle_favorite()
+        return
+
+    # Number keys 1-0 = play favorite
+    if key_name in ("1","2","3","4","5","6","7","8","9","0"):
+        fav_idx = int(key_name) - 1 if key_name != "0" else 9
+        _play_favorite(fav_idx)
+        return
+
     # Get enabled entries for this letter
     entries = get_enabled_entries(key_name)
 
     if not entries:
         if settings.get("random_sounds_enabled"):
-            # Collect all sounds from active set
             all_sounds = []
             for ldata in get_active_set().values():
                 for e in ldata.get("entries", []):
@@ -202,46 +237,64 @@ def handle_key(key_name, raw_key=None):
                 play_sound(random.choice(all_sounds))
         return
 
-    # Cycle through entries when same letter pressed consecutively
+    # Position memory: advance index if same letter, keep position if returning
     if key_name == last_letter:
-        idx = cycle_index.get(key_name, 0)
-        idx = (idx + 1) % len(entries)
-        cycle_index[key_name] = idx
+        idx = (cycle_index.get(key_name, 0) + 1) % len(entries)
     else:
-        cycle_index[key_name] = 0
-        last_letter = key_name
+        # Keep last position for this letter (don't reset!)
+        idx = cycle_index.get(key_name, 0) % len(entries)
+    cycle_index[key_name] = idx
+    last_letter = key_name
 
-    entry = entries[cycle_index.get(key_name, 0)]
-    word = entry.get("word", key_name)
-    sound = entry.get("sound", "")
-    image = entry.get("image", "")
+    _play_entry(key_name, entries[idx], idx)
 
-    print(f"[key] {key_name} → {word} (sound={sound}, image={image})", flush=True)
 
-    # Broadcast to web UI via SSE
-    try:
-        sse_broadcast("keypress", {
-            "letter": key_name, "word": word, "sound": sound, "image": image,
-            "entry_index": cycle_index.get(key_name, 0),
-            "timestamp": time.time(),
-        })
-    except Exception as e:
-        print(f"[sse] broadcast error: {e}", flush=True)
+def _toggle_favorite():
+    """Toggle favorite for the last played letter+entry."""
+    global favorites
+    if not last_letter:
+        return
+    idx = cycle_index.get(last_letter, 0)
+    fav = {"letter": last_letter, "entry_index": idx}
+    # Check if already favorited
+    for i, f in enumerate(favorites):
+        if f["letter"] == last_letter and f["entry_index"] == idx:
+            favorites.pop(i)
+            sse_broadcast("favorites", {"favorites": favorites})
+            print(f"[fav] Removed favorite: {last_letter}[{idx}]", flush=True)
+            return
+    if len(favorites) >= 10:
+        sse_broadcast("keypress", {"letter": "!", "word": "Max 10 Favoriten", "sound": "", "image": "", "entry_index": 0, "timestamp": time.time()})
+        return
+    favorites.append(fav)
+    _save_favorites()
+    sse_broadcast("favorites", {"favorites": favorites})
+    entries = get_enabled_entries(last_letter)
+    word = entries[idx]["word"] if idx < len(entries) else "?"
+    print(f"[fav] Added favorite #{len(favorites)}: {last_letter} → {word}", flush=True)
 
-    # Play sound
-    if sound:
-        sound_path = os.path.join(SOUNDS_DIR, sound)
-        print(f"[key] Playing: {sound_path}", flush=True)
-        play_sound(sound_path)
-    else:
-        print(f"[key] No sound for {key_name}", flush=True)
 
-    # Display
-    if display:
-        print(f"[key] Publishing to display (mqtt={display._mqtt_connected})", flush=True)
-        display.publish_letter(key_name, word, image)
-    else:
-        print("[key] WARNING: display is None", flush=True)
+def _play_favorite(fav_idx):
+    """Play a favorite by number (0-9)."""
+    if fav_idx >= len(favorites):
+        return
+    fav = favorites[fav_idx]
+    entries = get_enabled_entries(fav["letter"])
+    idx = fav["entry_index"]
+    if idx < len(entries):
+        _play_entry(fav["letter"], entries[idx], idx)
+
+
+def _save_favorites():
+    """Persist favorites to settings."""
+    settings["favorites"] = favorites
+    save_settings()
+
+
+def _load_favorites():
+    """Load favorites from settings."""
+    global favorites
+    favorites = settings.get("favorites", [])
 
 
 # ── SSE (Server-Sent Events) ──────────────────────────────────────────────────
@@ -575,96 +628,74 @@ DEFAULT_SOUND_PROMPT = "Clear, distinct {word} sound effect, high quality, recog
 DEFAULT_IMAGE_PROMPT = "Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children's animation style."
 
 
+def _gen_sound_worker(job_id, word, prompt, duration, filename):
+    """Background worker for sound generation."""
+    import urllib.request, shutil
+    gen_jobs[job_id]["status"] = "generating"
+    sse_broadcast("gen_update", gen_jobs[job_id])
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
+    try:
+        payload = json.dumps({"text": prompt, "duration_seconds": duration, "prompt_influence": 0.6}).encode()
+        req = urllib.request.Request("https://api.elevenlabs.io/v1/sound-generation",
+            data=payload, headers={"xi-api-key": api_key, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            audio_data = resp.read()
+        if len(audio_data) < 1000:
+            raise ValueError("Generierung fehlgeschlagen (zu klein)")
+        outpath = os.path.join(AI_SOUNDS_DIR, filename)
+        with open(outpath, "wb") as f:
+            f.write(audio_data)
+        shutil.copy2(outpath, os.path.join(SOUNDS_DIR, filename))
+        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}"})
+    except Exception as e:
+        gen_jobs[job_id].update({"status": "error", "error": str(e)})
+    sse_broadcast("gen_update", gen_jobs[job_id])
+
+
 async def api_generate_sound(request):
-    """Generate a sound via ElevenLabs and save to ai-generated/sounds/."""
+    """Start async sound generation — returns job ID immediately."""
     data = await request.json()
     word = data.get("word", "")
     prompt = data.get("prompt", DEFAULT_SOUND_PROMPT.format(word=word))
-    duration = data.get("duration", 3)
+    duration = data.get("duration", 4)
     filename = data.get("filename", _slugify(word) + ".mp3")
-
-    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
-    if not api_key:
+    if not os.environ.get("ELEVENLABS_API_KEY"):
         return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
-
-    os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
-    outpath = os.path.join(AI_SOUNDS_DIR, filename)
-
-    try:
-        import urllib.request
-        payload = json.dumps({
-            "text": prompt,
-            "duration_seconds": duration,
-            "prompt_influence": 0.6,
-        }).encode()
-        req = urllib.request.Request(
-            "https://api.elevenlabs.io/v1/sound-generation",
-            data=payload,
-            headers={"xi-api-key": api_key, "Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            audio_data = resp.read()
-
-        if len(audio_data) < 1000:
-            return web.json_response({"error": "Generierung fehlgeschlagen (zu klein)"}, status=500)
-
-        with open(outpath, "wb") as f:
-            f.write(audio_data)
-
-        # Also copy to active sounds dir
-        import shutil
-        shutil.copy2(outpath, os.path.join(SOUNDS_DIR, filename))
-
-        return web.json_response({
-            "ok": True, "file": filename, "size": len(audio_data),
-            "path": f"/sounds/{filename}",
-        })
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
+    job_id = f"snd_{uuid.uuid4().hex[:8]}"
+    gen_jobs[job_id] = {"id": job_id, "type": "sound", "word": word, "filename": filename, "status": "queued"}
+    sse_broadcast("gen_update", gen_jobs[job_id])
+    import threading
+    threading.Thread(target=_gen_sound_worker, args=(job_id, word, prompt, duration, filename), daemon=True).start()
+    return web.json_response({"ok": True, "job_id": job_id})
 
 
-async def api_generate_image(request):
-    """Generate an image via OpenRouter and save to ai-generated/images-*/."""
-    data = await request.json()
-    word = data.get("word", "")
-    description = data.get("description", word)
-    prompt = data.get("prompt", DEFAULT_IMAGE_PROMPT.format(description=description))
-    filename = data.get("filename", _slugify(word) + ".png")
-
+def _gen_image_worker(job_id, word, prompt, filename):
+    """Background worker for image generation."""
+    import urllib.request, base64, shutil
+    gen_jobs[job_id]["status"] = "generating"
+    sse_broadcast("gen_update", gen_jobs[job_id])
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
-
     os.makedirs(AI_IMAGES_ORIG_DIR, exist_ok=True)
     os.makedirs(AI_IMAGES_RESIZED_DIR, exist_ok=True)
-
     try:
-        import urllib.request, base64
         payload = json.dumps({
             "model": "google/gemini-2.5-flash-image",
             "messages": [{"role": "user", "content": f"Generate a 512x512 image: {prompt}"}],
         }).encode()
-        req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions",
-            data=payload,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        )
+        req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
+            data=payload, headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=90) as resp:
             d = json.load(resp)
-
         images = d["choices"][0]["message"].get("images", [])
         if not images:
-            return web.json_response({"error": "Keine Bilddaten erhalten"}, status=500)
-
+            raise ValueError("Keine Bilddaten erhalten")
         b64 = images[0]["image_url"]["url"].split(",", 1)[1]
         img_data = base64.b64decode(b64)
-
         # Save original
-        orig_path = os.path.join(AI_IMAGES_ORIG_DIR, filename)
-        with open(orig_path, "wb") as f:
+        with open(os.path.join(AI_IMAGES_ORIG_DIR, filename), "wb") as f:
             f.write(img_data)
-
-        # Resize to 64x64 using PIL if available, otherwise save as-is
+        # Resize
         resized_path = os.path.join(AI_IMAGES_RESIZED_DIR, filename)
         try:
             from PIL import Image
@@ -673,21 +704,30 @@ async def api_generate_image(request):
             img = img.resize((64, 64), Image.LANCZOS)
             img.save(resized_path)
         except ImportError:
-            # No PIL — save original, will be large but functional
             with open(resized_path, "wb") as f:
                 f.write(img_data)
-
-        # Copy resized to active images dir
-        import shutil
         shutil.copy2(resized_path, os.path.join(IMAGES_DIR, filename))
-
-        return web.json_response({
-            "ok": True, "file": filename, "size": len(img_data),
-            "path": f"/images/{filename}",
-            "original": f"/ai/images-original/{filename}",
-        })
+        gen_jobs[job_id].update({"status": "done", "size": len(img_data), "path": f"/images/{filename}"})
     except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
+        gen_jobs[job_id].update({"status": "error", "error": str(e)})
+    sse_broadcast("gen_update", gen_jobs[job_id])
+
+
+async def api_generate_image(request):
+    """Start async image generation — returns job ID immediately."""
+    data = await request.json()
+    word = data.get("word", "")
+    description = data.get("description", word)
+    prompt = data.get("prompt", DEFAULT_IMAGE_PROMPT.format(description=description))
+    filename = data.get("filename", _slugify(word) + ".png")
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
+    job_id = f"img_{uuid.uuid4().hex[:8]}"
+    gen_jobs[job_id] = {"id": job_id, "type": "image", "word": word, "filename": filename, "status": "queued"}
+    sse_broadcast("gen_update", gen_jobs[job_id])
+    import threading
+    threading.Thread(target=_gen_image_worker, args=(job_id, word, prompt, filename), daemon=True).start()
+    return web.json_response({"ok": True, "job_id": job_id})
 
 
 async def api_suggest_word(request):
@@ -844,6 +884,8 @@ def create_app():
     app.router.add_post("/api/generate/sound", api_generate_sound)
     app.router.add_post("/api/generate/image", api_generate_image)
     app.router.add_post("/api/suggest-word", api_suggest_word)
+    app.router.add_get("/api/jobs", lambda r: web.json_response(list(gen_jobs.values())))
+    app.router.add_get("/api/favorites", lambda r: web.json_response(favorites))
     app.router.add_post("/api/archive", api_archive_file)
     app.router.add_get("/api/archive", api_list_archive)
     app.router.add_get("/ai/{path:.+}", serve_ai_file)
@@ -863,9 +905,10 @@ def main():
     os.makedirs(IMAGES_DIR, exist_ok=True)
 
     settings = load_settings()
+    _load_favorites()
     set_count = len(settings.get("sets", {}))
     active = settings.get("active_set", "?")
-    print(f"[funkeykid] Settings loaded: {set_count} set(s), active={active}", flush=True)
+    print(f"[funkeykid] Settings loaded: {set_count} set(s), active={active}, {len(favorites)} favorites", flush=True)
 
     # Display
     display = Display(settings)

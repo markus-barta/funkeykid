@@ -113,6 +113,17 @@
     </div>
   </div>
 
+  <!-- Generation Jobs -->
+  <div x-show="Object.values(genJobs).some(j => j.status !== 'done' && j.status !== 'error')"
+       class="bg-accent/10 px-4 py-1.5 flex items-center gap-3 text-xs border-b border-accent/20">
+    <span class="loading loading-spinner loading-xs text-accent"></span>
+    <span class="font-bold text-accent">KI-Generierung</span>
+    <template x-for="job in Object.values(genJobs).filter(j => j.status !== 'done')" :key="job.id">
+      <span class="badge badge-xs" :class="job.status === 'error' ? 'badge-error' : 'badge-accent'"
+            x-text="(job.type === 'sound' ? '🔊' : '🖼️') + ' ' + job.word + ': ' + ({queued:'Wartend',generating:'Generiere...',error:'Fehler'}[job.status] || job.status)"></span>
+    </template>
+  </div>
+
   <!-- Tabs -->
   <div class="tabs tabs-boxed justify-center my-3 mx-4">
     <a class="tab" :class="tab === 'letters' && 'tab-active'" @click="tab='letters'">Buchstaben</a>
@@ -477,6 +488,8 @@ function funkeykid() {
     editingLetter: null,
     editEntries: [],
     _suggesting: false,
+    genJobs: {},
+    favorites: [],
 
     // Test state
     pressedKey: null,
@@ -491,6 +504,7 @@ function funkeykid() {
         this.appRepo = v.repo;
       } catch {}
       await this.refresh();
+      try { this.favorites = await fetch('/api/favorites').then(r => r.json()); } catch {}
       this.connectSSE();
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
       setInterval(() => this.pollStatus(), 10000);
@@ -536,7 +550,22 @@ function funkeykid() {
       es.addEventListener('volume', (e) => {
         const d = JSON.parse(e.data);
         this.hw.volume = d.volume;
-        this.settings.volume = d.volume; // Sync UI slider
+        this.settings.volume = d.volume;
+      });
+      es.addEventListener('gen_update', (e) => {
+        const d = JSON.parse(e.data);
+        this.genJobs[d.id] = d;
+        // Auto-refresh file lists when generation completes
+        if (d.status === 'done') {
+          this.showToast((d.type === 'sound' ? '🔊' : '🖼️') + ' ' + d.word + ' fertig ✓');
+          this.sounds = fetch('/api/sounds').then(r => r.json()).then(s => this.sounds = s);
+          this.images = fetch('/api/images').then(r => r.json()).then(s => this.images = s);
+        } else if (d.status === 'error') {
+          this.showToast(d.word + ': ' + d.error, 'error');
+        }
+      });
+      es.addEventListener('favorites', (e) => {
+        this.favorites = JSON.parse(e.data).favorites || [];
       });
       es.onerror = () => {
         // SSE reconnects automatically, just update status
@@ -817,13 +846,12 @@ function funkeykid() {
         }).then(r => r.json());
         if (r.ok) {
           entry.sound = filename;
-          this.sounds = await fetch('/api/sounds').then(r => r.json());
-          this.showToast(`🔊 Sound "${entry.word}" generiert ✓`);
+          // Job runs in background — SSE gen_update will notify on completion
         } else {
           this.showToast(r.error || 'Fehler', 'error');
         }
       } catch (e) { this.showToast(e.message, 'error'); }
-      entry._genSound = false;
+      entry._genSound = false; // Button re-enabled — job continues in background
     },
 
     async generateImage(entry, idx) {
@@ -843,8 +871,6 @@ function funkeykid() {
         }).then(r => r.json());
         if (r.ok) {
           entry.image = filename;
-          this.images = await fetch('/api/images').then(r => r.json());
-          this.showToast(`🖼️ Bild "${entry.word}" generiert ✓`);
         } else {
           this.showToast(r.error || 'Fehler', 'error');
         }

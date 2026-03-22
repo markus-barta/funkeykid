@@ -56,15 +56,18 @@
       </div>
     </template>
     <template x-if="hw.last_key">
-      <div class="flex items-center gap-4">
-        <span class="opacity-50">Letzte Taste:</span>
+      <div class="flex items-center gap-3">
+        <span class="opacity-50">Taste:</span>
         <span class="font-bold text-primary text-sm" x-text="hw.last_key"></span>
-        <span class="opacity-50" x-text="hw.last_key_ago"></span>
+        <span class="opacity-30 text-[10px] font-mono"
+              x-show="hw.last_raw_key && hw.last_raw_key !== hw.last_key"
+              x-text="'(KEY_' + hw.last_raw_key + ')'"></span>
+        <span class="opacity-40" x-text="hw.last_key_ago"></span>
       </div>
     </template>
-    <span x-show="!hw.last_key && !hw.searching" class="opacity-30 italic">Noch keine Taste gedrueckt</span>
+    <span x-show="!hw.last_key && !hw.searching" class="opacity-30 italic">Noch keine Taste gedrückt</span>
     <div class="ml-auto flex items-center gap-2">
-      <button class="btn btn-xs btn-error btn-outline" @click="stopAll()" title="Alles stoppen">Stop</button>
+      <button class="btn btn-xs btn-error btn-outline" @click="stopAll()" title="Alles stoppen ■">Stop</button>
       <span class="opacity-30" x-text="hw.device_path || ''"></span>
     </div>
   </div>
@@ -81,7 +84,7 @@
     </div>
     <div class="grid md:grid-cols-3 gap-3 text-xs">
       <div class="bg-base-100 rounded p-2">
-        <div class="font-bold mb-1 opacity-60">Eingabegeraete</div>
+        <div class="font-bold mb-1 opacity-60">Eingabegeräte</div>
         <template x-for="d in (diag.evdev_devices||[])" :key="d.path">
           <div class="py-0.5" :class="d.name === hw.device_name ? 'text-success font-bold' : 'opacity-50'">
             <span x-text="d.path"></span>: <span x-text="d.name"></span>
@@ -98,7 +101,7 @@
           </div>
         </template>
         <div x-show="!diag.bluetooth||!Object.keys(diag.bluetooth||{}).length" class="opacity-40 italic">
-          BT-Info nicht im Container verfuegbar
+          BT-Info nicht im Container verfügbar
         </div>
       </div>
       <div class="bg-base-100 rounded p-2">
@@ -148,7 +151,7 @@
         <div class="modal-box max-w-2xl" x-show="editingLetter">
           <h3 class="font-bold text-2xl mb-4">
             <span x-text="editingLetter" class="text-primary"></span>
-            <span class="text-sm font-normal opacity-60 ml-2">Eintraege bearbeiten</span>
+            <span class="text-sm font-normal opacity-60 ml-2">Einträge bearbeiten</span>
           </h3>
 
           <!-- Entries list -->
@@ -184,7 +187,7 @@
           <!-- Add entry -->
           <button class="btn btn-sm btn-outline btn-primary mt-3 w-full"
                   @click="editEntries.push({word:'', sound:'', image:'', enabled:true})">
-            + Eintrag hinzufuegen
+            + Eintrag hinzufügen
           </button>
 
           <div class="modal-action">
@@ -207,14 +210,14 @@
                 <div class="badge badge-primary badge-sm" x-show="sid === activeSetId">aktiv</div>
               </div>
               <p class="text-sm opacity-60" x-text="meta.description"></p>
-              <div class="text-xs opacity-40" x-text="meta.letter_count + ' Buchstaben, ' + meta.entry_count + ' Eintraege'"></div>
+              <div class="text-xs opacity-40" x-text="meta.letter_count + ' Buchstaben, ' + meta.entry_count + ' Einträge'"></div>
               <div class="card-actions mt-3">
                 <button class="btn btn-sm btn-primary" x-show="sid !== activeSetId"
                         @click="activeSetId=sid; activateSet()">Aktivieren</button>
                 <button class="btn btn-sm btn-outline" @click="duplicateSet(sid)">Duplizieren</button>
                 <button class="btn btn-sm btn-outline" @click="renameSet(sid)">Umbenennen</button>
                 <button class="btn btn-sm btn-error btn-outline" x-show="Object.keys(sets).length > 1"
-                        @click="deleteSet(sid)">Loeschen</button>
+                        @click="deleteSet(sid)">Löschen</button>
               </div>
             </div>
           </div>
@@ -269,28 +272,28 @@
           <h2 class="card-title mb-4">Einstellungen</h2>
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Tastatur-Layout</span></label>
-            <select class="select select-bordered" x-model="settings.keyboard_layout">
+            <select class="select select-bordered" x-model="settings.keyboard_layout" @change="autoSave()">
               <option value="de">Deutsch (QWERTZ)</option>
               <option value="us">English (QWERTY)</option>
             </select>
           </div>
           <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Lautstaerke</span></label>
+            <label class="label"><span class="label-text">Lautstärke</span></label>
             <div class="flex items-center gap-3">
               <input type="range" class="range range-primary" min="0" max="100" step="10"
-                     x-model.number="settings.volume">
+                     x-model.number="settings.volume" @change="autoSave()">
               <span class="badge" x-text="settings.volume + '%'"></span>
             </div>
           </div>
           <div class="form-control mb-3">
             <label class="label cursor-pointer">
-              <span class="label-text">Zufaellige Sounds (Nicht-Buchstaben)</span>
-              <input type="checkbox" class="toggle toggle-primary" x-model="settings.random_sounds_enabled">
+              <span class="label-text">Zufällige Sounds (Nicht-Buchstaben)</span>
+              <input type="checkbox" class="toggle toggle-primary" x-model="settings.random_sounds_enabled" @change="autoSave()">
             </label>
           </div>
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Anzeige-Modus</span></label>
-            <select class="select select-bordered" x-model="settings.display_mode">
+            <select class="select select-bordered" x-model="settings.display_mode" @change="autoSave()">
               <option value="mqtt">MQTT (pidicon-light)</option>
               <option value="direct">Direkt (Pixoo)</option>
               <option value="both">Beide</option>
@@ -298,18 +301,18 @@
           </div>
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Pixoo IP</span></label>
-            <input type="text" class="input input-bordered" x-model="settings.pixoo_ip">
+            <input type="text" class="input input-bordered" x-model="settings.pixoo_ip" @change="autoSave()">
           </div>
           <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Tastatur-Geraet</span></label>
-            <input type="text" class="input input-bordered" x-model="settings.keyboard_device">
+            <label class="label"><span class="label-text">Tastatur-Gerät</span></label>
+            <input type="text" class="input input-bordered" x-model="settings.keyboard_device" @change="autoSave()">
           </div>
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Debounce (s)</span></label>
-            <input type="number" class="input input-bordered" x-model.number="settings.debounce_seconds"
+            <input type="number" class="input input-bordered" x-model.number="settings.debounce_seconds" @change="autoSave()"
                    step="0.1" min="0.1" max="3">
           </div>
-          <button class="btn btn-primary mt-4" @click="saveSettings()">Speichern</button>
+          <div class="text-xs opacity-40 mt-4 text-center">Änderungen werden automatisch gespeichert</div>
         </div>
       </div>
     </div>
@@ -373,8 +376,8 @@ function funkeykid() {
     images: [],
     toast: '', toastType: 'success',
     hw: { connected:false, battery_level:null, last_key:null, last_key_at:0,
-          last_key_ago:'', device_path:null, device_name:'', mqtt_connected:false,
-          volume:100, searching:false },
+          last_key_ago:'', last_raw_key:null, device_path:null, device_name:'',
+          mqtt_connected:false, volume:100, searching:false },
     showDiag: false,
     diag: {},
 
@@ -402,12 +405,19 @@ function funkeykid() {
         Object.assign(this.hw, s);
         this.updateAgo();
       });
+      es.addEventListener('rawkey', (e) => {
+        // ALL keypresses — even unmapped ones — update status bar
+        const d = JSON.parse(e.data);
+        this.hw.last_key = d.key;
+        this.hw.last_raw_key = d.raw;
+        this.hw.last_key_at = d.timestamp;
+        this.updateAgo();
+      });
       es.addEventListener('keypress', (e) => {
         const d = JSON.parse(e.data);
         this.hw.last_key = d.letter;
         this.hw.last_key_at = d.timestamp;
         this.updateAgo();
-        // Flash test preview if on test tab
         if (this.tab === 'test') {
           this.lastTestLetter = d.letter;
           this.lastTestWord = d.word;
@@ -419,13 +429,14 @@ function funkeykid() {
       es.addEventListener('connection', (e) => {
         const s = JSON.parse(e.data);
         Object.assign(this.hw, s);
-        const msg = s.connected ? 'Tastatur verbunden!' : 'Tastatur getrennt';
+        const msg = s.connected ? 'Tastatur verbunden! ✓' : 'Tastatur getrennt ✗';
         this.showToast(msg, s.connected ? 'success' : 'error');
         if (this.showDiag) this.loadDiagnostics();
       });
       es.addEventListener('volume', (e) => {
         const d = JSON.parse(e.data);
         this.hw.volume = d.volume;
+        this.settings.volume = d.volume; // Sync UI slider
       });
       es.onerror = () => {
         // SSE reconnects automatically, just update status
@@ -520,7 +531,7 @@ function funkeykid() {
       });
       this.editingLetter = null;
       await this.refresh();
-      this.showToast(`${letter} gespeichert`);
+      this.showToast(`${letter} gespeichert ✓`);
     },
 
     // ── Sets CRUD ──
@@ -568,14 +579,20 @@ function funkeykid() {
       this.showToast('Set geloescht');
     },
 
-    // ── Settings ──
+    // ── Settings (auto-save) ──
+    _autoSaveTimer: null,
+    autoSave() {
+      // Debounce: save 300ms after last change
+      clearTimeout(this._autoSaveTimer);
+      this._autoSaveTimer = setTimeout(() => this.saveSettings(), 300);
+    },
     async saveSettings() {
       await fetch('/api/settings', {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(this.settings),
       });
-      this.showToast('Einstellungen gespeichert');
+      this.showToast('Gespeichert ✓');
     },
 
     // ── Test mode ──
@@ -610,7 +627,7 @@ function funkeykid() {
     async stopAll() {
       this.stopPreview();
       await fetch('/api/test/SPACE', { method: 'POST' });
-      this.showToast('Playback gestoppt');
+      this.showToast('Wiedergabe gestoppt');
     },
     async uploadFile(ev, type) {
       const file = ev.target.files[0];

@@ -150,24 +150,30 @@ def change_volume(delta):
     global current_volume
     current_volume = max(0, min(100, current_volume + delta))
     settings["volume"] = current_volume
+    save_settings()  # Persist volume changes from keyboard
     print(f"[volume] {current_volume}%", flush=True)
     sse_broadcast("volume", {"volume": current_volume})
     if display:
         display.publish_volume(current_volume)
 
 
-def handle_key(key_name):
+def handle_key(key_name, raw_key=None):
     """Handle a key press — cycles through enabled entries per letter."""
     global last_letter, cycle_index
+    raw_key = raw_key or key_name
     # Ignore stale keypresses right after startup/restart
     if time.time() - startup_time < STARTUP_GRACE_SECONDS:
         print(f"[key] Ignored {key_name} (startup grace period)", flush=True)
         return
-    print(f"[key] handle_key({key_name})", flush=True)
+    print(f"[key] handle_key({key_name}, raw={raw_key})", flush=True)
+
+    # Always broadcast to status bar (even unmapped keys)
+    sse_broadcast("rawkey", {"key": key_name, "raw": raw_key, "timestamp": time.time()})
 
     # Space = stop
     if key_name == "SPACE":
         stop_all_sounds()
+        sse_broadcast("keypress", {"letter": "SPACE", "word": "Stop", "sound": "", "image": "", "entry_index": 0, "timestamp": time.time()})
         return
 
     # Volume

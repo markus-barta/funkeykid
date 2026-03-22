@@ -38,6 +38,7 @@ class KeyboardListener:
         self.connected = False
         self.device_path = None
         self.last_key = None
+        self.last_raw_key = None
         self.last_key_at = 0
         self.battery_level = None
         self._device = None
@@ -121,6 +122,7 @@ class KeyboardListener:
             "device_name": self.device_name,
             "device_path": self.device_path,
             "last_key": self.last_key,
+            "last_raw_key": self.last_raw_key,
             "last_key_at": self.last_key_at,
             "battery_level": self.battery_level,
             "searching": self._running and not self.connected,
@@ -244,6 +246,7 @@ class KeyboardListener:
 
                     # Track for status
                     self.last_key = key
+                    self.last_raw_key = raw
                     self.last_key_at = time.time()
 
                     # Refresh battery periodically (every ~60 key presses)
@@ -251,7 +254,7 @@ class KeyboardListener:
                         self.battery_level = self._read_battery(device)
 
                     if self._should_process(key) and self._callback:
-                        self._callback(key)
+                        self._callback(key, raw)
 
             except (OSError, Exception) as e:
                 print(f"[keyboard] Device error: {e}", flush=True)
@@ -265,4 +268,4 @@ class KeyboardListener:
     def simulate_key(self, key_name):
         """Simulate a keypress (for web UI test mode)."""
         if self._callback:
-            self._callback(key_name)
+            self._callback(key_name, key_name)

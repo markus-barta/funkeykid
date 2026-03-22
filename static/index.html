@@ -13,6 +13,7 @@
     .letter-card { transition: all 0.2s; }
     .letter-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
     .img-preview { width: 64px; height: 64px; image-rendering: pixelated; border-radius: 4px; }
+    [x-cloak] { display: none !important; }
   </style>
 </head>
 <body class="min-h-screen bg-base-200">
@@ -23,46 +24,48 @@
   <div class="navbar bg-base-100 shadow-lg">
     <div class="flex-1">
       <span class="text-xl font-bold px-4">funkeykid</span>
-      <span class="badge badge-sm badge-ghost" x-text="Object.keys(letters).length + ' Buchstaben'"></span>
+      <!-- Active set selector -->
+      <select class="select select-sm select-bordered ml-2" x-model="activeSetId" @change="activateSet()">
+        <template x-for="(meta, sid) in sets" :key="sid">
+          <option :value="sid" x-text="meta.name"></option>
+        </template>
+      </select>
     </div>
     <div class="flex-none gap-2 pr-4">
-      <!-- Keyboard status -->
       <div class="flex items-center gap-1.5">
         <div class="w-2 h-2 rounded-full" :class="hw.connected ? 'bg-success animate-pulse' : 'bg-error'"></div>
-        <span class="text-xs opacity-70" x-text="hw.connected ? 'Tastatur verbunden' : 'Tastatur getrennt'"></span>
+        <span class="text-xs opacity-70" x-text="hw.connected ? 'Tastatur' : 'Getrennt'"></span>
       </div>
-      <!-- Battery -->
       <div class="badge badge-sm" x-show="hw.battery_level !== null"
            :class="hw.battery_level > 20 ? 'badge-success' : 'badge-warning'"
-           x-text="'🔋 ' + hw.battery_level + '%'"></div>
-      <!-- MQTT -->
+           x-text="hw.battery_level + '%'"></div>
       <div class="badge badge-sm" :class="hw.mqtt_connected ? 'badge-info' : 'badge-error'"
            x-text="hw.mqtt_connected ? 'MQTT' : 'MQTT ✗'"></div>
-      <!-- Volume -->
-      <div class="badge badge-sm badge-ghost" x-text="'🔊 ' + hw.volume + '%'"></div>
+      <div class="badge badge-sm badge-ghost" x-text="hw.volume + '%'"></div>
     </div>
   </div>
 
   <!-- Live status bar -->
-  <div class="bg-base-300 px-4 py-1.5 flex items-center gap-4 text-xs border-b border-base-content/10"
+  <div class="bg-base-300 px-4 py-1 flex items-center gap-4 text-xs border-b border-base-content/10"
        x-show="hw.last_key">
     <span class="opacity-50">Letzte Taste:</span>
-    <span class="font-bold text-primary text-sm" x-text="hw.last_key"></span>
+    <span class="font-bold text-primary" x-text="hw.last_key"></span>
     <span class="opacity-50" x-text="hw.last_key_ago"></span>
     <span class="opacity-30 ml-auto" x-text="hw.device_path || ''"></span>
   </div>
 
   <!-- Tabs -->
-  <div class="tabs tabs-boxed justify-center my-4 mx-4">
+  <div class="tabs tabs-boxed justify-center my-3 mx-4">
     <a class="tab" :class="tab === 'letters' && 'tab-active'" @click="tab='letters'">Buchstaben</a>
-    <a class="tab" :class="tab === 'test' && 'tab-active'" @click="tab='test'">Tastatur Test</a>
+    <a class="tab" :class="tab === 'sets' && 'tab-active'" @click="tab='sets'">Sets</a>
+    <a class="tab" :class="tab === 'test' && 'tab-active'" @click="tab='test'">Tastatur</a>
     <a class="tab" :class="tab === 'settings' && 'tab-active'" @click="tab='settings'">Einstellungen</a>
     <a class="tab" :class="tab === 'files' && 'tab-active'" @click="tab='files'">Dateien</a>
   </div>
 
   <div class="container mx-auto px-4 pb-8">
 
-    <!-- LETTERS TAB -->
+    <!-- ═══ LETTERS TAB ═══ -->
     <div x-show="tab === 'letters'" x-cloak>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
         <template x-for="letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')" :key="letter">
@@ -71,53 +74,62 @@
               <div class="flex items-start gap-2">
                 <span class="text-3xl font-black" x-text="letter"
                       :style="'color:' + randomColor(letter)"></span>
-                <img :src="'/images/' + (letters[letter]?.image || '')"
+                <img :src="'/images/' + firstEntry(letter)?.image"
                      class="img-preview ml-auto" loading="lazy"
                      @error="$el.style.display='none'" @load="$el.style.display='block'">
               </div>
-              <div class="text-sm opacity-70 mt-1" x-text="(letters[letter]?.words || []).join(', ')"></div>
-              <div class="text-xs opacity-50" x-text="(letters[letter]?.sounds || [])[0] || 'kein Sound'"></div>
+              <div class="text-sm opacity-70 mt-1"
+                   x-text="getEntries(letter).map(e => (e.enabled ? '' : '(') + e.word + (e.enabled ? '' : ')')).join(', ')"></div>
+              <div class="text-xs opacity-40"
+                   x-text="getEntries(letter).filter(e=>e.enabled).length + '/' + getEntries(letter).length + ' aktiv'"></div>
             </div>
           </div>
         </template>
       </div>
 
-      <!-- Edit Modal -->
-      <dialog id="edit-modal" class="modal" :class="editingLetter && 'modal-open'">
-        <div class="modal-box" x-show="editingLetter">
+      <!-- Edit Letter Modal -->
+      <dialog class="modal" :class="editingLetter && 'modal-open'">
+        <div class="modal-box max-w-2xl" x-show="editingLetter">
           <h3 class="font-bold text-2xl mb-4">
             <span x-text="editingLetter" class="text-primary"></span>
-            <span class="text-sm font-normal opacity-60 ml-2">bearbeiten</span>
+            <span class="text-sm font-normal opacity-60 ml-2">Eintraege bearbeiten</span>
           </h3>
 
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Woerter (Komma-getrennt)</span></label>
-            <input type="text" class="input input-bordered" x-model="editWords"
-                   placeholder="Affe, Apfel, Auto">
+          <!-- Entries list -->
+          <div class="space-y-3">
+            <template x-for="(entry, idx) in editEntries" :key="idx">
+              <div class="card bg-base-200 p-3" :class="!entry.enabled && 'opacity-50'">
+                <div class="flex items-center gap-2 mb-2">
+                  <input type="checkbox" class="toggle toggle-sm toggle-success" x-model="entry.enabled">
+                  <input type="text" class="input input-sm input-bordered flex-1" x-model="entry.word" placeholder="Wort">
+                  <button class="btn btn-xs btn-error btn-outline" @click="editEntries.splice(idx, 1)">✕</button>
+                </div>
+                <div class="flex gap-2">
+                  <select class="select select-xs select-bordered flex-1" x-model="entry.sound">
+                    <option value="">kein Sound</option>
+                    <template x-for="s in sounds" :key="s">
+                      <option :value="s" x-text="s"></option>
+                    </template>
+                  </select>
+                  <button class="btn btn-xs btn-ghost" @click="previewSound(entry.sound)">&#9654;</button>
+                  <select class="select select-xs select-bordered flex-1" x-model="entry.image">
+                    <option value="">kein Bild</option>
+                    <template x-for="img in images" :key="img">
+                      <option :value="img" x-text="img"></option>
+                    </template>
+                  </select>
+                </div>
+                <img :src="entry.image ? '/images/' + entry.image : ''" class="img-preview mt-2"
+                     x-show="entry.image" style="width:96px;height:96px;">
+              </div>
+            </template>
           </div>
 
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Sound-Datei</span></label>
-            <select class="select select-bordered" x-model="editSound">
-              <option value="">-- kein Sound --</option>
-              <template x-for="s in sounds" :key="s">
-                <option :value="s" x-text="s"></option>
-              </template>
-            </select>
-            <button class="btn btn-xs btn-ghost mt-1" @click="previewSound(editSound)">abspielen</button>
-          </div>
-
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Bild</span></label>
-            <select class="select select-bordered" x-model="editImage">
-              <option value="">-- kein Bild --</option>
-              <template x-for="img in images" :key="img">
-                <option :value="img" x-text="img"></option>
-              </template>
-            </select>
-            <img :src="editImage ? '/images/' + editImage : ''" class="img-preview mt-2"
-                 x-show="editImage" style="width:128px;height:128px;">
-          </div>
+          <!-- Add entry -->
+          <button class="btn btn-sm btn-outline btn-primary mt-3 w-full"
+                  @click="editEntries.push({word:'', sound:'', image:'', enabled:true})">
+            + Eintrag hinzufuegen
+          </button>
 
           <div class="modal-action">
             <button class="btn btn-ghost" @click="editingLetter=null">Abbrechen</button>
@@ -128,11 +140,37 @@
       </dialog>
     </div>
 
-    <!-- TEST TAB (Virtual Keyboard) -->
-    <div x-show="tab === 'test'" x-cloak>
-      <div class="text-center mb-4 opacity-60">Klicke einen Buchstaben — Sound + Anzeige werden ausgeloest</div>
+    <!-- ═══ SETS TAB ═══ -->
+    <div x-show="tab === 'sets'" x-cloak>
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <template x-for="(meta, sid) in sets" :key="sid">
+          <div class="card bg-base-100 shadow" :class="sid === activeSetId && 'ring-2 ring-primary'">
+            <div class="card-body p-4">
+              <div class="flex items-center gap-2">
+                <h3 class="card-title text-lg" x-text="meta.name"></h3>
+                <div class="badge badge-primary badge-sm" x-show="sid === activeSetId">aktiv</div>
+              </div>
+              <p class="text-sm opacity-60" x-text="meta.description"></p>
+              <div class="text-xs opacity-40" x-text="meta.letter_count + ' Buchstaben, ' + meta.entry_count + ' Eintraege'"></div>
+              <div class="card-actions mt-3">
+                <button class="btn btn-sm btn-primary" x-show="sid !== activeSetId"
+                        @click="activeSetId=sid; activateSet()">Aktivieren</button>
+                <button class="btn btn-sm btn-outline" @click="duplicateSet(sid)">Duplizieren</button>
+                <button class="btn btn-sm btn-outline" @click="renameSet(sid)">Umbenennen</button>
+                <button class="btn btn-sm btn-error btn-outline" x-show="Object.keys(sets).length > 1"
+                        @click="deleteSet(sid)">Loeschen</button>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
 
-      <!-- QWERTZ keyboard layout -->
+      <button class="btn btn-primary mt-4" @click="createSet()">+ Neues Set</button>
+    </div>
+
+    <!-- ═══ TEST TAB ═══ -->
+    <div x-show="tab === 'test'" x-cloak>
+      <div class="text-center mb-4 opacity-60">Klicke Buchstaben — spielt Sound + zeigt Bild</div>
       <div class="flex flex-col items-center gap-1">
         <div class="flex gap-1">
           <template x-for="k in 'QWERTZUIOP'.split('')" :key="k">
@@ -154,16 +192,13 @@
         </div>
         <div class="flex gap-1 mt-2">
           <button class="btn btn-sm kbd-key w-12" @click="testKey('MINUS')">-</button>
-          <button class="btn btn-sm kbd-key w-48" @click="testKey('SPACE')">Leertaste (Stop)</button>
+          <button class="btn btn-sm kbd-key w-48" @click="testKey('SPACE')">Leertaste</button>
           <button class="btn btn-sm kbd-key w-12" @click="testKey('EQUAL')">+</button>
         </div>
       </div>
-
-      <!-- Preview -->
       <div class="flex justify-center mt-6 gap-6" x-show="lastTestLetter">
         <div class="card bg-base-100 shadow p-4 text-center">
-          <div class="text-6xl font-black" x-text="lastTestLetter"
-               :style="'color:' + randomColor(lastTestLetter)"></div>
+          <div class="text-6xl font-black" x-text="lastTestLetter" :style="'color:' + randomColor(lastTestLetter)"></div>
           <div class="text-lg mt-1" x-text="lastTestWord"></div>
         </div>
         <img :src="lastTestImage ? '/images/' + lastTestImage : ''"
@@ -171,12 +206,11 @@
       </div>
     </div>
 
-    <!-- SETTINGS TAB -->
+    <!-- ═══ SETTINGS TAB ═══ -->
     <div x-show="tab === 'settings'" x-cloak>
       <div class="card bg-base-100 shadow max-w-xl mx-auto">
         <div class="card-body">
           <h2 class="card-title mb-4">Einstellungen</h2>
-
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Tastatur-Layout</span></label>
             <select class="select select-bordered" x-model="settings.keyboard_layout">
@@ -184,7 +218,6 @@
               <option value="us">English (QWERTY)</option>
             </select>
           </div>
-
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Lautstaerke</span></label>
             <div class="flex items-center gap-3">
@@ -193,50 +226,41 @@
               <span class="badge" x-text="settings.volume + '%'"></span>
             </div>
           </div>
-
           <div class="form-control mb-3">
             <label class="label cursor-pointer">
-              <span class="label-text">Zufaellige Sounds fuer Nicht-Buchstaben</span>
+              <span class="label-text">Zufaellige Sounds (Nicht-Buchstaben)</span>
               <input type="checkbox" class="toggle toggle-primary" x-model="settings.random_sounds_enabled">
             </label>
           </div>
-
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Anzeige-Modus</span></label>
             <select class="select select-bordered" x-model="settings.display_mode">
               <option value="mqtt">MQTT (pidicon-light)</option>
-              <option value="direct">Direkt (Pixoo HTTP)</option>
+              <option value="direct">Direkt (Pixoo)</option>
               <option value="both">Beide</option>
             </select>
           </div>
-
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Pixoo IP</span></label>
-            <input type="text" class="input input-bordered" x-model="settings.pixoo_ip"
-                   placeholder="192.168.1.189">
+            <input type="text" class="input input-bordered" x-model="settings.pixoo_ip">
           </div>
-
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Tastatur-Geraet</span></label>
-            <input type="text" class="input input-bordered" x-model="settings.keyboard_device"
-                   placeholder="ACME BK03">
+            <input type="text" class="input input-bordered" x-model="settings.keyboard_device">
           </div>
-
           <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Debounce (Sekunden)</span></label>
+            <label class="label"><span class="label-text">Debounce (s)</span></label>
             <input type="number" class="input input-bordered" x-model.number="settings.debounce_seconds"
                    step="0.1" min="0.1" max="3">
           </div>
-
           <button class="btn btn-primary mt-4" @click="saveSettings()">Speichern</button>
         </div>
       </div>
     </div>
 
-    <!-- FILES TAB -->
+    <!-- ═══ FILES TAB ═══ -->
     <div x-show="tab === 'files'" x-cloak>
       <div class="grid md:grid-cols-2 gap-6">
-        <!-- Sounds -->
         <div class="card bg-base-100 shadow">
           <div class="card-body">
             <h2 class="card-title">Sounds</h2>
@@ -248,14 +272,10 @@
                 </div>
               </template>
             </div>
-            <div class="mt-3">
-              <input type="file" class="file-input file-input-bordered file-input-sm w-full"
-                     accept=".mp3,.wav,.ogg" @change="uploadFile($event, 'sounds')">
-            </div>
+            <input type="file" class="file-input file-input-bordered file-input-sm w-full mt-3"
+                   accept=".mp3,.wav,.ogg" @change="uploadFile($event, 'sounds')">
           </div>
         </div>
-
-        <!-- Images -->
         <div class="card bg-base-100 shadow">
           <div class="card-body">
             <h2 class="card-title">Bilder</h2>
@@ -267,128 +287,163 @@
                 </div>
               </template>
             </div>
-            <div class="mt-3">
-              <input type="file" class="file-input file-input-bordered file-input-sm w-full"
-                     accept=".png,.jpg,.jpeg,.gif" @change="uploadFile($event, 'images')">
-            </div>
+            <input type="file" class="file-input file-input-bordered file-input-sm w-full mt-3"
+                   accept=".png,.jpg,.jpeg,.gif" @change="uploadFile($event, 'images')">
           </div>
         </div>
       </div>
     </div>
 
-  </div><!-- container -->
+  </div>
 
   <!-- Toast -->
-  <div class="toast" x-show="toast" x-transition>
+  <div class="toast" x-show="toast" x-transition x-cloak>
     <div class="alert" :class="toastType === 'error' ? 'alert-error' : 'alert-success'">
       <span x-text="toast"></span>
     </div>
   </div>
 
-</div><!-- x-data -->
+</div>
 
 <script>
 function funkeykid() {
   return {
     tab: 'letters',
     settings: {},
-    letters: {},
+    sets: {},
+    activeSetId: '',
+    activeSet: null,
     sounds: [],
     images: [],
-    connected: false,
-    toast: '',
-    toastType: 'success',
-    hw: { connected: false, battery_level: null, last_key: null, last_key_at: 0,
-          last_key_ago: '', device_path: null, mqtt_connected: false, volume: 100 },
-    _statusInterval: null,
+    toast: '', toastType: 'success',
+    hw: { connected:false, battery_level:null, last_key:null, last_key_at:0,
+          last_key_ago:'', device_path:null, mqtt_connected:false, volume:100 },
 
-    // Edit modal
+    // Edit state
     editingLetter: null,
-    editWords: '',
-    editSound: '',
-    editImage: '',
+    editEntries: [],
 
-    // Test mode
+    // Test state
     pressedKey: null,
-    lastTestLetter: null,
-    lastTestWord: null,
-    lastTestImage: null,
+    lastTestLetter: null, lastTestWord: null, lastTestImage: null,
 
     async init() {
       await this.refresh();
-      this.connected = true;
-      // Poll keyboard status every 1.5s
-      this._statusInterval = setInterval(() => this.pollStatus(), 1500);
+      setInterval(() => this.pollStatus(), 1500);
       this.pollStatus();
-    },
-
-    async pollStatus() {
-      try {
-        const s = await fetch('/api/status').then(r => r.json());
-        this.hw.connected = s.connected;
-        this.hw.battery_level = s.battery_level;
-        this.hw.last_key = s.last_key;
-        this.hw.last_key_at = s.last_key_at;
-        this.hw.device_path = s.device_path;
-        this.hw.mqtt_connected = s.mqtt_connected;
-        this.hw.volume = s.volume;
-        // Compute "ago" string
-        if (s.last_key_at) {
-          const ago = Math.round((Date.now()/1000) - s.last_key_at);
-          if (ago < 5) this.hw.last_key_ago = 'gerade eben';
-          else if (ago < 60) this.hw.last_key_ago = `vor ${ago}s`;
-          else if (ago < 3600) this.hw.last_key_ago = `vor ${Math.round(ago/60)}min`;
-          else this.hw.last_key_ago = `vor ${Math.round(ago/3600)}h`;
-        }
-      } catch (e) { /* ignore poll errors */ }
     },
 
     async refresh() {
       try {
-        const [s, snd, img] = await Promise.all([
+        const [s, sets, snd, img] = await Promise.all([
           fetch('/api/settings').then(r => r.json()),
+          fetch('/api/sets').then(r => r.json()),
           fetch('/api/sounds').then(r => r.json()),
           fetch('/api/images').then(r => r.json()),
         ]);
         this.settings = s;
-        this.letters = s.letters || {};
+        this.sets = sets;
+        this.activeSetId = s.active_set || Object.keys(sets)[0] || '';
         this.sounds = snd;
         this.images = img;
+        // Load active set detail
+        if (this.activeSetId) {
+          this.activeSet = await fetch(`/api/sets/${this.activeSetId}`).then(r => r.json());
+        }
       } catch (e) {
         this.showToast('Verbindung fehlgeschlagen', 'error');
       }
     },
 
-    randomColor(letter) {
-      const colors = ['#FF0000','#00CC00','#0066FF','#FF6600','#CC00CC','#00CCCC','#FFCC00','#FF3399'];
-      return colors[letter.charCodeAt(0) % colors.length];
+    async pollStatus() {
+      try {
+        const s = await fetch('/api/status').then(r => r.json());
+        Object.assign(this.hw, s);
+        if (s.last_key_at) {
+          const ago = Math.round(Date.now()/1000 - s.last_key_at);
+          this.hw.last_key_ago = ago < 5 ? 'gerade eben' : ago < 60 ? `vor ${ago}s` :
+            ago < 3600 ? `vor ${Math.round(ago/60)}min` : `vor ${Math.round(ago/3600)}h`;
+        }
+      } catch {}
     },
 
+    // ── Letter helpers ──
+    getEntries(letter) {
+      return this.activeSet?.letters?.[letter]?.entries || [];
+    },
+    firstEntry(letter) {
+      return this.getEntries(letter).find(e => e.enabled) || this.getEntries(letter)[0];
+    },
+    randomColor(l) {
+      const c = ['#FF0000','#00CC00','#0066FF','#FF6600','#CC00CC','#00CCCC','#FFCC00','#FF3399'];
+      return c[l.charCodeAt(0) % c.length];
+    },
+
+    // ── Letter editing ──
     editLetter(letter) {
-      const cfg = this.letters[letter] || {};
       this.editingLetter = letter;
-      this.editWords = (cfg.words || []).join(', ');
-      this.editSound = (cfg.sounds || [])[0] || '';
-      this.editImage = cfg.image || '';
+      const entries = this.getEntries(letter);
+      this.editEntries = entries.length ? JSON.parse(JSON.stringify(entries)) :
+        [{ word: '', sound: '', image: '', enabled: true }];
     },
-
     async saveLetter() {
       const letter = this.editingLetter;
-      const data = {
-        words: this.editWords.split(',').map(w => w.trim()).filter(Boolean),
-        sounds: this.editSound ? [this.editSound] : [],
-        image: this.editImage || '',
-      };
-      await fetch(`/api/letters/${letter}`, {
+      await fetch(`/api/sets/${this.activeSetId}/letters/${letter}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(data),
+        body: JSON.stringify({ entries: this.editEntries }),
       });
-      this.letters[letter] = data;
       this.editingLetter = null;
+      await this.refresh();
       this.showToast(`${letter} gespeichert`);
     },
 
+    // ── Sets CRUD ──
+    async activateSet() {
+      await fetch(`/api/sets/${this.activeSetId}/activate`, { method: 'POST' });
+      await this.refresh();
+      this.showToast(`Set "${this.sets[this.activeSetId]?.name}" aktiviert`);
+    },
+    async createSet() {
+      const name = prompt('Name fuer neues Set:');
+      if (!name) return;
+      await fetch('/api/sets', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name }),
+      });
+      await this.refresh();
+      this.showToast(`Set "${name}" erstellt`);
+    },
+    async duplicateSet(sid) {
+      const name = prompt('Name fuer Kopie:', this.sets[sid]?.name + ' (Kopie)');
+      if (!name) return;
+      await fetch('/api/sets', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name, duplicate_from: sid }),
+      });
+      await this.refresh();
+      this.showToast(`Set dupliziert`);
+    },
+    async renameSet(sid) {
+      const name = prompt('Neuer Name:', this.sets[sid]?.name);
+      if (!name) return;
+      await fetch(`/api/sets/${sid}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name }),
+      });
+      await this.refresh();
+    },
+    async deleteSet(sid) {
+      if (!confirm(`Set "${this.sets[sid]?.name}" wirklich loeschen?`)) return;
+      await fetch(`/api/sets/${sid}`, { method: 'DELETE' });
+      await this.refresh();
+      this.showToast('Set geloescht');
+    },
+
+    // ── Settings ──
     async saveSettings() {
       await fetch('/api/settings', {
         method: 'PUT',
@@ -398,43 +453,34 @@ function funkeykid() {
       this.showToast('Einstellungen gespeichert');
     },
 
+    // ── Test mode ──
     async testKey(key) {
       this.pressedKey = key;
       setTimeout(() => this.pressedKey = null, 200);
-
-      if (key === 'SPACE' || key === 'EQUAL' || key === 'MINUS') {
-        await fetch(`/api/test/${key}`, { method: 'POST' });
-        return;
+      if (key !== 'SPACE' && key !== 'EQUAL' && key !== 'MINUS') {
+        const e = this.firstEntry(key);
+        this.lastTestLetter = key;
+        this.lastTestWord = e?.word || key;
+        this.lastTestImage = e?.image || null;
       }
-
-      const cfg = this.letters[key] || {};
-      this.lastTestLetter = key;
-      this.lastTestWord = (cfg.words || [])[0] || key;
-      this.lastTestImage = cfg.image || null;
-
       await fetch(`/api/test/${key}`, { method: 'POST' });
     },
 
-    previewSound(filename) {
-      if (!filename) return;
-      const audio = new Audio(`/sounds/${filename}`);
-      audio.play().catch(() => {});
-    },
-
-    async uploadFile(event, type) {
-      const file = event.target.files[0];
+    // ── Files ──
+    previewSound(f) { if (f) new Audio(`/sounds/${f}`).play().catch(()=>{}); },
+    async uploadFile(ev, type) {
+      const file = ev.target.files[0];
       if (!file) return;
       const form = new FormData();
       form.append('file', file);
       await fetch(`/api/${type}/upload`, { method: 'POST', body: form });
       await this.refresh();
       this.showToast(`${file.name} hochgeladen`);
-      event.target.value = '';
+      ev.target.value = '';
     },
 
-    showToast(msg, type = 'success') {
-      this.toast = msg;
-      this.toastType = type;
+    showToast(msg, type='success') {
+      this.toast = msg; this.toastType = type;
       setTimeout(() => this.toast = '', 3000);
     },
   };

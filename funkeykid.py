@@ -3,7 +3,7 @@
 
 Turns a dedicated Bluetooth keyboard into a learning tool:
 - Plays language-appropriate sounds per letter
-- Shows letters on Pixoo display via MQTT (pidicon-light)
+- Shows letters on Pixoo display via MQTT (pixdcon)
 - Optionally speaks words via TTS (ElevenLabs)
 """
 import evdev
@@ -150,7 +150,7 @@ def mqtt_publish_status(key_name=None, sound_file=None, word=None):
 
 
 def mqtt_publish_display(letter, word, color=None):
-    """Publish letter to Pixoo display via MQTT (pidicon-light picks this up)."""
+    """Publish letter to Pixoo display via MQTT (pixdcon picks this up)."""
     global mqtt_client
     if mqtt_client and mqtt_client.is_connected():
         try:

@@ -5,7 +5,7 @@ Educational keyboard toy for children. Turns a dedicated Bluetooth keyboard into
 ## Features
 
 - **Letter sounds**: Each key plays a language-appropriate sound (A = Apfel, K = Katze, ...)
-- **Pixoo display**: Shows pressed letter on a Pixoo64 LED matrix via pidicon-light MQTT
+- **Pixoo display**: Shows pressed letter on a Pixoo64 LED matrix via pixdcon MQTT
 - **TTS**: Optionally speaks the word ("A wie Apfel") via ElevenLabs
 - **Language packs**: Configurable per language (starting with de-AT)
 - **Mode toggles**: Sound, display, and speak modes independently on/off
@@ -60,7 +60,7 @@ See `lang/de-AT.json` for the format.
 ```
 Keyboard (BT) → evdev → funkeykid.py
                               ├── paplay (sound)
-                              ├── MQTT → pidicon-light → Pixoo64 (display)
+                              ├── MQTT → pixdcon → Pixoo64 (display)
                               └── ElevenLabs API → cached mp3 (TTS)
 ```
 

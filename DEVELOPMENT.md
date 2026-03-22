@@ -37,7 +37,7 @@
                │
                ▼
 ┌─────────────────────────────┐
-│  pidicon-light              │
+│  pixdcon              │
 │  scenes/pixoo/funkeykid.js  │
 │  Renders on Pixoo64 display │
 │  (192.168.1.189)            │
@@ -54,7 +54,7 @@ Physical keyboard (ACME BK03, Bluetooth)
         1. SSE broadcast "rawkey" (ALL keys, even unmapped)
         2. SSE broadcast "keypress" (letter + word + sound + image)
         3. play_sound() → paplay via kiosk PipeWire → speakers
-        4. display.publish_letter() → MQTT → pidicon-light → Pixoo64
+        4. display.publish_letter() → MQTT → pixdcon → Pixoo64
     → Web UI updates instantly via SSE EventSource
 ```
 
@@ -389,21 +389,21 @@ ssh mba@hsb1.lan "cd ~/docker && docker compose pull funkeykid && docker compose
 
 The Dockerfile includes bluez + Pillow. After image pull, these are baked in. Manual `apt-get install` only needed when hotfixing the running container (which uses the old image).
 
-### pidicon-light Scene
+### pixdcon Scene
 
-The funkeykid scene (`scenes/pixoo/funkeykid.js`) in pidicon-light:
+The funkeykid scene (`scenes/pixoo/funkeykid.js`) in pixdcon:
 - Subscribes to `home/hsb1/funkeykid/display` MQTT
 - Loads images from `/app/assets/pixoo/funkeykid/` (host-mounted)
 - Renders: bg image + letter (top-left, shadow) + word (bottom-center, shadow)
 - Idle: shows last bg image after 10s
 - Hot-reloads on file change (ScenesWatcher)
 
-To update images for pidicon-light, copy to both:
+To update images for pixdcon, copy to both:
 ```bash
 # Active images (funkeykid reads these)
 ~/docker/mounts/funkeykid/images/
-# pidicon-light assets (scene reads these)
-~/docker/mounts/pidicon-light/assets/pixoo/funkeykid/
+# pixdcon assets (scene reads these)
+~/docker/mounts/pixdcon/assets/pixoo/funkeykid/
 ```
 
 ---
@@ -473,7 +473,7 @@ Sound and image generation runs in background threads:
 
 1. **Audio null sink**: mba (uid 1000) PipeWire has null sink. ALWAYS use kiosk (uid 1001)
 2. **Docker /dev/input**: BT devices connecting after container start need restart or "Neu verbinden"
-3. **pidicon-light image cache**: `loadPixooImage` caches forever — restart pidicon-light for new images
+3. **pixdcon image cache**: `loadPixooImage` caches forever — restart pixdcon for new images
 4. **Umlaut filenames**: NEVER use ä/ö/ü in filenames → use ae/oe/ue
 5. **Hotfix volatility**: `docker cp` changes lost on image pull — always commit+push
 6. **Startup sounds**: 3s grace period prevents stale BT events at container restart

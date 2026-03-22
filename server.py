@@ -163,6 +163,14 @@ async def api_put_settings(request):
     return web.json_response({"ok": True})
 
 
+async def api_get_status(request):
+    """Live keyboard status — polled by web UI every 1-2s."""
+    status = keyboard.get_status() if keyboard else {"connected": False}
+    status["volume"] = current_volume
+    status["mqtt_connected"] = display._mqtt_connected if display else False
+    return web.json_response(status)
+
+
 async def api_get_letters(request):
     return web.json_response(settings.get("letters", {}))
 
@@ -264,6 +272,7 @@ async def serve_index(request):
 def create_app():
     app = web.Application()
     # API
+    app.router.add_get("/api/status", api_get_status)
     app.router.add_get("/api/settings", api_get_settings)
     app.router.add_put("/api/settings", api_put_settings)
     app.router.add_get("/api/letters", api_get_letters)

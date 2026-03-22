@@ -25,10 +25,31 @@
       <span class="text-xl font-bold px-4">funkeykid</span>
       <span class="badge badge-sm badge-ghost" x-text="Object.keys(letters).length + ' Buchstaben'"></span>
     </div>
-    <div class="flex-none gap-2">
-      <div class="badge badge-lg" :class="connected ? 'badge-success' : 'badge-error'"
-           x-text="connected ? 'Online' : 'Offline'"></div>
+    <div class="flex-none gap-2 pr-4">
+      <!-- Keyboard status -->
+      <div class="flex items-center gap-1.5">
+        <div class="w-2 h-2 rounded-full" :class="hw.connected ? 'bg-success animate-pulse' : 'bg-error'"></div>
+        <span class="text-xs opacity-70" x-text="hw.connected ? 'Tastatur verbunden' : 'Tastatur getrennt'"></span>
+      </div>
+      <!-- Battery -->
+      <div class="badge badge-sm" x-show="hw.battery_level !== null"
+           :class="hw.battery_level > 20 ? 'badge-success' : 'badge-warning'"
+           x-text="'🔋 ' + hw.battery_level + '%'"></div>
+      <!-- MQTT -->
+      <div class="badge badge-sm" :class="hw.mqtt_connected ? 'badge-info' : 'badge-error'"
+           x-text="hw.mqtt_connected ? 'MQTT' : 'MQTT ✗'"></div>
+      <!-- Volume -->
+      <div class="badge badge-sm badge-ghost" x-text="'🔊 ' + hw.volume + '%'"></div>
     </div>
+  </div>
+
+  <!-- Live status bar -->
+  <div class="bg-base-300 px-4 py-1.5 flex items-center gap-4 text-xs border-b border-base-content/10"
+       x-show="hw.last_key">
+    <span class="opacity-50">Letzte Taste:</span>
+    <span class="font-bold text-primary text-sm" x-text="hw.last_key"></span>
+    <span class="opacity-50" x-text="hw.last_key_ago"></span>
+    <span class="opacity-30 ml-auto" x-text="hw.device_path || ''"></span>
   </div>
 
   <!-- Tabs -->
@@ -277,6 +298,9 @@ function funkeykid() {
     connected: false,
     toast: '',
     toastType: 'success',
+    hw: { connected: false, battery_level: null, last_key: null, last_key_at: 0,
+          last_key_ago: '', device_path: null, mqtt_connected: false, volume: 100 },
+    _statusInterval: null,
 
     // Edit modal
     editingLetter: null,
@@ -293,6 +317,30 @@ function funkeykid() {
     async init() {
       await this.refresh();
       this.connected = true;
+      // Poll keyboard status every 1.5s
+      this._statusInterval = setInterval(() => this.pollStatus(), 1500);
+      this.pollStatus();
+    },
+
+    async pollStatus() {
+      try {
+        const s = await fetch('/api/status').then(r => r.json());
+        this.hw.connected = s.connected;
+        this.hw.battery_level = s.battery_level;
+        this.hw.last_key = s.last_key;
+        this.hw.last_key_at = s.last_key_at;
+        this.hw.device_path = s.device_path;
+        this.hw.mqtt_connected = s.mqtt_connected;
+        this.hw.volume = s.volume;
+        // Compute "ago" string
+        if (s.last_key_at) {
+          const ago = Math.round((Date.now()/1000) - s.last_key_at);
+          if (ago < 5) this.hw.last_key_ago = 'gerade eben';
+          else if (ago < 60) this.hw.last_key_ago = `vor ${ago}s`;
+          else if (ago < 3600) this.hw.last_key_ago = `vor ${Math.round(ago/60)}min`;
+          else this.hw.last_key_ago = `vor ${Math.round(ago/3600)}h`;
+        }
+      } catch (e) { /* ignore poll errors */ }
     },
 
     async refresh() {

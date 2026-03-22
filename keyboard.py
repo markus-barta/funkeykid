@@ -1,8 +1,10 @@
 """Keyboard listener — evdev event loop with layout mapping."""
 import evdev
+import glob
+import os
+import random
 import time
 import threading
-import os
 
 
 # Keyboard layouts: scancode → letter translation
@@ -31,6 +33,13 @@ class KeyboardListener:
         self._callback = None
         self._running = False
         self._thread = None
+        # Live status
+        self.connected = False
+        self.device_path = None
+        self.last_key = None
+        self.last_key_at = 0
+        self.battery_level = None
+        self._device = None
 
     def on_key(self, callback):
         """Register callback: callback(key_name: str)"""
@@ -72,16 +81,60 @@ class KeyboardListener:
         self._last_any_key_time = now
         return True
 
+    def _read_battery(self, device):
+        """Try to read battery level from sysfs for BT HID devices."""
+        try:
+            # Check common sysfs paths for BT device battery
+            import glob
+            patterns = [
+                "/sys/class/power_supply/hid-*",
+                "/sys/class/power_supply/*BK03*",
+            ]
+            for pattern in patterns:
+                for path in glob.glob(pattern):
+                    cap_file = os.path.join(path, "capacity")
+                    if os.path.exists(cap_file):
+                        with open(cap_file) as f:
+                            return int(f.read().strip())
+            # Also try device-specific path
+            if hasattr(device, 'info'):
+                bt_path = f"/sys/class/power_supply/hid-{device.info.bustype:02x}:{device.info.vendor:04x}:{device.info.product:04x}.*/capacity"
+                for cap_file in glob.glob(bt_path):
+                    with open(cap_file) as f:
+                        return int(f.read().strip())
+        except Exception:
+            pass
+        return None
+
+    def get_status(self):
+        """Return current keyboard status for the web UI."""
+        return {
+            "connected": self.connected,
+            "device_name": self.device_name,
+            "device_path": self.device_path,
+            "last_key": self.last_key,
+            "last_key_at": self.last_key_at,
+            "battery_level": self.battery_level,
+        }
+
     def _run(self):
         """Main event loop — retry on disconnect."""
         while self._running:
             device = self._find_device()
             if not device:
+                self.connected = False
+                self.device_path = None
+                self._device = None
                 print(f"[keyboard] Waiting for '{self.device_name}'...", flush=True)
                 time.sleep(5)
                 continue
 
-            print(f"[keyboard] Opened: {device.name} at {device.path}", flush=True)
+            self._device = device
+            self.connected = True
+            self.device_path = device.path
+            self.battery_level = self._read_battery(device)
+            print(f"[keyboard] Opened: {device.name} at {device.path} (battery={self.battery_level})", flush=True)
+
             try:
                 for event in device.read_loop():
                     if not self._running:
@@ -101,11 +154,22 @@ class KeyboardListener:
                     # Apply layout
                     key = self._translate_key(raw)
 
+                    # Track for status
+                    self.last_key = key
+                    self.last_key_at = time.time()
+
+                    # Refresh battery periodically (every ~60 key presses)
+                    if random.random() < 0.02:
+                        self.battery_level = self._read_battery(device)
+
                     if self._should_process(key) and self._callback:
                         self._callback(key)
 
             except (OSError, Exception) as e:
                 print(f"[keyboard] Device error: {e}", flush=True)
+                self.connected = False
+                self.device_path = None
+                self._device = None
                 time.sleep(5)
 
     def simulate_key(self, key_name):

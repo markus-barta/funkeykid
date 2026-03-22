@@ -7,6 +7,7 @@
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
   <script src="https://cdn.tailwindcss.com"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/style.css" rel="stylesheet">
   <style>
     .kbd-key { min-width: 2.5rem; min-height: 2.5rem; cursor: pointer; transition: all 0.1s; }
     .kbd-key:active, .kbd-key.pressed { transform: scale(0.92); background: oklch(var(--p)); color: oklch(var(--pc)); }
@@ -67,7 +68,7 @@
     </template>
     <span x-show="!hw.last_key && !hw.searching" class="opacity-30 italic">Noch keine Taste gedrückt</span>
     <div class="ml-auto flex items-center gap-2">
-      <button class="btn btn-xs btn-error btn-outline" @click="stopAll()" title="Alles stoppen ■">Stop</button>
+      <button class="btn btn-xs btn-error btn-outline gap-1" @click="stopAll()" title="Alles stoppen"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z"/></svg>Stop</button>
       <span class="opacity-30" x-text="hw.device_path || ''"></span>
     </div>
   </div>
@@ -120,7 +121,7 @@
     <span class="font-bold text-accent">KI-Generierung</span>
     <template x-for="job in Object.values(genJobs).filter(j => j.status !== 'done')" :key="job.id">
       <span class="badge badge-xs" :class="job.status === 'error' ? 'badge-error' : 'badge-accent'"
-            x-text="(job.type === 'sound' ? '🔊' : '🖼️') + ' ' + job.word + ': ' + ({queued:'Wartend',generating:'Generiere...',error:'Fehler'}[job.status] || job.status)"></span>
+            x-text="(job.type === 'sound' ? 'Sound: ' : 'Bild: ') + job.word + ': ' + ({queued:'Wartend',generating:'Generiere...',error:'Fehler'}[job.status] || job.status)"></span>
     </template>
   </div>
 
@@ -175,8 +176,7 @@
                          :title="entry.enabled ? 'Aktiv' : 'Deaktiviert'">
                   <input type="text" class="input input-sm input-bordered flex-1 font-bold" x-model="entry.word"
                          placeholder="Wort eingeben...">
-                  <button class="btn btn-xs btn-ghost opacity-40 hover:opacity-100"
-                          @click="archiveEntry(idx)" title="Archivieren">📦</button>
+                  <button class="btn btn-xs btn-ghost opacity-40 hover:opacity-100" @click="archiveEntry(idx)" title="Archivieren"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/></svg></button>
                   <button class="btn btn-xs btn-error btn-outline" @click="editEntries.splice(idx, 1)"
                           title="Löschen">✕</button>
                 </div>
@@ -205,8 +205,7 @@
                           </template>
                         </div>
                       </div>
-                      <button class="btn btn-xs btn-ghost" @click="previewSound(entry.sound)"
-                              :disabled="!entry.sound" title="Abspielen">▶</button>
+                      <button class="btn btn-xs btn-ghost" @click="previewSound(entry.sound)" :disabled="!entry.sound" title="Abspielen"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg></button>
                     </div>
                   </div>
                   <div>
@@ -243,15 +242,16 @@
                   <button class="btn btn-xs btn-accent btn-outline flex-1"
                           @click="generateSound(entry, idx)" :disabled="!entry.word || entry._genSound">
                     <span x-show="entry._genSound" class="loading loading-spinner loading-xs"></span>
-                    <span x-text="entry._genSound ? 'Generiere...' : '🔊 Sound'"></span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z"/></svg>
+                    <span x-text="entry._genSound ? 'Generiere...' : 'Sound neu'"></span>
                   </button>
                   <button class="btn btn-xs btn-accent btn-outline flex-1"
                           @click="generateImage(entry, idx)" :disabled="!entry.word || entry._genImg">
                     <span x-show="entry._genImg" class="loading loading-spinner loading-xs"></span>
-                    <span x-text="entry._genImg ? 'Generiere...' : '🖼️ Bild'"></span>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z"/></svg>
+                    <span x-text="entry._genImg ? 'Generiere...' : 'Bild neu'"></span>
                   </button>
-                  <button class="btn btn-xs btn-ghost opacity-40" @click="entry._genExtra = entry._genExtra === undefined ? '' : undefined"
-                          title="KI-Anweisungen">⚙️</button>
+                  <button class="btn btn-xs btn-ghost opacity-40" @click="entry._genExtra = entry._genExtra === undefined ? '' : undefined" title="KI-Anweisungen"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg></button>
                 </div>
                 <div x-show="entry._genExtra !== undefined" x-transition class="mt-1">
                   <input type="text" class="input input-xs input-bordered w-full" x-model="entry._genExtra"
@@ -272,12 +272,13 @@
           <div class="flex gap-2 mt-3">
             <button class="btn btn-sm btn-outline btn-primary flex-1"
                     @click="editEntries.push({word:'', sound:'', image:'', enabled:true})">
-              + Manuell hinzufügen
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg> Manuell
             </button>
             <button class="btn btn-sm btn-accent flex-1"
                     @click="suggestWord()" :disabled="_suggesting">
               <span x-show="_suggesting" class="loading loading-spinner loading-xs"></span>
-              <span x-text="_suggesting ? 'KI denkt...' : '✨ KI-Vorschlag'"></span>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"/></svg>
+              <span x-text="_suggesting ? 'KI denkt...' : 'KI-Vorschlag'"></span>
             </button>
           </div>
 
@@ -557,7 +558,7 @@ function funkeykid() {
         this.genJobs[d.id] = d;
         // Auto-refresh file lists when generation completes
         if (d.status === 'done') {
-          this.showToast((d.type === 'sound' ? '🔊' : '🖼️') + ' ' + d.word + ' fertig ✓');
+          this.showToast((d.type === 'sound' ? 'Sound' : 'Bild') + ' "' + d.word + '" fertig ✓');
           this.sounds = fetch('/api/sounds').then(r => r.json()).then(s => this.sounds = s);
           this.images = fetch('/api/images').then(r => r.json()).then(s => this.images = s);
         } else if (d.status === 'error') {

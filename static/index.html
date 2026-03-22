@@ -945,8 +945,9 @@ function funkeykid() {
     _nextFilename(base, ext, existing) {
       const first = `${base}.${ext}`;
       if (!existing.includes(first)) return first;
-      for (let n = 2; n < 100; n++) {
-        const name = `${base}_${n}.${ext}`;
+      const pad = n => String(n).padStart(3, '0');
+      for (let n = 2; n < 1000; n++) {
+        const name = `${base}_${pad(n)}.${ext}`;
         if (!existing.includes(name)) return name;
       }
       return `${base}_${Date.now()}.${ext}`;

@@ -376,7 +376,7 @@ async def api_put_settings(request):
     data = await request.json()
     # Only update top-level config keys, not sets (those have own endpoints)
     for k in ("keyboard_layout", "keyboard_device", "volume", "random_sounds_enabled",
-              "display_mode", "pixoo_ip", "debounce_seconds", "active_set", "mqtt"):
+              "display_mode", "pixoo_ip", "debounce_seconds", "active_set", "mqtt", "ai_prompts"):
         if k in data:
             settings[k] = data[k]
     save_settings()
@@ -624,8 +624,16 @@ AI_SOUNDS_DIR = os.path.join(AI_DIR, "sounds")
 AI_IMAGES_ORIG_DIR = os.path.join(AI_DIR, "images-original")
 AI_IMAGES_RESIZED_DIR = os.path.join(AI_DIR, "images-resized")
 
-DEFAULT_SOUND_PROMPT = "Clear, distinct {word} sound effect, high quality, recognizable for children"
-DEFAULT_IMAGE_PROMPT = "Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children's animation style."
+FALLBACK_SOUND_PROMPT = "Clear, distinct {word} sound effect, high quality, recognizable for children"
+FALLBACK_IMAGE_PROMPT = "Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children's animation style."
+
+
+def _get_sound_prompt():
+    return settings.get("ai_prompts", {}).get("sound", FALLBACK_SOUND_PROMPT)
+
+
+def _get_image_prompt():
+    return settings.get("ai_prompts", {}).get("image", FALLBACK_IMAGE_PROMPT)
 
 
 def _gen_sound_worker(job_id, word, prompt, duration, filename):
@@ -657,7 +665,7 @@ async def api_generate_sound(request):
     """Start async sound generation — returns job ID immediately."""
     data = await request.json()
     word = data.get("word", "")
-    prompt = data.get("prompt", DEFAULT_SOUND_PROMPT.format(word=word))
+    prompt = data.get("prompt", _get_sound_prompt().format(word=word))
     duration = data.get("duration", 4)
     filename = data.get("filename", _slugify(word) + ".mp3")
     if not os.environ.get("ELEVENLABS_API_KEY"):
@@ -718,7 +726,7 @@ async def api_generate_image(request):
     data = await request.json()
     word = data.get("word", "")
     description = data.get("description", word)
-    prompt = data.get("prompt", DEFAULT_IMAGE_PROMPT.format(description=description))
+    prompt = data.get("prompt", _get_image_prompt().format(description=description))
     filename = data.get("filename", _slugify(word) + ".png")
     if not os.environ.get("OPENROUTER_API_KEY"):
         return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)

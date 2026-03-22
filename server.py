@@ -190,19 +190,29 @@ def handle_key(key_name):
     print(f"[key] {key_name} → {word} (sound={sound}, image={image})", flush=True)
 
     # Broadcast to web UI via SSE
-    sse_broadcast("keypress", {
-        "letter": key_name, "word": word, "sound": sound, "image": image,
-        "entry_index": cycle_index.get(key_name, 0),
-        "timestamp": time.time(),
-    })
+    try:
+        sse_broadcast("keypress", {
+            "letter": key_name, "word": word, "sound": sound, "image": image,
+            "entry_index": cycle_index.get(key_name, 0),
+            "timestamp": time.time(),
+        })
+    except Exception as e:
+        print(f"[sse] broadcast error: {e}", flush=True)
 
     # Play sound
     if sound:
-        play_sound(os.path.join(SOUNDS_DIR, sound))
+        sound_path = os.path.join(SOUNDS_DIR, sound)
+        print(f"[key] Playing: {sound_path}", flush=True)
+        play_sound(sound_path)
+    else:
+        print(f"[key] No sound for {key_name}", flush=True)
 
     # Display
     if display:
+        print(f"[key] Publishing to display (mqtt={display._mqtt_connected})", flush=True)
         display.publish_letter(key_name, word, image)
+    else:
+        print("[key] WARNING: display is None", flush=True)
 
 
 # ── SSE (Server-Sent Events) ──────────────────────────────────────────────────
@@ -607,10 +617,18 @@ def main():
     print(f"[funkeykid] Web UI: http://0.0.0.0:{PORT}", flush=True)
 
     # Capture the event loop for thread-safe SSE broadcasts
-    global _loop
-    _loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(_loop)
-    web.run_app(app, host="0.0.0.0", port=PORT, print=None, loop=_loop)
+    async def start_app():
+        global _loop
+        _loop = asyncio.get_event_loop()
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", PORT)
+        await site.start()
+        print(f"[funkeykid] Server running on http://0.0.0.0:{PORT}", flush=True)
+        # Keep running forever
+        await asyncio.Event().wait()
+
+    asyncio.run(start_app())
 
 
 if __name__ == "__main__":

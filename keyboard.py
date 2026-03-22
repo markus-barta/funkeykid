@@ -118,7 +118,65 @@ class KeyboardListener:
             "last_key": self.last_key,
             "last_key_at": self.last_key_at,
             "battery_level": self.battery_level,
+            "searching": self._running and not self.connected,
         }
+
+    def get_diagnostics(self):
+        """Return detailed diagnostics for troubleshooting."""
+        import subprocess
+        diag = {
+            "evdev_devices": [],
+            "bluetooth": {},
+            "logs": [],
+        }
+
+        # List all visible input devices
+        try:
+            for path in evdev.list_devices():
+                try:
+                    dev = evdev.InputDevice(path)
+                    diag["evdev_devices"].append({
+                        "path": dev.path,
+                        "name": dev.name,
+                        "phys": getattr(dev, "phys", ""),
+                        "uniq": getattr(dev, "uniq", ""),
+                    })
+                except (OSError, FileNotFoundError):
+                    pass
+        except Exception as e:
+            diag["logs"].append(f"evdev scan error: {e}")
+
+        # Try bluetoothctl info (may not be available in container)
+        try:
+            result = subprocess.run(
+                ["bluetoothctl", "info", "20:73:00:04:21:4F"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                for line in result.stdout.strip().split("\n"):
+                    line = line.strip()
+                    if ":" in line:
+                        k, _, v = line.partition(":")
+                        diag["bluetooth"][k.strip()] = v.strip()
+            else:
+                diag["logs"].append("bluetoothctl not available in container")
+        except FileNotFoundError:
+            diag["logs"].append("bluetoothctl not installed in container")
+        except Exception as e:
+            diag["logs"].append(f"bluetoothctl error: {e}")
+
+        # Check /dev/input contents vs host
+        try:
+            dev_files = sorted(os.listdir("/dev/input"))
+            diag["dev_input_files"] = dev_files
+        except Exception as e:
+            diag["logs"].append(f"/dev/input error: {e}")
+
+        diag["logs"].append(f"Thread alive: {self._thread.is_alive() if self._thread else False}")
+        diag["logs"].append(f"Running flag: {self._running}")
+        diag["logs"].append(f"Layout: {self.layout}")
+
+        return diag
 
     def _run(self):
         """Main event loop — retry on disconnect. Never exits unless stopped."""

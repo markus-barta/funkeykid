@@ -202,6 +202,23 @@ async def api_get_status(request):
     return web.json_response(status)
 
 
+async def api_get_diagnostics(request):
+    """Detailed keyboard + BT diagnostics for troubleshooting."""
+    diag = keyboard.get_diagnostics() if keyboard else {"error": "no keyboard listener"}
+    return web.json_response(diag)
+
+
+async def api_reconnect_keyboard(request):
+    """Restart the keyboard listener thread to pick up newly connected devices."""
+    global keyboard
+    if keyboard:
+        keyboard.stop()
+        time.sleep(1)
+        keyboard.start()
+        return web.json_response({"ok": True, "message": "Keyboard listener restarted"})
+    return web.json_response({"error": "No keyboard listener"}, status=500)
+
+
 async def api_get_settings(request):
     return web.json_response(settings)
 
@@ -467,6 +484,8 @@ def create_app():
     app = web.Application()
     # Status
     app.router.add_get("/api/status", api_get_status)
+    app.router.add_get("/api/diagnostics", api_get_diagnostics)
+    app.router.add_post("/api/reconnect", api_reconnect_keyboard)
     # Settings
     app.router.add_get("/api/settings", api_get_settings)
     app.router.add_put("/api/settings", api_put_settings)

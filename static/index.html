@@ -32,12 +32,14 @@
       </select>
     </div>
     <div class="flex-none gap-2 pr-4">
-      <div class="flex items-center gap-1.5">
-        <div class="w-2 h-2 rounded-full" :class="hw.connected ? 'bg-success animate-pulse' : 'bg-error'"></div>
-        <span class="text-xs opacity-70" x-text="hw.connected ? 'Tastatur' : 'Getrennt'"></span>
-      </div>
+      <button class="flex items-center gap-1.5 btn btn-ghost btn-xs" @click="showDiag = !showDiag">
+        <div class="w-2.5 h-2.5 rounded-full"
+             :class="hw.connected ? 'bg-success' : hw.searching ? 'bg-warning animate-pulse' : 'bg-error'"></div>
+        <span class="text-xs"
+              x-text="hw.connected ? 'Tastatur' : hw.searching ? 'Suche...' : 'Getrennt'"></span>
+      </button>
       <div class="badge badge-sm" x-show="hw.battery_level !== null"
-           :class="hw.battery_level > 20 ? 'badge-success' : 'badge-warning'"
+           :class="hw.battery_level > 20 ? 'badge-success' : hw.battery_level > 5 ? 'badge-warning' : 'badge-error'"
            x-text="hw.battery_level + '%'"></div>
       <div class="badge badge-sm" :class="hw.mqtt_connected ? 'badge-info' : 'badge-error'"
            x-text="hw.mqtt_connected ? 'MQTT' : 'MQTT ✗'"></div>
@@ -47,11 +49,62 @@
 
   <!-- Live status bar -->
   <div class="bg-base-300 px-4 py-1 flex items-center gap-4 text-xs border-b border-base-content/10"
-       x-show="hw.last_key">
-    <span class="opacity-50">Letzte Taste:</span>
-    <span class="font-bold text-primary" x-text="hw.last_key"></span>
-    <span class="opacity-50" x-text="hw.last_key_ago"></span>
+       x-show="hw.last_key || hw.searching">
+    <template x-if="hw.last_key">
+      <div class="flex items-center gap-4">
+        <span class="opacity-50">Letzte Taste:</span>
+        <span class="font-bold text-primary" x-text="hw.last_key"></span>
+        <span class="opacity-50" x-text="hw.last_key_ago"></span>
+      </div>
+    </template>
+    <template x-if="hw.searching && !hw.connected">
+      <div class="flex items-center gap-2">
+        <span class="loading loading-dots loading-xs"></span>
+        <span class="opacity-60">Suche nach Tastatur &laquo;<span x-text="hw.device_name"></span>&raquo;...</span>
+      </div>
+    </template>
     <span class="opacity-30 ml-auto" x-text="hw.device_path || ''"></span>
+  </div>
+
+  <!-- Diagnostics Panel -->
+  <div x-show="showDiag" x-cloak x-transition class="bg-base-300 border-b border-base-content/10 px-4 py-3">
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="font-bold text-sm">Tastatur-Diagnose</h3>
+      <div class="flex gap-2">
+        <button class="btn btn-xs btn-warning" @click="reconnectKeyboard()">Neu verbinden</button>
+        <button class="btn btn-xs btn-ghost" @click="loadDiagnostics()">Aktualisieren</button>
+        <button class="btn btn-xs btn-ghost" @click="showDiag=false">✕</button>
+      </div>
+    </div>
+    <div class="grid md:grid-cols-3 gap-3 text-xs">
+      <div class="bg-base-100 rounded p-2">
+        <div class="font-bold mb-1 opacity-60">Eingabegeraete</div>
+        <template x-for="d in (diag.evdev_devices||[])" :key="d.path">
+          <div class="py-0.5" :class="d.name === hw.device_name ? 'text-success font-bold' : 'opacity-50'">
+            <span x-text="d.path"></span>: <span x-text="d.name"></span>
+          </div>
+        </template>
+        <div class="opacity-30 mt-1" x-text="'/dev/input: ' + (diag.dev_input_files?.length || '?') + ' Dateien'"></div>
+      </div>
+      <div class="bg-base-100 rounded p-2">
+        <div class="font-bold mb-1 opacity-60">Bluetooth</div>
+        <template x-for="(v, k) in (diag.bluetooth||{})" :key="k">
+          <div class="py-0.5">
+            <span class="opacity-50" x-text="k"></span>: <span x-text="v"
+              :class="k==='Connected'?(v==='yes'?'text-success':'text-error'):''"></span>
+          </div>
+        </template>
+        <div x-show="!diag.bluetooth||!Object.keys(diag.bluetooth||{}).length" class="opacity-40 italic">
+          BT-Info nicht im Container verfuegbar
+        </div>
+      </div>
+      <div class="bg-base-100 rounded p-2">
+        <div class="font-bold mb-1 opacity-60">System</div>
+        <template x-for="(log, i) in (diag.logs||[])" :key="i">
+          <div class="py-0.5 opacity-70" x-text="log"></div>
+        </template>
+      </div>
+    </div>
   </div>
 
   <!-- Tabs -->
@@ -317,7 +370,10 @@ function funkeykid() {
     images: [],
     toast: '', toastType: 'success',
     hw: { connected:false, battery_level:null, last_key:null, last_key_at:0,
-          last_key_ago:'', device_path:null, mqtt_connected:false, volume:100 },
+          last_key_ago:'', device_path:null, device_name:'', mqtt_connected:false,
+          volume:100, searching:false },
+    showDiag: false,
+    diag: {},
 
     // Edit state
     editingLetter: null,
@@ -364,7 +420,30 @@ function funkeykid() {
           this.hw.last_key_ago = ago < 5 ? 'gerade eben' : ago < 60 ? `vor ${ago}s` :
             ago < 3600 ? `vor ${Math.round(ago/60)}min` : `vor ${Math.round(ago/3600)}h`;
         }
+        // Auto-load diag if panel is open
+        if (this.showDiag && !this._diagLoading) this.loadDiagnostics();
       } catch {}
+    },
+
+    async loadDiagnostics() {
+      this._diagLoading = true;
+      try {
+        this.diag = await fetch('/api/diagnostics').then(r => r.json());
+      } catch (e) {
+        this.diag = { logs: ['Fehler: ' + e.message] };
+      }
+      this._diagLoading = false;
+    },
+
+    async reconnectKeyboard() {
+      this.showToast('Tastatur wird neu verbunden...', 'success');
+      try {
+        const r = await fetch('/api/reconnect', { method: 'POST' }).then(r => r.json());
+        this.showToast(r.message || r.error || 'Fertig');
+        setTimeout(() => this.loadDiagnostics(), 2000);
+      } catch (e) {
+        this.showToast('Fehler: ' + e.message, 'error');
+      }
     },
 
     // ── Letter helpers ──

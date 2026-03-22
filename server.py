@@ -31,6 +31,8 @@ keyboard = None
 display = None
 active_processes = []
 current_volume = 100
+startup_time = time.time()
+STARTUP_GRACE_SECONDS = 3  # Ignore keypresses for 3s after start (prevents stale BT events)
 # Per-letter cycling state: {letter: index}
 cycle_index = {}
 last_letter = None
@@ -157,6 +159,10 @@ def change_volume(delta):
 def handle_key(key_name):
     """Handle a key press — cycles through enabled entries per letter."""
     global last_letter, cycle_index
+    # Ignore stale keypresses right after startup/restart
+    if time.time() - startup_time < STARTUP_GRACE_SECONDS:
+        print(f"[key] Ignored {key_name} (startup grace period)", flush=True)
+        return
     print(f"[key] handle_key({key_name})", flush=True)
 
     # Space = stop

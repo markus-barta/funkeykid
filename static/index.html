@@ -47,23 +47,26 @@
     </div>
   </div>
 
-  <!-- Live status bar -->
-  <div class="bg-base-300 px-4 py-1 flex items-center gap-4 text-xs border-b border-base-content/10"
-       x-show="hw.last_key || hw.searching">
-    <template x-if="hw.last_key">
-      <div class="flex items-center gap-4">
-        <span class="opacity-50">Letzte Taste:</span>
-        <span class="font-bold text-primary" x-text="hw.last_key"></span>
-        <span class="opacity-50" x-text="hw.last_key_ago"></span>
-      </div>
-    </template>
+  <!-- Live status bar (always visible) -->
+  <div class="bg-base-300 px-4 py-1 flex items-center gap-4 text-xs border-b border-base-content/10">
     <template x-if="hw.searching && !hw.connected">
       <div class="flex items-center gap-2">
         <span class="loading loading-dots loading-xs"></span>
         <span class="opacity-60">Suche nach Tastatur &laquo;<span x-text="hw.device_name"></span>&raquo;...</span>
       </div>
     </template>
-    <span class="opacity-30 ml-auto" x-text="hw.device_path || ''"></span>
+    <template x-if="hw.last_key">
+      <div class="flex items-center gap-4">
+        <span class="opacity-50">Letzte Taste:</span>
+        <span class="font-bold text-primary text-sm" x-text="hw.last_key"></span>
+        <span class="opacity-50" x-text="hw.last_key_ago"></span>
+      </div>
+    </template>
+    <span x-show="!hw.last_key && !hw.searching" class="opacity-30 italic">Noch keine Taste gedrueckt</span>
+    <div class="ml-auto flex items-center gap-2">
+      <button class="btn btn-xs btn-error btn-outline" @click="stopAll()" title="Alles stoppen">Stop</button>
+      <span class="opacity-30" x-text="hw.device_path || ''"></span>
+    </div>
   </div>
 
   <!-- Diagnostics Panel -->
@@ -320,7 +323,7 @@
             <div class="overflow-y-auto max-h-64">
               <template x-for="s in sounds" :key="s">
                 <div class="flex items-center gap-2 py-1">
-                  <button class="btn btn-xs btn-ghost" @click="previewSound(s)">&#9654;</button>
+                  <button class="btn btn-xs btn-ghost" @click="_previewAudio ? stopPreview() : previewSound(s)" x-text="_previewAudio ? '&#9724;' : '&#9654;'"></button>
                   <span class="text-sm" x-text="s"></span>
                 </div>
               </template>
@@ -589,7 +592,26 @@ function funkeykid() {
     },
 
     // ── Files ──
-    previewSound(f) { if (f) new Audio(`/sounds/${f}`).play().catch(()=>{}); },
+    _previewAudio: null,
+    previewSound(f) {
+      this.stopPreview();
+      if (f) {
+        this._previewAudio = new Audio(`/sounds/${f}`);
+        this._previewAudio.play().catch(()=>{});
+      }
+    },
+    stopPreview() {
+      if (this._previewAudio) {
+        this._previewAudio.pause();
+        this._previewAudio.currentTime = 0;
+        this._previewAudio = null;
+      }
+    },
+    async stopAll() {
+      this.stopPreview();
+      await fetch('/api/test/SPACE', { method: 'POST' });
+      this.showToast('Playback gestoppt');
+    },
     async uploadFile(ev, type) {
       const file = ev.target.files[0];
       if (!file) return;

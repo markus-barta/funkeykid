@@ -166,6 +166,8 @@
                 <div class="flex gap-2">
                   <select class="select select-xs select-bordered flex-1" x-model="entry.sound">
                     <option value="">kein Sound</option>
+                    <option x-show="entry.sound && !sounds.includes(entry.sound)"
+                            :value="entry.sound" x-text="entry.sound + ' ⚠️'" selected></option>
                     <template x-for="s in sounds" :key="s">
                       <option :value="s" x-text="s"></option>
                     </template>
@@ -173,6 +175,8 @@
                   <button class="btn btn-xs btn-ghost" @click="previewSound(entry.sound)">&#9654;</button>
                   <select class="select select-xs select-bordered flex-1" x-model="entry.image">
                     <option value="">kein Bild</option>
+                    <option x-show="entry.image && !images.includes(entry.image)"
+                            :value="entry.image" x-text="entry.image + ' ⚠️'" selected></option>
                     <template x-for="img in images" :key="img">
                       <option :value="img" x-text="img"></option>
                     </template>
@@ -516,7 +520,14 @@ function funkeykid() {
     },
 
     // ── Letter editing ──
-    editLetter(letter) {
+    async editLetter(letter) {
+      // Refresh file lists before editing to ensure dropdowns are current
+      const [snd, img] = await Promise.all([
+        fetch('/api/sounds').then(r => r.json()),
+        fetch('/api/images').then(r => r.json()),
+      ]);
+      this.sounds = snd;
+      this.images = img;
       this.editingLetter = letter;
       const entries = this.getEntries(letter);
       this.editEntries = entries.length ? JSON.parse(JSON.stringify(entries)) :

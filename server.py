@@ -100,6 +100,7 @@ def handle_key(key_name):
     # Letter lookup
     letters = settings.get("letters", {})
     letter_cfg = letters.get(key_name)
+    print(f"[key] letter_cfg for {key_name}: {'found' if letter_cfg else 'NOT FOUND'}", flush=True)
 
     if not letter_cfg:
         if settings.get("random_sounds_enabled"):
@@ -129,11 +130,15 @@ def handle_key(key_name):
     sounds = letter_cfg.get("sounds", [])
     if sounds:
         sound_file = os.path.join(SOUNDS_DIR, sounds[0])
+        print(f"[key] Playing: {sound_file}", flush=True)
         play_sound(sound_file)
 
     # Display
     if display:
+        print(f"[key] Publishing: {key_name} → {word} (mqtt_connected={display._mqtt_connected})", flush=True)
         display.publish_letter(key_name, word, image)
+    else:
+        print("[key] WARNING: display is None!", flush=True)
         display.log(f"Key: {key_name} → {word}")
 
 

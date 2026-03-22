@@ -1,5 +1,6 @@
 """Display output — MQTT publish and optional direct Pixoo HTTP."""
 import json
+import os
 import time
 import random
 import base64
@@ -34,10 +35,10 @@ class Display:
             return
 
         mqtt_cfg = self.settings.get("mqtt", {})
-        host = mqtt_cfg.get("host", "localhost")
+        host = mqtt_cfg.get("host") or os.environ.get("MOSQITTO_HOST_HSB1", "localhost")
         port = mqtt_cfg.get("port", 1883)
-        user = mqtt_cfg.get("user", "smarthome")
-        password = mqtt_cfg.get("password") or None
+        user = mqtt_cfg.get("user") or os.environ.get("MOSQITTO_USER_HSB1", "smarthome")
+        password = mqtt_cfg.get("password") or os.environ.get("MOSQITTO_PASS_HSB1")
 
         try:
             self._mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)

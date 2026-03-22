@@ -82,6 +82,7 @@ def change_volume(delta):
 def handle_key(key_name):
     """Handle a key press from keyboard or test mode."""
     global last_letter, word_index
+    print(f"[key] handle_key({key_name})", flush=True)
 
     # Space = stop
     if key_name == "SPACE":

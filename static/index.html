@@ -624,8 +624,26 @@ function funkeykid() {
         // Auto-refresh file lists when generation completes
         if (d.status === 'done') {
           this.showToast((d.type === 'sound' ? 'Sound' : 'Bild') + ' "' + d.word + '" fertig ✓');
-          this.sounds = fetch('/api/sounds').then(r => r.json()).then(s => this.sounds = s);
-          this.images = fetch('/api/images').then(r => r.json()).then(s => this.images = s);
+          // Refresh file lists AND update open edit modal entries
+          Promise.all([
+            fetch('/api/sounds').then(r => r.json()),
+            fetch('/api/images').then(r => r.json()),
+          ]).then(([snd, img]) => {
+            this.sounds = snd;
+            this.images = img;
+            // If edit modal is open, update the matching entry's dropdown selection
+            if (this.editingLetter && this.editEntries) {
+              for (const entry of this.editEntries) {
+                if (entry.word === d.word && d.filename) {
+                  if (d.type === 'sound') entry.sound = d.filename;
+                  if (d.type === 'image') {
+                    entry.image = d.filename;
+                    entry._imgVer = (entry._imgVer||0) + 1;
+                  }
+                }
+              }
+            }
+          });
         } else if (d.status === 'error') {
           this.showToast(d.word + ': ' + d.error, 'error');
         }
@@ -745,10 +763,12 @@ function funkeykid() {
       this.sounds = snd;
       this.images = img;
       this._blacklist = bl || [];
-      this.editingLetter = letter;
       const entries = this.getEntries(letter);
       this.editEntries = entries.length ? JSON.parse(JSON.stringify(entries)) :
         [{ word: '', sound: '', image: '', enabled: true }];
+      // Open modal after data is set — $nextTick ensures Alpine renders options before x-model binds
+      await this.$nextTick();
+      this.editingLetter = letter;
     },
     async saveLetter() {
       const letter = this.editingLetter;
@@ -922,12 +942,22 @@ function funkeykid() {
       this.showToast(`📦 "${entry.word}" archiviert`);
     },
 
+    _nextFilename(base, ext, existing) {
+      const first = `${base}.${ext}`;
+      if (!existing.includes(first)) return first;
+      for (let n = 2; n < 100; n++) {
+        const name = `${base}_${n}.${ext}`;
+        if (!existing.includes(name)) return name;
+      }
+      return `${base}_${Date.now()}.${ext}`;
+    },
+
     async generateSound(entry, idx) {
       if (!entry.word) return;
       entry._genSound = true;
       const letter = this.editingLetter.toLowerCase();
       const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
-      const filename = `${letter}_${slug}.mp3`;
+      const filename = this._nextFilename(`${letter}_${slug}`, 'mp3', this.sounds);
       const extra = entry._genExtra || '';
       const basePrompt = entry._soundDesc || `${entry.word} sound effect, clear and recognizable for children`;
       const prompt = `${basePrompt}. ${extra}`.trim();
@@ -952,7 +982,7 @@ function funkeykid() {
       entry._genImg = true;
       const letter = this.editingLetter.toLowerCase();
       const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
-      const filename = `${letter}_${slug}.png`;
+      const filename = this._nextFilename(`${letter}_${slug}`, 'png', this.images);
       const extra = entry._genExtra || '';
       const baseDesc = entry._imageDesc || entry.word;
       const desc = `${baseDesc}. ${extra}`.trim();

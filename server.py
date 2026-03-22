@@ -796,48 +796,73 @@ async def api_suggest_word(request):
         return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
 
     excluded_str = ", ".join(all_excluded) if all_excluded else "keine"
-    prompt_template = _get_suggest_prompt()
-    prompt = prompt_template.format(letter=letter, excluded=excluded_str)
 
-    model = "openai/gpt-4.1-mini"
-    _ai_log_entry("suggest", model, prompt, None, "sending")
+    # Build forbidden block — super explicit
+    forbidden_lines = "\n".join(f"- NICHT {w}" for w in all_excluded) if all_excluded else "- (keine)"
 
-    try:
-        import urllib.request, re
-        payload = json.dumps({
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.9,
-        }).encode()
-        req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions",
-            data=payload,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            d = json.load(resp)
+    model = settings.get("ai_prompts", {}).get("suggest_model", "openai/gpt-4.1-mini")
 
-        content = d["choices"][0]["message"]["content"]
-        _ai_log_entry("suggest", model, prompt, content, "received")
+    system_msg = f"""Du bist ein Kinderwort-Generator. Du schlägst deutsche Wörter vor die mit einem bestimmten Buchstaben beginnen.
+STRENG VERBOTEN sind diese Wörter — du darfst sie NIEMALS vorschlagen:
+{forbidden_lines}
 
-        json_match = re.search(r'\{[^}]+\}', content)
-        if json_match:
+Wenn du eines der verbotenen Wörter vorschlägst, wird deine Antwort verworfen."""
+
+    user_msg = f"""Schlage EIN deutsches Wort vor das mit "{letter}" beginnt.
+- Zielgruppe: Kinder 2-5 Jahre, Deutsch (Österreich)
+- Konkretes Ding/Tier/Objekt mit erkennbarem Geräusch
+- Kindgerecht
+- NICHT: {excluded_str}
+
+Antwort NUR als JSON: {{"word": "...", "sound_description": "... (Englisch)", "image_description": "... (Englisch)"}}"""
+
+    _ai_log_entry("suggest", model, f"SYSTEM: {system_msg[:200]}...\nUSER: {user_msg}", None, "sending")
+
+    # Auto-retry up to 3 times if model returns excluded word
+    import urllib.request, re
+    for attempt in range(3):
+        try:
+            payload = json.dumps({
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+                "temperature": 1.0 + attempt * 0.1,  # increase randomness on retry
+            }).encode()
+            req = urllib.request.Request(
+                "https://openrouter.ai/api/v1/chat/completions",
+                data=payload,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                d = json.load(resp)
+
+            content = d["choices"][0]["message"]["content"]
+            json_match = re.search(r'\{[^}]+\}', content)
+            if not json_match:
+                _ai_log_entry("suggest", model, user_msg, content[:200], "parse_error")
+                continue
+
             suggestion = json.loads(json_match.group())
-            # Server-side validation: reject if word is in excluded list
             suggested_word = suggestion.get("word", "")
+
             if suggested_word.lower() in [w.lower() for w in all_excluded]:
-                _ai_log_entry("suggest", model, prompt, f"REJECTED: {suggested_word} is excluded", "rejected")
-                return web.json_response({
-                    "error": f'KI hat "{suggested_word}" vorgeschlagen, aber das ist ausgeschlossen. Nochmal versuchen.',
-                    "rejected_word": suggested_word,
-                })
-            _ai_log_entry("suggest", model, prompt, f"OK: {suggested_word}", "ok")
+                _ai_log_entry("suggest", model, user_msg, f"REJECTED #{attempt+1}: {suggested_word}", "rejected")
+                continue  # auto-retry
+
+            _ai_log_entry("suggest", model, user_msg, f"OK: {suggested_word} (attempt {attempt+1})", "ok")
             return web.json_response(suggestion)
-        _ai_log_entry("suggest", model, prompt, content[:200], "parse_error")
-        return web.json_response({"error": "KI-Antwort nicht parsebar", "raw": content[:200]}, status=500)
-    except Exception as e:
-        _ai_log_entry("suggest", model, prompt, str(e), "error")
-        return web.json_response({"error": str(e)}, status=500)
+
+        except Exception as e:
+            _ai_log_entry("suggest", model, user_msg, str(e), "error")
+            return web.json_response({"error": str(e)}, status=500)
+
+    # All 3 attempts returned excluded words
+    _ai_log_entry("suggest", model, user_msg, f"FAILED after 3 attempts", "error")
+    return web.json_response({
+        "error": f"KI konnte nach 3 Versuchen kein neues Wort für {letter} finden. Evtl. zu viele ausgeschlossene Wörter.",
+    })
 
 
 async def api_get_blacklist(request):

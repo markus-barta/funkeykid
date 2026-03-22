@@ -436,6 +436,27 @@
           </div>
 
           <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Vorschlag-Modell</span></label>
+            <select class="select select-bordered select-sm mb-2" x-model="settings.ai_prompts.suggest_model" @change="autoSave()">
+              <optgroup label="Kostenlos">
+                <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B (gratis)</option>
+                <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron 30B (gratis)</option>
+                <option value="nvidia/nemotron-nano-12b-v2-vl:free">Nemotron 12B VL (gratis)</option>
+              </optgroup>
+              <optgroup label="Günstig">
+                <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
+                <option value="openai/gpt-5-nano">GPT-5 Nano</option>
+                <option value="openai/gpt-4.1-mini">GPT-4.1 Mini (Standard)</option>
+              </optgroup>
+              <optgroup label="Frontier">
+                <option value="anthropic/claude-haiku-4-5">Claude Haiku 4.5</option>
+                <option value="openai/gpt-5">GPT-5</option>
+                <option value="openai/gpt-5.4-nano">GPT-5.4 Nano</option>
+                <option value="anthropic/claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                <option value="google/gemini-2.5-flash-image">Gemini 2.5 Flash</option>
+                <option value="google/gemini-3-pro-image-preview">Gemini 3 Pro</option>
+              </optgroup>
+            </select>
             <label class="label"><span class="label-text">Wort-Vorschlag-Prompt</span></label>
             <textarea class="textarea textarea-bordered text-xs h-24" x-model="settings.ai_prompts.suggest" @change="autoSave()"
                       placeholder="Prompt mit {letter} und {excluded} Platzhaltern"></textarea>
@@ -672,6 +693,7 @@ function funkeykid() {
           fetch('/api/images').then(r => r.json()),
         ]);
         if (!s.ai_prompts) s.ai_prompts = {
+          suggest_model: 'openai/gpt-4.1-mini',
           suggest: 'Schlage EIN deutsches Wort vor, das mit dem Buchstaben {letter} beginnt.\n\nAnforderungen:\n- Sprache: Deutsch (Österreich)\n- Zielgruppe: Kinder 2-5 Jahre\n- Konkretes Ding/Tier/Objekt (kein abstraktes Konzept)\n- Erkennbares Geräusch muss dazu passen\n- Kindgerecht, nicht anstößig\n- VERBOTEN: {excluded}\n\nAntworte NUR mit JSON: {{"word": "Wort", "sound_description": "...", "image_description": "..."}}',
           sound: 'Clear, distinct {word} sound effect, high quality, recognizable for children',
           image: 'Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children\'s animation style.',

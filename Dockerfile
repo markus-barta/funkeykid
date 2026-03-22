@@ -2,9 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for evdev build + audio
+# System deps for evdev build + audio + BT diagnostics
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils \
+    bluez \
+    dbus \
     gcc \
     linux-libc-dev \
     python3-dev \

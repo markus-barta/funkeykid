@@ -146,24 +146,36 @@ class KeyboardListener:
         except Exception as e:
             diag["logs"].append(f"evdev scan error: {e}")
 
-        # Try bluetoothctl info (may not be available in container)
+        # Try bluetoothctl info
         try:
+            import re
             result = subprocess.run(
                 ["bluetoothctl", "info", "20:73:00:04:21:4F"],
                 capture_output=True, text=True, timeout=5,
             )
             if result.returncode == 0:
+                ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
                 for line in result.stdout.strip().split("\n"):
-                    line = line.strip()
+                    line = ansi_escape.sub('', line).strip()
+                    # Skip noisy CHG/scan lines and empty lines
+                    if not line or line.startswith("[CHG]") or line.startswith("[NEW]") or line.startswith("[DEL]"):
+                        continue
+                    if "\t" in line:
+                        line = line.replace("\t", "")
                     if ":" in line:
                         k, _, v = line.partition(":")
-                        diag["bluetooth"][k.strip()] = v.strip()
+                        k = k.strip()
+                        v = v.strip()
+                        # Skip UUID spam — keep just the first one
+                        if k == "UUID" and "UUID" in diag["bluetooth"]:
+                            continue
+                        diag["bluetooth"][k] = v
             else:
-                diag["logs"].append("bluetoothctl not available in container")
+                diag["logs"].append("bluetoothctl: nicht verfuegbar")
         except FileNotFoundError:
-            diag["logs"].append("bluetoothctl not installed in container")
+            diag["logs"].append("bluetoothctl: nicht installiert")
         except Exception as e:
-            diag["logs"].append(f"bluetoothctl error: {e}")
+            diag["logs"].append(f"bluetoothctl: {e}")
 
         # Check /dev/input contents vs host
         try:

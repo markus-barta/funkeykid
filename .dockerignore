@@ -1,0 +1,14 @@
+sounds/de-AT/
+.git
+.github
+__pycache__
+*.pyc
+.venv
+result
+result-*
+.DS_Store
+scripts/
+tests/
+lang/
+flake.*
+*.nix

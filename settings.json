@@ -1,0 +1,49 @@
+{
+  "keyboard_layout": "de",
+  "keyboard_device": "ACME BK03",
+  "language": "de-AT",
+  "volume": 100,
+  "random_sounds_enabled": false,
+  "display_mode": "mqtt",
+  "pixoo_ip": "192.168.1.189",
+  "debounce_seconds": 0.8,
+  "mqtt": {
+    "host": "localhost",
+    "port": 1883,
+    "user": "smarthome",
+    "topic_prefix": "home/hsb1/funkeykid"
+  },
+  "tts": {
+    "enabled": false,
+    "engine": "elevenlabs",
+    "api_key_env": "ELEVENLABS_API_KEY"
+  },
+  "letters": {
+    "A": { "words": ["Affe", "Apfel", "Auto"], "sounds": ["affe.mp3"], "image": "a_affe.png" },
+    "B": { "words": ["Biene", "Ball", "Baum"], "sounds": ["biene.mp3"], "image": "b_biene.png" },
+    "C": { "words": ["Clown"], "sounds": ["clown.mp3"], "image": "c_clown.png" },
+    "D": { "words": ["Donner"], "sounds": ["donner.mp3"], "image": "d_donner.png" },
+    "E": { "words": ["Elefant", "Ente"], "sounds": ["elefant.mp3"], "image": "e_elefant.png" },
+    "F": { "words": ["Frosch", "Fisch"], "sounds": ["frosch.mp3"], "image": "f_frosch.png" },
+    "G": { "words": ["Glocke"], "sounds": ["glocke.mp3"], "image": "g_glocke.png" },
+    "H": { "words": ["Hammer", "Hund", "Haus"], "sounds": ["hammer.mp3"], "image": "h_hammer.png" },
+    "I": { "words": ["Igel"], "sounds": ["igel.mp3"], "image": "i_igel.png" },
+    "J": { "words": ["Jaguar"], "sounds": ["jaguar.mp3"], "image": "j_jaguar.png" },
+    "K": { "words": ["Katze", "Kuh"], "sounds": ["katze.mp3"], "image": "k_katze.png" },
+    "L": { "words": ["Loewe", "Lampe"], "sounds": ["loewe.mp3"], "image": "l_loewe.png" },
+    "M": { "words": ["Muh-Kuh", "Maus"], "sounds": ["kuh.mp3"], "image": "m_kuh.png" },
+    "N": { "words": ["Nachtigall", "Nase"], "sounds": ["nachtigall.mp3"], "image": "n_nachtigall.png" },
+    "O": { "words": ["Orgel"], "sounds": ["orgel.mp3"], "image": "o_orgel.png" },
+    "P": { "words": ["Pferd", "Papa"], "sounds": ["pferd.mp3"], "image": "p_pferd.png" },
+    "Q": { "words": ["Quaken"], "sounds": ["quaken.mp3"], "image": "q_quaken.png" },
+    "R": { "words": ["Regen", "Rakete"], "sounds": ["regen.mp3"], "image": "r_regen.png" },
+    "S": { "words": ["Schwein", "Sonne"], "sounds": ["schwein.mp3"], "image": "s_schwein.png" },
+    "T": { "words": ["Telefon", "Tiger"], "sounds": ["telefon.mp3"], "image": "t_telefon.png" },
+    "U": { "words": ["Uhu"], "sounds": ["uhu.mp3"], "image": "u_uhu.png" },
+    "V": { "words": ["Vogel"], "sounds": ["vogel.mp3"], "image": "v_vogel.png" },
+    "W": { "words": ["Wasser", "Wald"], "sounds": ["wasser.mp3"], "image": "w_wasser.png" },
+    "X": { "words": ["Xylophon"], "sounds": ["xylophon.mp3"], "image": "x_xylophon.png" },
+    "Y": { "words": ["Yak"], "sounds": ["yak.mp3"], "image": "y_yak.png" },
+    "Z": { "words": ["Ziege", "Zug"], "sounds": ["ziege.mp3"], "image": "z_ziege.png" }
+  }
+}

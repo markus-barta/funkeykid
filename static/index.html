@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>funkeykid</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <style>
+    .kbd-key { min-width: 2.5rem; min-height: 2.5rem; cursor: pointer; transition: all 0.1s; }
+    .kbd-key:active, .kbd-key.pressed { transform: scale(0.92); background: oklch(var(--p)); color: oklch(var(--pc)); }
+    .letter-card { transition: all 0.2s; }
+    .letter-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .img-preview { width: 64px; height: 64px; image-rendering: pixelated; border-radius: 4px; }
+  </style>
+</head>
+<body class="min-h-screen bg-base-200">
+
+<div x-data="funkeykid()" x-init="init()">
+
+  <!-- Navbar -->
+  <div class="navbar bg-base-100 shadow-lg">
+    <div class="flex-1">
+      <span class="text-xl font-bold px-4">funkeykid</span>
+      <span class="badge badge-sm badge-ghost" x-text="Object.keys(letters).length + ' Buchstaben'"></span>
+    </div>
+    <div class="flex-none gap-2">
+      <div class="badge badge-lg" :class="connected ? 'badge-success' : 'badge-error'"
+           x-text="connected ? 'Online' : 'Offline'"></div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs tabs-boxed justify-center my-4 mx-4">
+    <a class="tab" :class="tab === 'letters' && 'tab-active'" @click="tab='letters'">Buchstaben</a>
+    <a class="tab" :class="tab === 'test' && 'tab-active'" @click="tab='test'">Tastatur Test</a>
+    <a class="tab" :class="tab === 'settings' && 'tab-active'" @click="tab='settings'">Einstellungen</a>
+    <a class="tab" :class="tab === 'files' && 'tab-active'" @click="tab='files'">Dateien</a>
+  </div>
+
+  <div class="container mx-auto px-4 pb-8">
+
+    <!-- LETTERS TAB -->
+    <div x-show="tab === 'letters'" x-cloak>
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+        <template x-for="letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')" :key="letter">
+          <div class="card bg-base-100 shadow letter-card" @click="editLetter(letter)">
+            <div class="card-body p-3">
+              <div class="flex items-start gap-2">
+                <span class="text-3xl font-black" x-text="letter"
+                      :style="'color:' + randomColor(letter)"></span>
+                <img :src="'/images/' + (letters[letter]?.image || '')"
+                     class="img-preview ml-auto" loading="lazy"
+                     @error="$el.style.display='none'" @load="$el.style.display='block'">
+              </div>
+              <div class="text-sm opacity-70 mt-1" x-text="(letters[letter]?.words || []).join(', ')"></div>
+              <div class="text-xs opacity-50" x-text="(letters[letter]?.sounds || [])[0] || 'kein Sound'"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Edit Modal -->
+      <dialog id="edit-modal" class="modal" :class="editingLetter && 'modal-open'">
+        <div class="modal-box" x-show="editingLetter">
+          <h3 class="font-bold text-2xl mb-4">
+            <span x-text="editingLetter" class="text-primary"></span>
+            <span class="text-sm font-normal opacity-60 ml-2">bearbeiten</span>
+          </h3>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Woerter (Komma-getrennt)</span></label>
+            <input type="text" class="input input-bordered" x-model="editWords"
+                   placeholder="Affe, Apfel, Auto">
+          </div>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Sound-Datei</span></label>
+            <select class="select select-bordered" x-model="editSound">
+              <option value="">-- kein Sound --</option>
+              <template x-for="s in sounds" :key="s">
+                <option :value="s" x-text="s"></option>
+              </template>
+            </select>
+            <button class="btn btn-xs btn-ghost mt-1" @click="previewSound(editSound)">abspielen</button>
+          </div>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Bild</span></label>
+            <select class="select select-bordered" x-model="editImage">
+              <option value="">-- kein Bild --</option>
+              <template x-for="img in images" :key="img">
+                <option :value="img" x-text="img"></option>
+              </template>
+            </select>
+            <img :src="editImage ? '/images/' + editImage : ''" class="img-preview mt-2"
+                 x-show="editImage" style="width:128px;height:128px;">
+          </div>
+
+          <div class="modal-action">
+            <button class="btn btn-ghost" @click="editingLetter=null">Abbrechen</button>
+            <button class="btn btn-primary" @click="saveLetter()">Speichern</button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop" @click="editingLetter=null"></form>
+      </dialog>
+    </div>
+
+    <!-- TEST TAB (Virtual Keyboard) -->
+    <div x-show="tab === 'test'" x-cloak>
+      <div class="text-center mb-4 opacity-60">Klicke einen Buchstaben — Sound + Anzeige werden ausgeloest</div>
+
+      <!-- QWERTZ keyboard layout -->
+      <div class="flex flex-col items-center gap-1">
+        <div class="flex gap-1">
+          <template x-for="k in 'QWERTZUIOP'.split('')" :key="k">
+            <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
+                    @click="testKey(k)" x-text="k"></button>
+          </template>
+        </div>
+        <div class="flex gap-1 ml-4">
+          <template x-for="k in 'ASDFGHJKL'.split('')" :key="k">
+            <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
+                    @click="testKey(k)" x-text="k"></button>
+          </template>
+        </div>
+        <div class="flex gap-1 ml-8">
+          <template x-for="k in 'YXCVBNM'.split('')" :key="k">
+            <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
+                    @click="testKey(k)" x-text="k"></button>
+          </template>
+        </div>
+        <div class="flex gap-1 mt-2">
+          <button class="btn btn-sm kbd-key w-12" @click="testKey('MINUS')">-</button>
+          <button class="btn btn-sm kbd-key w-48" @click="testKey('SPACE')">Leertaste (Stop)</button>
+          <button class="btn btn-sm kbd-key w-12" @click="testKey('EQUAL')">+</button>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="flex justify-center mt-6 gap-6" x-show="lastTestLetter">
+        <div class="card bg-base-100 shadow p-4 text-center">
+          <div class="text-6xl font-black" x-text="lastTestLetter"
+               :style="'color:' + randomColor(lastTestLetter)"></div>
+          <div class="text-lg mt-1" x-text="lastTestWord"></div>
+        </div>
+        <img :src="lastTestImage ? '/images/' + lastTestImage : ''"
+             class="img-preview" style="width:128px;height:128px;" x-show="lastTestImage">
+      </div>
+    </div>
+
+    <!-- SETTINGS TAB -->
+    <div x-show="tab === 'settings'" x-cloak>
+      <div class="card bg-base-100 shadow max-w-xl mx-auto">
+        <div class="card-body">
+          <h2 class="card-title mb-4">Einstellungen</h2>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Tastatur-Layout</span></label>
+            <select class="select select-bordered" x-model="settings.keyboard_layout">
+              <option value="de">Deutsch (QWERTZ)</option>
+              <option value="us">English (QWERTY)</option>
+            </select>
+          </div>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Lautstaerke</span></label>
+            <div class="flex items-center gap-3">
+              <input type="range" class="range range-primary" min="0" max="100" step="10"
+                     x-model.number="settings.volume">
+              <span class="badge" x-text="settings.volume + '%'"></span>
+            </div>
+          </div>
+
+          <div class="form-control mb-3">
+            <label class="label cursor-pointer">
+              <span class="label-text">Zufaellige Sounds fuer Nicht-Buchstaben</span>
+              <input type="checkbox" class="toggle toggle-primary" x-model="settings.random_sounds_enabled">
+            </label>
+          </div>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Anzeige-Modus</span></label>
+            <select class="select select-bordered" x-model="settings.display_mode">
+              <option value="mqtt">MQTT (pidicon-light)</option>
+              <option value="direct">Direkt (Pixoo HTTP)</option>
+              <option value="both">Beide</option>
+            </select>
+          </div>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Pixoo IP</span></label>
+            <input type="text" class="input input-bordered" x-model="settings.pixoo_ip"
+                   placeholder="192.168.1.189">
+          </div>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Tastatur-Geraet</span></label>
+            <input type="text" class="input input-bordered" x-model="settings.keyboard_device"
+                   placeholder="ACME BK03">
+          </div>
+
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Debounce (Sekunden)</span></label>
+            <input type="number" class="input input-bordered" x-model.number="settings.debounce_seconds"
+                   step="0.1" min="0.1" max="3">
+          </div>
+
+          <button class="btn btn-primary mt-4" @click="saveSettings()">Speichern</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FILES TAB -->
+    <div x-show="tab === 'files'" x-cloak>
+      <div class="grid md:grid-cols-2 gap-6">
+        <!-- Sounds -->
+        <div class="card bg-base-100 shadow">
+          <div class="card-body">
+            <h2 class="card-title">Sounds</h2>
+            <div class="overflow-y-auto max-h-64">
+              <template x-for="s in sounds" :key="s">
+                <div class="flex items-center gap-2 py-1">
+                  <button class="btn btn-xs btn-ghost" @click="previewSound(s)">&#9654;</button>
+                  <span class="text-sm" x-text="s"></span>
+                </div>
+              </template>
+            </div>
+            <div class="mt-3">
+              <input type="file" class="file-input file-input-bordered file-input-sm w-full"
+                     accept=".mp3,.wav,.ogg" @change="uploadFile($event, 'sounds')">
+            </div>
+          </div>
+        </div>
+
+        <!-- Images -->
+        <div class="card bg-base-100 shadow">
+          <div class="card-body">
+            <h2 class="card-title">Bilder</h2>
+            <div class="grid grid-cols-4 gap-2 overflow-y-auto max-h-64">
+              <template x-for="img in images" :key="img">
+                <div class="text-center">
+                  <img :src="'/images/' + img" class="img-preview mx-auto">
+                  <div class="text-xs opacity-50 truncate" x-text="img"></div>
+                </div>
+              </template>
+            </div>
+            <div class="mt-3">
+              <input type="file" class="file-input file-input-bordered file-input-sm w-full"
+                     accept=".png,.jpg,.jpeg,.gif" @change="uploadFile($event, 'images')">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- container -->
+
+  <!-- Toast -->
+  <div class="toast" x-show="toast" x-transition>
+    <div class="alert" :class="toastType === 'error' ? 'alert-error' : 'alert-success'">
+      <span x-text="toast"></span>
+    </div>
+  </div>
+
+</div><!-- x-data -->
+
+<script>
+function funkeykid() {
+  return {
+    tab: 'letters',
+    settings: {},
+    letters: {},
+    sounds: [],
+    images: [],
+    connected: false,
+    toast: '',
+    toastType: 'success',
+
+    // Edit modal
+    editingLetter: null,
+    editWords: '',
+    editSound: '',
+    editImage: '',
+
+    // Test mode
+    pressedKey: null,
+    lastTestLetter: null,
+    lastTestWord: null,
+    lastTestImage: null,
+
+    async init() {
+      await this.refresh();
+      this.connected = true;
+    },
+
+    async refresh() {
+      try {
+        const [s, snd, img] = await Promise.all([
+          fetch('/api/settings').then(r => r.json()),
+          fetch('/api/sounds').then(r => r.json()),
+          fetch('/api/images').then(r => r.json()),
+        ]);
+        this.settings = s;
+        this.letters = s.letters || {};
+        this.sounds = snd;
+        this.images = img;
+      } catch (e) {
+        this.showToast('Verbindung fehlgeschlagen', 'error');
+      }
+    },
+
+    randomColor(letter) {
+      const colors = ['#FF0000','#00CC00','#0066FF','#FF6600','#CC00CC','#00CCCC','#FFCC00','#FF3399'];
+      return colors[letter.charCodeAt(0) % colors.length];
+    },
+
+    editLetter(letter) {
+      const cfg = this.letters[letter] || {};
+      this.editingLetter = letter;
+      this.editWords = (cfg.words || []).join(', ');
+      this.editSound = (cfg.sounds || [])[0] || '';
+      this.editImage = cfg.image || '';
+    },
+
+    async saveLetter() {
+      const letter = this.editingLetter;
+      const data = {
+        words: this.editWords.split(',').map(w => w.trim()).filter(Boolean),
+        sounds: this.editSound ? [this.editSound] : [],
+        image: this.editImage || '',
+      };
+      await fetch(`/api/letters/${letter}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+      });
+      this.letters[letter] = data;
+      this.editingLetter = null;
+      this.showToast(`${letter} gespeichert`);
+    },
+
+    async saveSettings() {
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(this.settings),
+      });
+      this.showToast('Einstellungen gespeichert');
+    },
+
+    async testKey(key) {
+      this.pressedKey = key;
+      setTimeout(() => this.pressedKey = null, 200);
+
+      if (key === 'SPACE' || key === 'EQUAL' || key === 'MINUS') {
+        await fetch(`/api/test/${key}`, { method: 'POST' });
+        return;
+      }
+
+      const cfg = this.letters[key] || {};
+      this.lastTestLetter = key;
+      this.lastTestWord = (cfg.words || [])[0] || key;
+      this.lastTestImage = cfg.image || null;
+
+      await fetch(`/api/test/${key}`, { method: 'POST' });
+    },
+
+    previewSound(filename) {
+      if (!filename) return;
+      const audio = new Audio(`/sounds/${filename}`);
+      audio.play().catch(() => {});
+    },
+
+    async uploadFile(event, type) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const form = new FormData();
+      form.append('file', file);
+      await fetch(`/api/${type}/upload`, { method: 'POST', body: form });
+      await this.refresh();
+      this.showToast(`${file.name} hochgeladen`);
+      event.target.value = '';
+    },
+
+    showToast(msg, type = 'success') {
+      this.toast = msg;
+      this.toastType = type;
+      setTimeout(() => this.toast = '', 3000);
+    },
+  };
+}
+</script>
+</body>
+</html>

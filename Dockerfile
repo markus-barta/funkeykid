@@ -2,9 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for evdev + audio
+# System deps for evdev build + audio
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils \
+    gcc \
+    linux-libc-dev \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps

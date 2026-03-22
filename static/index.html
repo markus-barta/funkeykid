@@ -158,52 +158,117 @@
           <div class="space-y-3">
             <template x-for="(entry, idx) in editEntries" :key="idx">
               <div class="card bg-base-200 p-3" :class="!entry.enabled && 'opacity-50'">
+                <!-- Row 1: Toggle + Word + Delete -->
                 <div class="flex items-center gap-2 mb-2">
-                  <input type="checkbox" class="toggle toggle-sm toggle-success" x-model="entry.enabled">
-                  <input type="text" class="input input-sm input-bordered flex-1" x-model="entry.word" placeholder="Wort">
-                  <button class="btn btn-xs btn-error btn-outline" @click="editEntries.splice(idx, 1)">✕</button>
+                  <input type="checkbox" class="toggle toggle-sm toggle-success" x-model="entry.enabled"
+                         :title="entry.enabled ? 'Aktiv' : 'Deaktiviert'">
+                  <input type="text" class="input input-sm input-bordered flex-1 font-bold" x-model="entry.word"
+                         placeholder="Wort eingeben...">
+                  <button class="btn btn-xs btn-ghost opacity-40 hover:opacity-100"
+                          @click="archiveEntry(idx)" title="Archivieren">📦</button>
+                  <button class="btn btn-xs btn-error btn-outline" @click="editEntries.splice(idx, 1)"
+                          title="Löschen">✕</button>
                 </div>
-                <div class="flex gap-2">
-                  <select class="select select-xs select-bordered flex-1" x-model="entry.sound">
-                    <option value="">kein Sound</option>
-                    <template x-for="s in allSounds(entry.sound)" :key="s">
-                      <option :value="s" x-text="s"></option>
-                    </template>
-                  </select>
-                  <button class="btn btn-xs btn-ghost" @click="previewSound(entry.sound)">&#9654;</button>
-                  <select class="select select-xs select-bordered flex-1" x-model="entry.image">
-                    <option value="">kein Bild</option>
-                    <template x-for="img in allImages(entry.image)" :key="img">
-                      <option :value="img" x-text="img"></option>
-                    </template>
-                  </select>
+
+                <!-- Row 2: Sound + Image with search filter -->
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <div class="text-[10px] opacity-40 mb-0.5">Sound</div>
+                    <div class="flex gap-1">
+                      <div class="relative flex-1">
+                        <input type="text" class="input input-xs input-bordered w-full pr-6"
+                               :value="entry.sound || ''"
+                               @input="entry._soundFilter = $event.target.value; entry._showSoundPicker = true"
+                               @focus="entry._showSoundPicker = true"
+                               placeholder="Sound suchen...">
+                        <button class="absolute right-1 top-0.5 text-xs opacity-40" @click="entry.sound = ''"
+                                x-show="entry.sound">✕</button>
+                        <!-- Dropdown -->
+                        <div x-show="entry._showSoundPicker" @click.outside="entry._showSoundPicker = false"
+                             class="absolute z-50 bg-base-100 border border-base-300 rounded shadow-lg mt-1 w-full max-h-32 overflow-y-auto">
+                          <template x-for="s in filteredSounds(entry._soundFilter || entry.sound)" :key="s">
+                            <div class="px-2 py-1 text-xs cursor-pointer hover:bg-primary hover:text-primary-content"
+                                 :class="s === entry.sound && 'bg-primary/20 font-bold'"
+                                 @click="entry.sound = s; entry._showSoundPicker = false"
+                                 x-text="s"></div>
+                          </template>
+                        </div>
+                      </div>
+                      <button class="btn btn-xs btn-ghost" @click="previewSound(entry.sound)"
+                              :disabled="!entry.sound" title="Abspielen">▶</button>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] opacity-40 mb-0.5">Bild</div>
+                    <div class="relative">
+                      <input type="text" class="input input-xs input-bordered w-full pr-6"
+                             :value="entry.image || ''"
+                             @input="entry._imageFilter = $event.target.value; entry._showImagePicker = true"
+                             @focus="entry._showImagePicker = true"
+                             placeholder="Bild suchen...">
+                      <button class="absolute right-1 top-0.5 text-xs opacity-40" @click="entry.image = ''"
+                              x-show="entry.image">✕</button>
+                      <!-- Image Dropdown with thumbnails -->
+                      <div x-show="entry._showImagePicker" @click.outside="entry._showImagePicker = false"
+                           class="absolute z-50 bg-base-100 border border-base-300 rounded shadow-lg mt-1 w-64 max-h-48 overflow-y-auto right-0">
+                        <div class="grid grid-cols-4 gap-1 p-1">
+                          <template x-for="img in filteredImages(entry._imageFilter || entry.image)" :key="img">
+                            <div class="cursor-pointer rounded p-0.5 hover:ring-2 hover:ring-primary"
+                                 :class="img === entry.image && 'ring-2 ring-success'"
+                                 @click="entry.image = img; entry._showImagePicker = false">
+                              <img :src="'/images/' + img" class="w-full aspect-square object-cover rounded"
+                                   style="image-rendering:pixelated" loading="lazy">
+                              <div class="text-[8px] opacity-40 truncate text-center" x-text="img.replace('.png','')"></div>
+                            </div>
+                          </template>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <!-- AI Generation -->
-                <div class="flex gap-1 mt-1">
+
+                <!-- Row 3: AI Generation -->
+                <div class="flex gap-1 mt-2">
                   <button class="btn btn-xs btn-accent btn-outline flex-1"
-                          @click="generateSound(entry, idx)"
-                          :disabled="!entry.word || entry._genSound"
-                          x-text="entry._genSound ? 'Generiere...' : '🔊 Sound generieren'"></button>
+                          @click="generateSound(entry, idx)" :disabled="!entry.word || entry._genSound">
+                    <span x-show="entry._genSound" class="loading loading-spinner loading-xs"></span>
+                    <span x-text="entry._genSound ? 'Generiere...' : '🔊 Sound'"></span>
+                  </button>
                   <button class="btn btn-xs btn-accent btn-outline flex-1"
-                          @click="generateImage(entry, idx)"
-                          :disabled="!entry.word || entry._genImg"
-                          x-text="entry._genImg ? 'Generiere...' : '🖼️ Bild generieren'"></button>
+                          @click="generateImage(entry, idx)" :disabled="!entry.word || entry._genImg">
+                    <span x-show="entry._genImg" class="loading loading-spinner loading-xs"></span>
+                    <span x-text="entry._genImg ? 'Generiere...' : '🖼️ Bild'"></span>
+                  </button>
+                  <button class="btn btn-xs btn-ghost opacity-40" @click="entry._genExtra = entry._genExtra === undefined ? '' : undefined"
+                          title="KI-Anweisungen">⚙️</button>
                 </div>
-                <div x-show="entry._genExtra !== undefined" class="mt-1">
+                <div x-show="entry._genExtra !== undefined" x-transition class="mt-1">
                   <input type="text" class="input input-xs input-bordered w-full" x-model="entry._genExtra"
-                         placeholder="Zusätzliche Anweisungen für KI (optional)">
+                         placeholder="Zusätzliche Anweisungen für die KI...">
                 </div>
-                <img :src="entry.image ? '/images/' + entry.image : ''" class="img-preview mt-2"
-                     x-show="entry.image" style="width:96px;height:96px;">
+
+                <!-- Preview row -->
+                <div class="flex items-end gap-2 mt-2" x-show="entry.image || entry.sound">
+                  <img :src="entry.image ? '/images/' + entry.image : ''" class="img-preview"
+                       x-show="entry.image" style="width:64px;height:64px;">
+                  <div class="text-[10px] opacity-30" x-show="entry.sound" x-text="entry.sound"></div>
+                </div>
               </div>
             </template>
           </div>
 
-          <!-- Add entry -->
-          <button class="btn btn-sm btn-outline btn-primary mt-3 w-full"
-                  @click="editEntries.push({word:'', sound:'', image:'', enabled:true})">
-            + Eintrag hinzufügen
-          </button>
+          <!-- Add entry buttons -->
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-sm btn-outline btn-primary flex-1"
+                    @click="editEntries.push({word:'', sound:'', image:'', enabled:true})">
+              + Manuell hinzufügen
+            </button>
+            <button class="btn btn-sm btn-accent flex-1"
+                    @click="suggestWord()" :disabled="_suggesting">
+              <span x-show="_suggesting" class="loading loading-spinner loading-xs"></span>
+              <span x-text="_suggesting ? 'KI denkt...' : '✨ KI-Vorschlag'"></span>
+            </button>
+          </div>
 
           <div class="modal-action">
             <button class="btn btn-ghost" @click="editingLetter=null">Abbrechen</button>
@@ -411,6 +476,7 @@ function funkeykid() {
     // Edit state
     editingLetter: null,
     editEntries: [],
+    _suggesting: false,
 
     // Test state
     pressedKey: null,
@@ -544,14 +610,15 @@ function funkeykid() {
     firstEntry(letter) {
       return this.getEntries(letter).find(e => e.enabled) || this.getEntries(letter)[0];
     },
-    allSounds(current) {
-      // Ensure current value is always in the list
-      if (current && !this.sounds.includes(current)) return [current, ...this.sounds];
-      return this.sounds;
+    filteredSounds(filter) {
+      if (!filter) return this.sounds;
+      const f = filter.toLowerCase();
+      return this.sounds.filter(s => s.toLowerCase().includes(f));
     },
-    allImages(current) {
-      if (current && !this.images.includes(current)) return [current, ...this.images];
-      return this.images;
+    filteredImages(filter) {
+      if (!filter) return this.images;
+      const f = filter.toLowerCase();
+      return this.images.filter(s => s.toLowerCase().includes(f));
     },
     randomColor(l) {
       const c = ['#FF0000','#00CC00','#0066FF','#FF6600','#CC00CC','#00CCCC','#FFCC00','#FF3399'];
@@ -680,6 +747,59 @@ function funkeykid() {
       this.showToast('Wiedergabe gestoppt');
     },
 
+    async suggestWord() {
+      if (!this.editingLetter) return;
+      this._suggesting = true;
+      try {
+        const r = await fetch('/api/suggest-word', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ letter: this.editingLetter }),
+        }).then(r => r.json());
+        if (r.word) {
+          const entry = {
+            word: r.word, sound: '', image: '', enabled: true,
+            _soundDesc: r.sound_description || '',
+            _imageDesc: r.image_description || '',
+          };
+          this.editEntries.push(entry);
+          this.showToast(`✨ Vorschlag: ${r.word}`);
+          // Auto-generate sound + image
+          const idx = this.editEntries.length - 1;
+          this.generateSound(entry, idx);
+          this.generateImage(entry, idx);
+        } else {
+          this.showToast(r.error || 'Kein Vorschlag', 'error');
+        }
+      } catch (e) { this.showToast(e.message, 'error'); }
+      this._suggesting = false;
+    },
+
+    async archiveEntry(idx) {
+      const entry = this.editEntries[idx];
+      if (!confirm(`"${entry.word}" archivieren? Sound und Bild werden ins Archiv verschoben.`)) return;
+      // Archive sound
+      if (entry.sound) {
+        await fetch('/api/archive', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ type: 'sound', filename: entry.sound }),
+        });
+      }
+      // Archive image
+      if (entry.image) {
+        await fetch('/api/archive', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ type: 'image', filename: entry.image }),
+        });
+      }
+      this.editEntries.splice(idx, 1);
+      this.sounds = await fetch('/api/sounds').then(r => r.json());
+      this.images = await fetch('/api/images').then(r => r.json());
+      this.showToast(`📦 "${entry.word}" archiviert`);
+    },
+
     async generateSound(entry, idx) {
       if (!entry.word) return;
       entry._genSound = true;
@@ -687,7 +807,8 @@ function funkeykid() {
       const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
       const filename = `${letter}_${slug}.mp3`;
       const extra = entry._genExtra || '';
-      const prompt = `${entry.word} sound effect, clear and recognizable for children. ${extra}`.trim();
+      const basePrompt = entry._soundDesc || `${entry.word} sound effect, clear and recognizable for children`;
+      const prompt = `${basePrompt}. ${extra}`.trim();
       try {
         const r = await fetch('/api/generate/sound', {
           method: 'POST',
@@ -712,7 +833,8 @@ function funkeykid() {
       const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
       const filename = `${letter}_${slug}.png`;
       const extra = entry._genExtra || '';
-      const desc = `${entry.word}. ${extra}`.trim();
+      const baseDesc = entry._imageDesc || entry.word;
+      const desc = `${baseDesc}. ${extra}`.trim();
       try {
         const r = await fetch('/api/generate/image', {
           method: 'POST',

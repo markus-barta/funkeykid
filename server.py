@@ -690,6 +690,100 @@ async def api_generate_image(request):
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def api_suggest_word(request):
+    """AI-suggest a fitting German word for a letter, not already used."""
+    data = await request.json()
+    letter = data.get("letter", "A").upper()
+    language = data.get("language", "de-AT")
+
+    # Collect already-used words for this letter
+    used_words = set()
+    for s in settings.get("sets", {}).values():
+        for entry in s.get("letters", {}).get(letter, {}).get("entries", []):
+            used_words.add(entry.get("word", "").lower())
+
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
+
+    used_list = ", ".join(sorted(used_words)) if used_words else "keine"
+    prompt = f"""Schlage EIN deutsches Wort vor, das mit dem Buchstaben {letter} beginnt.
+
+Anforderungen:
+- Sprache: Deutsch (Österreich)
+- Zielgruppe: Kinder 2-5 Jahre
+- Das Wort muss ein konkretes Ding/Tier/Objekt sein (kein abstraktes Konzept)
+- Es muss ein dazu passendes, klar erkennbares Geräusch geben
+- Nicht anstößig, kindgerecht
+- NICHT eines dieser bereits verwendeten Wörter: {used_list}
+
+Antworte NUR mit einem JSON-Objekt in diesem Format (keine Erklärung):
+{{"word": "Wort", "sound_description": "Beschreibung des Geräuschs auf Englisch für Sound-KI", "image_description": "Beschreibung des Bildes auf Englisch für Bild-KI"}}"""
+
+    try:
+        import urllib.request
+        payload = json.dumps({
+            "model": "openai/gpt-4.1-nano",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.9,
+        }).encode()
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=payload,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            d = json.load(resp)
+
+        content = d["choices"][0]["message"]["content"]
+        # Parse JSON from response (might have markdown wrapping)
+        import re
+        json_match = re.search(r'\{[^}]+\}', content)
+        if json_match:
+            suggestion = json.loads(json_match.group())
+            return web.json_response(suggestion)
+        return web.json_response({"error": "KI-Antwort nicht parsebar", "raw": content[:200]}, status=500)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def api_archive_file(request):
+    """Move a sound or image to the archive folder."""
+    data = await request.json()
+    file_type = data.get("type")  # "sound" or "image"
+    filename = data.get("filename", "")
+
+    if not filename or file_type not in ("sound", "image"):
+        return web.json_response({"error": "type und filename erforderlich"}, status=400)
+
+    archive_dir = os.path.join(DATA_DIR, "archive", f"{file_type}s")
+    os.makedirs(archive_dir, exist_ok=True)
+
+    if file_type == "sound":
+        src = os.path.join(SOUNDS_DIR, filename)
+    else:
+        src = os.path.join(IMAGES_DIR, filename)
+
+    if not os.path.exists(src):
+        return web.json_response({"error": f"Datei nicht gefunden: {filename}"}, status=404)
+
+    import shutil
+    dst = os.path.join(archive_dir, filename)
+    shutil.move(src, dst)
+    return web.json_response({"ok": True, "archived": filename, "to": dst})
+
+
+async def api_list_archive(request):
+    """List archived files."""
+    archive_dir = os.path.join(DATA_DIR, "archive")
+    result = {"sounds": [], "images": []}
+    for sub in ("sounds", "images"):
+        d = os.path.join(archive_dir, sub)
+        if os.path.exists(d):
+            result[sub] = sorted(os.listdir(d))
+    return web.json_response(result)
+
+
 async def serve_ai_file(request):
     """Serve files from ai-generated directory."""
     subpath = request.match_info["path"]
@@ -749,6 +843,9 @@ def create_app():
     # AI Generation
     app.router.add_post("/api/generate/sound", api_generate_sound)
     app.router.add_post("/api/generate/image", api_generate_image)
+    app.router.add_post("/api/suggest-word", api_suggest_word)
+    app.router.add_post("/api/archive", api_archive_file)
+    app.router.add_get("/api/archive", api_list_archive)
     app.router.add_get("/ai/{path:.+}", serve_ai_file)
     # File serving
     app.router.add_get("/sounds/{filename}", serve_sound)

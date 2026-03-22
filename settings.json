@@ -12,95 +12,692 @@
     "user": "smarthome",
     "topic_prefix": "home/hsb1/funkeykid"
   },
-  "active_set": "tiere-und-natur",
+  "active_set": "v2-komplett",
   "sets": {
-    "tiere-und-natur": {
-      "name": "Tiere & Natur",
-      "description": "Tiergeraeusche und Naturklaenge",
+    "v2-komplett": {
+      "name": "v2.0 Komplett",
+      "description": "Alle Buchstaben mit 3-5 Woertern, Pixar-Stil Bilder, ElevenLabs Sounds",
       "letters": {
-        "A": { "entries": [
-          { "word": "Affe", "sound": "affe.mp3", "image": "a_affe.png", "enabled": true }
-        ]},
-        "B": { "entries": [
-          { "word": "Biene", "sound": "biene.mp3", "image": "b_biene.png", "enabled": true }
-        ]},
-        "C": { "entries": [
-          { "word": "Clown", "sound": "clown.mp3", "image": "c_clown.png", "enabled": true }
-        ]},
-        "D": { "entries": [
-          { "word": "Donner", "sound": "donner.mp3", "image": "d_donner.png", "enabled": true }
-        ]},
-        "E": { "entries": [
-          { "word": "Elefant", "sound": "elefant.mp3", "image": "e_elefant.png", "enabled": true }
-        ]},
-        "F": { "entries": [
-          { "word": "Frosch", "sound": "frosch.mp3", "image": "f_frosch.png", "enabled": true }
-        ]},
-        "G": { "entries": [
-          { "word": "Glocke", "sound": "glocke.mp3", "image": "g_glocke.png", "enabled": true }
-        ]},
-        "H": { "entries": [
-          { "word": "Hammer", "sound": "hammer.mp3", "image": "h_hammer.png", "enabled": true },
-          { "word": "Hund", "sound": "hund.mp3", "image": "h_hund.png", "enabled": false },
-          { "word": "Haus", "sound": "haus.mp3", "image": "h_haus.png", "enabled": false }
-        ]},
-        "I": { "entries": [
-          { "word": "Igel", "sound": "igel.mp3", "image": "i_igel.png", "enabled": true }
-        ]},
-        "J": { "entries": [
-          { "word": "Jaguar", "sound": "jaguar.mp3", "image": "j_jaguar.png", "enabled": true }
-        ]},
-        "K": { "entries": [
-          { "word": "Katze", "sound": "katze.mp3", "image": "k_katze.png", "enabled": true },
-          { "word": "Kuh", "sound": "kuh.mp3", "image": "m_kuh.png", "enabled": false }
-        ]},
-        "L": { "entries": [
-          { "word": "Loewe", "sound": "loewe.mp3", "image": "l_loewe.png", "enabled": true }
-        ]},
-        "M": { "entries": [
-          { "word": "Muh-Kuh", "sound": "kuh.mp3", "image": "m_kuh.png", "enabled": true },
-          { "word": "Maus", "sound": "maus.mp3", "image": "m_maus.png", "enabled": false }
-        ]},
-        "N": { "entries": [
-          { "word": "Nachtigall", "sound": "nachtigall.mp3", "image": "n_nachtigall.png", "enabled": true }
-        ]},
-        "O": { "entries": [
-          { "word": "Orgel", "sound": "orgel.mp3", "image": "o_orgel.png", "enabled": true }
-        ]},
-        "P": { "entries": [
-          { "word": "Pferd", "sound": "pferd.mp3", "image": "p_pferd.png", "enabled": true }
-        ]},
-        "Q": { "entries": [
-          { "word": "Quaken", "sound": "quaken.mp3", "image": "q_quaken.png", "enabled": true }
-        ]},
-        "R": { "entries": [
-          { "word": "Regen", "sound": "regen.mp3", "image": "r_regen.png", "enabled": true }
-        ]},
-        "S": { "entries": [
-          { "word": "Schwein", "sound": "schwein.mp3", "image": "s_schwein.png", "enabled": true }
-        ]},
-        "T": { "entries": [
-          { "word": "Telefon", "sound": "telefon.mp3", "image": "t_telefon.png", "enabled": true },
-          { "word": "Tiger", "sound": "tiger.mp3", "image": "t_tiger.png", "enabled": false }
-        ]},
-        "U": { "entries": [
-          { "word": "Uhu", "sound": "uhu.mp3", "image": "u_uhu.png", "enabled": true }
-        ]},
-        "V": { "entries": [
-          { "word": "Vogel", "sound": "vogel.mp3", "image": "v_vogel.png", "enabled": true }
-        ]},
-        "W": { "entries": [
-          { "word": "Wasser", "sound": "wasser.mp3", "image": "w_wasser.png", "enabled": true }
-        ]},
-        "X": { "entries": [
-          { "word": "Xylophon", "sound": "xylophon.mp3", "image": "x_xylophon.png", "enabled": true }
-        ]},
-        "Y": { "entries": [
-          { "word": "Yak", "sound": "yak.mp3", "image": "y_yak.png", "enabled": true }
-        ]},
-        "Z": { "entries": [
-          { "word": "Ziege", "sound": "ziege.mp3", "image": "z_ziege.png", "enabled": true }
-        ]}
+        "A": {
+          "entries": [
+            {
+              "word": "Affe",
+              "sound": "a_affe.mp3",
+              "image": "a_affe.png",
+              "enabled": true
+            },
+            {
+              "word": "Apfel",
+              "sound": "a_apfel.mp3",
+              "image": "a_apfel.png",
+              "enabled": true
+            },
+            {
+              "word": "Auto",
+              "sound": "a_auto.mp3",
+              "image": "a_auto.png",
+              "enabled": true
+            },
+            {
+              "word": "Ameise",
+              "sound": "a_ameise.mp3",
+              "image": "a_ameise.png",
+              "enabled": true
+            }
+          ]
+        },
+        "B": {
+          "entries": [
+            {
+              "word": "Biene",
+              "sound": "b_biene.mp3",
+              "image": "b_biene.png",
+              "enabled": true
+            },
+            {
+              "word": "Ball",
+              "sound": "b_ball.mp3",
+              "image": "b_ball.png",
+              "enabled": true
+            },
+            {
+              "word": "Baum",
+              "sound": "b_baum.mp3",
+              "image": "b_baum.png",
+              "enabled": true
+            },
+            {
+              "word": "Baer",
+              "sound": "b_baer.mp3",
+              "image": "b_baer.png",
+              "enabled": true
+            }
+          ]
+        },
+        "C": {
+          "entries": [
+            {
+              "word": "Clown",
+              "sound": "c_clown.mp3",
+              "image": "c_clown.png",
+              "enabled": true
+            },
+            {
+              "word": "Computer",
+              "sound": "c_computer.mp3",
+              "image": "c_computer.png",
+              "enabled": true
+            },
+            {
+              "word": "Chamäleon",
+              "sound": "c_chamaeleon.mp3",
+              "image": "c_chamaeleon.png",
+              "enabled": true
+            }
+          ]
+        },
+        "D": {
+          "entries": [
+            {
+              "word": "Donner",
+              "sound": "d_donner.mp3",
+              "image": "d_donner.png",
+              "enabled": true
+            },
+            {
+              "word": "Drache",
+              "sound": "d_drache.mp3",
+              "image": "d_drache.png",
+              "enabled": true
+            },
+            {
+              "word": "Delfin",
+              "sound": "d_delfin.mp3",
+              "image": "d_delfin.png",
+              "enabled": true
+            },
+            {
+              "word": "Dose",
+              "sound": "d_dose.mp3",
+              "image": "d_dose.png",
+              "enabled": true
+            }
+          ]
+        },
+        "E": {
+          "entries": [
+            {
+              "word": "Elefant",
+              "sound": "e_elefant.mp3",
+              "image": "e_elefant.png",
+              "enabled": true
+            },
+            {
+              "word": "Ente",
+              "sound": "e_ente.mp3",
+              "image": "e_ente.png",
+              "enabled": true
+            },
+            {
+              "word": "Eis",
+              "sound": "e_eis.mp3",
+              "image": "e_eis.png",
+              "enabled": true
+            },
+            {
+              "word": "Eule",
+              "sound": "e_eule.mp3",
+              "image": "e_eule.png",
+              "enabled": true
+            }
+          ]
+        },
+        "F": {
+          "entries": [
+            {
+              "word": "Frosch",
+              "sound": "f_frosch.mp3",
+              "image": "f_frosch.png",
+              "enabled": true
+            },
+            {
+              "word": "Fisch",
+              "sound": "f_fisch.mp3",
+              "image": "f_fisch.png",
+              "enabled": true
+            },
+            {
+              "word": "Feuerwehr",
+              "sound": "f_feuerwehr.mp3",
+              "image": "f_feuerwehr.png",
+              "enabled": true
+            },
+            {
+              "word": "Flugzeug",
+              "sound": "f_flugzeug.mp3",
+              "image": "f_flugzeug.png",
+              "enabled": true
+            }
+          ]
+        },
+        "G": {
+          "entries": [
+            {
+              "word": "Glocke",
+              "sound": "g_glocke.mp3",
+              "image": "g_glocke.png",
+              "enabled": true
+            },
+            {
+              "word": "Giraffe",
+              "sound": "g_giraffe.mp3",
+              "image": "g_giraffe.png",
+              "enabled": true
+            },
+            {
+              "word": "Gitarre",
+              "sound": "g_gitarre.mp3",
+              "image": "g_gitarre.png",
+              "enabled": true
+            },
+            {
+              "word": "Geist",
+              "sound": "g_geist.mp3",
+              "image": "g_geist.png",
+              "enabled": true
+            }
+          ]
+        },
+        "H": {
+          "entries": [
+            {
+              "word": "Hund",
+              "sound": "h_hund.mp3",
+              "image": "h_hund.png",
+              "enabled": true
+            },
+            {
+              "word": "Hammer",
+              "sound": "h_hammer.mp3",
+              "image": "h_hammer.png",
+              "enabled": true
+            },
+            {
+              "word": "Haus",
+              "sound": "h_haus.mp3",
+              "image": "h_haus.png",
+              "enabled": true
+            },
+            {
+              "word": "Hahn",
+              "sound": "h_hahn.mp3",
+              "image": "h_hahn.png",
+              "enabled": true
+            }
+          ]
+        },
+        "I": {
+          "entries": [
+            {
+              "word": "Igel",
+              "sound": "i_igel.mp3",
+              "image": "i_igel.png",
+              "enabled": true
+            },
+            {
+              "word": "Iglu",
+              "sound": "i_iglu.mp3",
+              "image": "i_iglu.png",
+              "enabled": true
+            },
+            {
+              "word": "Indianer",
+              "sound": "i_indianer.mp3",
+              "image": "i_indianer.png",
+              "enabled": true
+            },
+            {
+              "word": "Insekt",
+              "sound": "i_insekt.mp3",
+              "image": "i_insekt.png",
+              "enabled": true
+            }
+          ]
+        },
+        "J": {
+          "entries": [
+            {
+              "word": "Jaguar",
+              "sound": "j_jaguar.mp3",
+              "image": "j_jaguar.png",
+              "enabled": true
+            },
+            {
+              "word": "Joghurt",
+              "sound": "j_joghurt.mp3",
+              "image": "j_joghurt.png",
+              "enabled": true
+            },
+            {
+              "word": "Junge",
+              "sound": "j_junge.mp3",
+              "image": "j_junge.png",
+              "enabled": true
+            }
+          ]
+        },
+        "K": {
+          "entries": [
+            {
+              "word": "Katze",
+              "sound": "k_katze.mp3",
+              "image": "k_katze.png",
+              "enabled": true
+            },
+            {
+              "word": "Kuh",
+              "sound": "k_kuh.mp3",
+              "image": "k_kuh.png",
+              "enabled": true
+            },
+            {
+              "word": "Krokodil",
+              "sound": "k_krokodil.mp3",
+              "image": "k_krokodil.png",
+              "enabled": true
+            },
+            {
+              "word": "Kuchen",
+              "sound": "k_kuchen.mp3",
+              "image": "k_kuchen.png",
+              "enabled": true
+            }
+          ]
+        },
+        "L": {
+          "entries": [
+            {
+              "word": "Loewe",
+              "sound": "l_loewe.mp3",
+              "image": "l_loewe.png",
+              "enabled": true
+            },
+            {
+              "word": "Lampe",
+              "sound": "l_lampe.mp3",
+              "image": "l_lampe.png",
+              "enabled": true
+            },
+            {
+              "word": "Lokomotive",
+              "sound": "l_lokomotive.mp3",
+              "image": "l_lokomotive.png",
+              "enabled": true
+            },
+            {
+              "word": "Luftballon",
+              "sound": "l_luftballon.mp3",
+              "image": "l_luftballon.png",
+              "enabled": true
+            }
+          ]
+        },
+        "M": {
+          "entries": [
+            {
+              "word": "Maus",
+              "sound": "m_maus.mp3",
+              "image": "m_maus.png",
+              "enabled": true
+            },
+            {
+              "word": "Mond",
+              "sound": "m_mond.mp3",
+              "image": "m_mond.png",
+              "enabled": true
+            },
+            {
+              "word": "Musik",
+              "sound": "m_musik.mp3",
+              "image": "m_musik.png",
+              "enabled": true
+            },
+            {
+              "word": "Muschel",
+              "sound": "m_muschel.mp3",
+              "image": "m_muschel.png",
+              "enabled": true
+            }
+          ]
+        },
+        "N": {
+          "entries": [
+            {
+              "word": "Nase",
+              "sound": "n_nase.mp3",
+              "image": "n_nase.png",
+              "enabled": true
+            },
+            {
+              "word": "Nacht",
+              "sound": "n_nacht.mp3",
+              "image": "n_nacht.png",
+              "enabled": true
+            },
+            {
+              "word": "Nest",
+              "sound": "n_nest.mp3",
+              "image": "n_nest.png",
+              "enabled": true
+            },
+            {
+              "word": "Nilpferd",
+              "sound": "n_nilpferd.mp3",
+              "image": "n_nilpferd.png",
+              "enabled": true
+            }
+          ]
+        },
+        "O": {
+          "entries": [
+            {
+              "word": "Orgel",
+              "sound": "o_orgel.mp3",
+              "image": "o_orgel.png",
+              "enabled": true
+            },
+            {
+              "word": "Ohr",
+              "sound": "o_ohr.mp3",
+              "image": "o_ohr.png",
+              "enabled": true
+            },
+            {
+              "word": "Orange",
+              "sound": "o_orange.mp3",
+              "image": "o_orange.png",
+              "enabled": true
+            },
+            {
+              "word": "Oma",
+              "sound": "o_oma.mp3",
+              "image": "o_oma.png",
+              "enabled": true
+            }
+          ]
+        },
+        "P": {
+          "entries": [
+            {
+              "word": "Pferd",
+              "sound": "p_pferd.mp3",
+              "image": "p_pferd.png",
+              "enabled": true
+            },
+            {
+              "word": "Papagei",
+              "sound": "p_papagei.mp3",
+              "image": "p_papagei.png",
+              "enabled": true
+            },
+            {
+              "word": "Pizza",
+              "sound": "p_pizza.mp3",
+              "image": "p_pizza.png",
+              "enabled": true
+            },
+            {
+              "word": "Pirat",
+              "sound": "p_pirat.mp3",
+              "image": "p_pirat.png",
+              "enabled": true
+            }
+          ]
+        },
+        "Q": {
+          "entries": [
+            {
+              "word": "Quaken",
+              "sound": "q_quaken.mp3",
+              "image": "q_quaken.png",
+              "enabled": true
+            },
+            {
+              "word": "Qualle",
+              "sound": "q_qualle.mp3",
+              "image": "q_qualle.png",
+              "enabled": true
+            },
+            {
+              "word": "Quartett",
+              "sound": "q_quartett.mp3",
+              "image": "q_quartett.png",
+              "enabled": true
+            }
+          ]
+        },
+        "R": {
+          "entries": [
+            {
+              "word": "Regen",
+              "sound": "r_regen.mp3",
+              "image": "r_regen.png",
+              "enabled": true
+            },
+            {
+              "word": "Rakete",
+              "sound": "r_rakete.mp3",
+              "image": "r_rakete.png",
+              "enabled": true
+            },
+            {
+              "word": "Regenbogen",
+              "sound": "r_regenbogen.mp3",
+              "image": "r_regenbogen.png",
+              "enabled": true
+            },
+            {
+              "word": "Roboter",
+              "sound": "r_roboter.mp3",
+              "image": "r_roboter.png",
+              "enabled": true
+            }
+          ]
+        },
+        "S": {
+          "entries": [
+            {
+              "word": "Sonne",
+              "sound": "s_sonne.mp3",
+              "image": "s_sonne.png",
+              "enabled": true
+            },
+            {
+              "word": "Schmetterling",
+              "sound": "s_schmetterling.mp3",
+              "image": "s_schmetterling.png",
+              "enabled": true
+            },
+            {
+              "word": "Schlange",
+              "sound": "s_schlange.mp3",
+              "image": "s_schlange.png",
+              "enabled": true
+            },
+            {
+              "word": "Stern",
+              "sound": "s_stern.mp3",
+              "image": "s_stern.png",
+              "enabled": true
+            }
+          ]
+        },
+        "T": {
+          "entries": [
+            {
+              "word": "Tiger",
+              "sound": "t_tiger.mp3",
+              "image": "t_tiger.png",
+              "enabled": true
+            },
+            {
+              "word": "Telefon",
+              "sound": "t_telefon.mp3",
+              "image": "t_telefon.png",
+              "enabled": true
+            },
+            {
+              "word": "Traktor",
+              "sound": "t_traktor.mp3",
+              "image": "t_traktor.png",
+              "enabled": true
+            },
+            {
+              "word": "Trommel",
+              "sound": "t_trommel.mp3",
+              "image": "t_trommel.png",
+              "enabled": true
+            }
+          ]
+        },
+        "U": {
+          "entries": [
+            {
+              "word": "Uhu",
+              "sound": "u_uhu.mp3",
+              "image": "u_uhu.png",
+              "enabled": true
+            },
+            {
+              "word": "Uhr",
+              "sound": "u_uhr.mp3",
+              "image": "u_uhr.png",
+              "enabled": true
+            },
+            {
+              "word": "U-Boot",
+              "sound": "u_u-boot.mp3",
+              "image": "u_u-boot.png",
+              "enabled": true
+            },
+            {
+              "word": "Umbrella",
+              "sound": "u_umbrella.mp3",
+              "image": "u_umbrella.png",
+              "enabled": true
+            }
+          ]
+        },
+        "V": {
+          "entries": [
+            {
+              "word": "Vogel",
+              "sound": "v_vogel.mp3",
+              "image": "v_vogel.png",
+              "enabled": true
+            },
+            {
+              "word": "Vulkan",
+              "sound": "v_vulkan.mp3",
+              "image": "v_vulkan.png",
+              "enabled": true
+            },
+            {
+              "word": "Vampir",
+              "sound": "v_vampir.mp3",
+              "image": "v_vampir.png",
+              "enabled": true
+            }
+          ]
+        },
+        "W": {
+          "entries": [
+            {
+              "word": "Wasser",
+              "sound": "w_wasser.mp3",
+              "image": "w_wasser.png",
+              "enabled": true
+            },
+            {
+              "word": "Wal",
+              "sound": "w_wal.mp3",
+              "image": "w_wal.png",
+              "enabled": true
+            },
+            {
+              "word": "Wind",
+              "sound": "w_wind.mp3",
+              "image": "w_wind.png",
+              "enabled": true
+            },
+            {
+              "word": "Wolke",
+              "sound": "w_wolke.mp3",
+              "image": "w_wolke.png",
+              "enabled": true
+            }
+          ]
+        },
+        "X": {
+          "entries": [
+            {
+              "word": "Xylophon",
+              "sound": "x_xylophon.mp3",
+              "image": "x_xylophon.png",
+              "enabled": true
+            },
+            {
+              "word": "X-Ray",
+              "sound": "x_x-ray.mp3",
+              "image": "x_x-ray.png",
+              "enabled": true
+            }
+          ]
+        },
+        "Y": {
+          "entries": [
+            {
+              "word": "Yak",
+              "sound": "y_yak.mp3",
+              "image": "y_yak.png",
+              "enabled": true
+            },
+            {
+              "word": "Yoga",
+              "sound": "y_yoga.mp3",
+              "image": "y_yoga.png",
+              "enabled": true
+            }
+          ]
+        },
+        "Z": {
+          "entries": [
+            {
+              "word": "Ziege",
+              "sound": "z_ziege.mp3",
+              "image": "z_ziege.png",
+              "enabled": true
+            },
+            {
+              "word": "Zug",
+              "sound": "z_zug.mp3",
+              "image": "z_zug.png",
+              "enabled": true
+            },
+            {
+              "word": "Zebra",
+              "sound": "z_zebra.mp3",
+              "image": "z_zebra.png",
+              "enabled": true
+            },
+            {
+              "word": "Zauberer",
+              "sound": "z_zauberer.mp3",
+              "image": "z_zauberer.png",
+              "enabled": true
+            }
+          ]
+        }
       }
     }
   }

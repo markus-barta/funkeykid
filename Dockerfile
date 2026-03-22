@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Python deps
 COPY pyproject.toml .
-RUN pip install --no-cache-dir evdev paho-mqtt requests aiohttp
+RUN pip install --no-cache-dir evdev paho-mqtt requests aiohttp Pillow
 
 # App code
 COPY keyboard.py display.py server.py ./
@@ -26,6 +26,8 @@ RUN mkdir -p /data/sounds /data/images
 
 ENV FUNKEYKID_DATA=/data
 ENV FUNKEYKID_PORT=8081
+ARG BUILD_SHA=dev
+ENV FUNKEYKID_BUILD=$BUILD_SHA
 
 EXPOSE 8081
 

@@ -13,6 +13,7 @@ from aiohttp import web
 
 from keyboard import KeyboardListener
 from display import Display
+from version import VERSION, BUILD, REPO
 
 # SSE: connected clients
 sse_clients = weakref.WeakSet()
@@ -559,8 +560,147 @@ async def serve_index(request):
     return web.FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
+async def api_version(request):
+    return web.json_response({"version": VERSION, "build": BUILD, "repo": REPO})
+
+
+# ── AI Generation ───────────────────────────────────────────────────────────
+
+AI_DIR = os.path.join(DATA_DIR, "ai-generated")
+AI_SOUNDS_DIR = os.path.join(AI_DIR, "sounds")
+AI_IMAGES_ORIG_DIR = os.path.join(AI_DIR, "images-original")
+AI_IMAGES_RESIZED_DIR = os.path.join(AI_DIR, "images-resized")
+
+DEFAULT_SOUND_PROMPT = "Clear, distinct {word} sound effect, high quality, recognizable for children"
+DEFAULT_IMAGE_PROMPT = "Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children's animation style."
+
+
+async def api_generate_sound(request):
+    """Generate a sound via ElevenLabs and save to ai-generated/sounds/."""
+    data = await request.json()
+    word = data.get("word", "")
+    prompt = data.get("prompt", DEFAULT_SOUND_PROMPT.format(word=word))
+    duration = data.get("duration", 3)
+    filename = data.get("filename", _slugify(word) + ".mp3")
+
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if not api_key:
+        return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
+
+    os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
+    outpath = os.path.join(AI_SOUNDS_DIR, filename)
+
+    try:
+        import urllib.request
+        payload = json.dumps({
+            "text": prompt,
+            "duration_seconds": duration,
+            "prompt_influence": 0.6,
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.elevenlabs.io/v1/sound-generation",
+            data=payload,
+            headers={"xi-api-key": api_key, "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            audio_data = resp.read()
+
+        if len(audio_data) < 1000:
+            return web.json_response({"error": "Generierung fehlgeschlagen (zu klein)"}, status=500)
+
+        with open(outpath, "wb") as f:
+            f.write(audio_data)
+
+        # Also copy to active sounds dir
+        import shutil
+        shutil.copy2(outpath, os.path.join(SOUNDS_DIR, filename))
+
+        return web.json_response({
+            "ok": True, "file": filename, "size": len(audio_data),
+            "path": f"/sounds/{filename}",
+        })
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def api_generate_image(request):
+    """Generate an image via OpenRouter and save to ai-generated/images-*/."""
+    data = await request.json()
+    word = data.get("word", "")
+    description = data.get("description", word)
+    prompt = data.get("prompt", DEFAULT_IMAGE_PROMPT.format(description=description))
+    filename = data.get("filename", _slugify(word) + ".png")
+
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
+
+    os.makedirs(AI_IMAGES_ORIG_DIR, exist_ok=True)
+    os.makedirs(AI_IMAGES_RESIZED_DIR, exist_ok=True)
+
+    try:
+        import urllib.request, base64
+        payload = json.dumps({
+            "model": "google/gemini-2.5-flash-image",
+            "messages": [{"role": "user", "content": f"Generate a 512x512 image: {prompt}"}],
+        }).encode()
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=payload,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            d = json.load(resp)
+
+        images = d["choices"][0]["message"].get("images", [])
+        if not images:
+            return web.json_response({"error": "Keine Bilddaten erhalten"}, status=500)
+
+        b64 = images[0]["image_url"]["url"].split(",", 1)[1]
+        img_data = base64.b64decode(b64)
+
+        # Save original
+        orig_path = os.path.join(AI_IMAGES_ORIG_DIR, filename)
+        with open(orig_path, "wb") as f:
+            f.write(img_data)
+
+        # Resize to 64x64 using PIL if available, otherwise save as-is
+        resized_path = os.path.join(AI_IMAGES_RESIZED_DIR, filename)
+        try:
+            from PIL import Image
+            from io import BytesIO
+            img = Image.open(BytesIO(img_data))
+            img = img.resize((64, 64), Image.LANCZOS)
+            img.save(resized_path)
+        except ImportError:
+            # No PIL — save original, will be large but functional
+            with open(resized_path, "wb") as f:
+                f.write(img_data)
+
+        # Copy resized to active images dir
+        import shutil
+        shutil.copy2(resized_path, os.path.join(IMAGES_DIR, filename))
+
+        return web.json_response({
+            "ok": True, "file": filename, "size": len(img_data),
+            "path": f"/images/{filename}",
+            "original": f"/ai/images-original/{filename}",
+        })
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def serve_ai_file(request):
+    """Serve files from ai-generated directory."""
+    subpath = request.match_info["path"]
+    path = os.path.join(AI_DIR, subpath)
+    if not os.path.exists(path):
+        return web.Response(status=404)
+    return web.FileResponse(path)
+
+
 def _slugify(text):
-    return text.lower().replace(" ", "-").replace("&", "und")[:30]
+    return text.lower().replace(" ", "-").replace("&", "und").replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")[:30]
 
 
 def _reload_runtime():
@@ -604,6 +744,12 @@ def create_app():
     # Test
     app.router.add_post("/api/test/{letter}", api_test_key)
     app.router.add_get("/api/layout/{name}", api_get_layout)
+    # Version
+    app.router.add_get("/api/version", api_version)
+    # AI Generation
+    app.router.add_post("/api/generate/sound", api_generate_sound)
+    app.router.add_post("/api/generate/image", api_generate_image)
+    app.router.add_get("/ai/{path:.+}", serve_ai_file)
     # File serving
     app.router.add_get("/sounds/{filename}", serve_sound)
     app.router.add_get("/images/{filename}", serve_image)

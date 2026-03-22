@@ -178,6 +178,21 @@
                     </template>
                   </select>
                 </div>
+                <!-- AI Generation -->
+                <div class="flex gap-1 mt-1">
+                  <button class="btn btn-xs btn-accent btn-outline flex-1"
+                          @click="generateSound(entry, idx)"
+                          :disabled="!entry.word || entry._genSound"
+                          x-text="entry._genSound ? 'Generiere...' : '🔊 Sound generieren'"></button>
+                  <button class="btn btn-xs btn-accent btn-outline flex-1"
+                          @click="generateImage(entry, idx)"
+                          :disabled="!entry.word || entry._genImg"
+                          x-text="entry._genImg ? 'Generiere...' : '🖼️ Bild generieren'"></button>
+                </div>
+                <div x-show="entry._genExtra !== undefined" class="mt-1">
+                  <input type="text" class="input input-xs input-bordered w-full" x-model="entry._genExtra"
+                         placeholder="Zusätzliche Anweisungen für KI (optional)">
+                </div>
                 <img :src="entry.image ? '/images/' + entry.image : ''" class="img-preview mt-2"
                      x-show="entry.image" style="width:96px;height:96px;">
               </div>
@@ -355,6 +370,17 @@
 
   </div>
 
+  <!-- Footer -->
+  <footer class="text-center text-xs opacity-30 py-4 border-t border-base-content/5 mt-8">
+    <span>funkeykid</span>
+    <span x-text="'v' + appVersion"></span>
+    <span class="mx-1">·</span>
+    <span x-text="'Build ' + appBuild.substring(0,7)" x-show="appBuild !== 'dev'"></span>
+    <span x-show="appBuild === 'dev'">dev</span>
+    <span class="mx-1">·</span>
+    <a :href="appRepo" target="_blank" class="link link-hover">GitHub</a>
+  </footer>
+
   <!-- Toast -->
   <div class="toast" x-show="toast" x-transition x-cloak>
     <div class="alert" :class="toastType === 'error' ? 'alert-error' : 'alert-success'">
@@ -380,6 +406,7 @@ function funkeykid() {
           mqtt_connected:false, volume:100, searching:false },
     showDiag: false,
     diag: {},
+    appVersion: '?', appBuild: 'dev', appRepo: '',
 
     // Edit state
     editingLetter: null,
@@ -390,6 +417,13 @@ function funkeykid() {
     lastTestLetter: null, lastTestWord: null, lastTestImage: null,
 
     async init() {
+      // Load version info
+      try {
+        const v = await fetch('/api/version').then(r => r.json());
+        this.appVersion = v.version;
+        this.appBuild = v.build;
+        this.appRepo = v.repo;
+      } catch {}
       await this.refresh();
       this.connectSSE();
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
@@ -644,6 +678,56 @@ function funkeykid() {
       this.stopPreview();
       await fetch('/api/test/SPACE', { method: 'POST' });
       this.showToast('Wiedergabe gestoppt');
+    },
+
+    async generateSound(entry, idx) {
+      if (!entry.word) return;
+      entry._genSound = true;
+      const letter = this.editingLetter.toLowerCase();
+      const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
+      const filename = `${letter}_${slug}.mp3`;
+      const extra = entry._genExtra || '';
+      const prompt = `${entry.word} sound effect, clear and recognizable for children. ${extra}`.trim();
+      try {
+        const r = await fetch('/api/generate/sound', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ word: entry.word, prompt, filename, duration: 4 }),
+        }).then(r => r.json());
+        if (r.ok) {
+          entry.sound = filename;
+          this.sounds = await fetch('/api/sounds').then(r => r.json());
+          this.showToast(`🔊 Sound "${entry.word}" generiert ✓`);
+        } else {
+          this.showToast(r.error || 'Fehler', 'error');
+        }
+      } catch (e) { this.showToast(e.message, 'error'); }
+      entry._genSound = false;
+    },
+
+    async generateImage(entry, idx) {
+      if (!entry.word) return;
+      entry._genImg = true;
+      const letter = this.editingLetter.toLowerCase();
+      const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
+      const filename = `${letter}_${slug}.png`;
+      const extra = entry._genExtra || '';
+      const desc = `${entry.word}. ${extra}`.trim();
+      try {
+        const r = await fetch('/api/generate/image', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ word: entry.word, description: desc, filename }),
+        }).then(r => r.json());
+        if (r.ok) {
+          entry.image = filename;
+          this.images = await fetch('/api/images').then(r => r.json());
+          this.showToast(`🖼️ Bild "${entry.word}" generiert ✓`);
+        } else {
+          this.showToast(r.error || 'Fehler', 'error');
+        }
+      } catch (e) { this.showToast(e.message, 'error'); }
+      entry._genImg = false;
     },
     async uploadFile(ev, type) {
       const file = ev.target.files[0];

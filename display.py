@@ -40,14 +40,21 @@ class Display:
         user = mqtt_cfg.get("user") or os.environ.get("MOSQITTO_USER_HSB1", "smarthome")
         password = mqtt_cfg.get("password") or os.environ.get("MOSQITTO_PASS_HSB1")
 
+        print(f"[display] MQTT config: host={host}, port={port}, user={user}, pass={'***' if password else 'EMPTY!'}", flush=True)
         try:
             self._mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
             if password:
                 self._mqtt_client.username_pw_set(user, password)
+            else:
+                print("[display] WARNING: No MQTT password!", flush=True)
             self._mqtt_client.on_connect = self._on_connect
+            self._mqtt_client.on_disconnect = lambda c, u, f, rc, p=None: (
+                setattr(self, '_mqtt_connected', False),
+                print(f"[display] MQTT disconnected: rc={rc}", flush=True),
+            )
             self._mqtt_client.connect_async(host, port, 60)
             self._mqtt_client.loop_start()
-            print(f"[display] MQTT connecting to {host}:{port}...", flush=True)
+            print(f"[display] MQTT connecting...", flush=True)
         except Exception as e:
             print(f"[display] MQTT failed: {e}", flush=True)
 
@@ -104,9 +111,13 @@ class Display:
     def _mqtt_publish(self, topic, payload):
         if self._mqtt_client and self._mqtt_connected:
             try:
-                self._mqtt_client.publish(topic, json.dumps(payload), qos=0)
+                result = self._mqtt_client.publish(topic, json.dumps(payload), qos=0)
+                if result.rc != 0:
+                    print(f"[display] MQTT publish failed: rc={result.rc} topic={topic}", flush=True)
             except Exception as e:
                 print(f"[display] MQTT error: {e}", flush=True)
+        else:
+            print(f"[display] MQTT not ready: client={self._mqtt_client is not None}, connected={self._mqtt_connected}", flush=True)
 
     def _pixoo_direct(self, letter, word, image, color):
         """Send frame directly to Pixoo HTTP API."""

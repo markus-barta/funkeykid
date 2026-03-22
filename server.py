@@ -121,11 +121,26 @@ def play_sound(sound_file):
         return
     stop_all_sounds()
     pa_vol = int(current_volume / 100 * 65536)
-    proc = subprocess.Popen(
-        ["paplay", f"--volume={pa_vol}", str(sound_file)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    )
-    active_processes.append(proc)
+    env = os.environ.copy()
+    env["PULSE_SERVER"] = "unix:/run/user/1000/pulse/native"
+    try:
+        proc = subprocess.Popen(
+            ["paplay", f"--volume={pa_vol}", str(sound_file)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=env,
+        )
+        active_processes.append(proc)
+        # Quick check if it failed immediately
+        import time as _t
+        _t.sleep(0.1)
+        if proc.poll() is not None:
+            _, stderr = proc.communicate()
+            if stderr:
+                print(f"[sound] paplay error: {stderr.decode()[:200]}", flush=True)
+            else:
+                print(f"[sound] paplay exited with code {proc.returncode}", flush=True)
+    except Exception as e:
+        print(f"[sound] Popen error: {e}", flush=True)
 
 
 def change_volume(delta):

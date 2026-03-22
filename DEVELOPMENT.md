@@ -1,6 +1,6 @@
 # funkeykid — Development Guide
 
-**Version**: 2.1.0
+**Version**: 2.4.0
 **Repo**: https://github.com/markus-barta/funkeykid
 **Host**: hsb1 (Home Server Barta 1)
 **Image**: ghcr.io/markus-barta/funkeykid:latest
@@ -408,6 +408,79 @@ To update images for pidicon-light, copy to both:
 
 ---
 
+## Favorites (v2.2+)
+
+- **Tab key**: Toggles favorite on the currently active letter+entry
+- **Number keys 1-0**: Play favorite #1-#10 directly
+- Up to 10 favorites, persisted in `settings.json`
+- Favorites display in web UI (SSE `favorites` event)
+
+---
+
+## Position Memory (v2.2+)
+
+Switching letters does NOT reset the cycle position. Example:
+- Press W → Wasser (idx 0)
+- Press W → Wal (idx 1)
+- Press A → Affe
+- Press W → Wind (idx 2, continues from where you left off)
+
+Implemented via `cycle_index = {}` dict — never reset on letter change.
+
+---
+
+## Blacklist (v2.3+)
+
+Rejected AI word suggestions are blacklisted per letter:
+- Persisted in `settings.json` under `blacklist: {U: ["Uhu", "Unke"]}`
+- Excluded words sent in AI prompt as system message with explicit "NICHT X" lines
+- **Server-side validation**: Even if the AI returns a blacklisted word, the server rejects it and auto-retries (up to 3 attempts, increasing temperature)
+- Editable in the letter edit modal (collapsed at bottom)
+
+---
+
+## KI-Log (v2.3.5+)
+
+Debug tab showing all AI requests and responses:
+- Circular buffer of last 50 entries
+- Real-time updates via SSE `ai_log` event
+- Each entry: action, model, prompt (truncated), response, status badge
+- Expandable details per entry
+
+---
+
+## Configurable AI Models & Prompts (v2.3.4+)
+
+Under Settings → KI-Generierung:
+- **Sound-Prompt**: Template with `{word}` placeholder
+- **Bild-Prompt**: Template with `{description}` placeholder
+- **Wort-Vorschlag-Prompt**: Template with `{letter}` and `{excluded}` placeholders
+- **Vorschlag-Modell**: Dropdown with free/cheap/frontier models (Nemotron, GPT-4.1/5, Claude, Gemini)
+
+---
+
+## Async AI Generation (v2.2+)
+
+Sound and image generation runs in background threads:
+- API returns job ID immediately
+- SSE `gen_update` events notify UI on status changes (queued → generating → done/error)
+- Generation jobs panel in header shows active/failed jobs
+- File lists auto-refresh on completion
+
+---
+
+## Known Gotchas
+
+1. **Audio null sink**: mba (uid 1000) PipeWire has null sink. ALWAYS use kiosk (uid 1001)
+2. **Docker /dev/input**: BT devices connecting after container start need restart or "Neu verbinden"
+3. **pidicon-light image cache**: `loadPixooImage` caches forever — restart pidicon-light for new images
+4. **Umlaut filenames**: NEVER use ä/ö/ü in filenames → use ae/oe/ue
+5. **Hotfix volatility**: `docker cp` changes lost on image pull — always commit+push
+6. **Startup sounds**: 3s grace period prevents stale BT events at container restart
+7. **Small AI models**: Ignore exclusion lists — use system message + server-side validation + auto-retry
+
+---
+
 ## API Reference
 
 | Method | Endpoint | Purpose |
@@ -430,6 +503,10 @@ To update images for pidicon-light, copy to both:
 | POST | `/api/generate/image` | Generate image (Gemini) |
 | POST | `/api/archive` | Archive a file |
 | GET | `/api/archive` | List archived files |
+| GET/PUT | `/api/blacklist/{letter}` | Get/set blacklisted words |
+| GET | `/api/jobs` | List generation jobs |
+| GET | `/api/ai-log` | AI request/response log (last 50) |
+| GET | `/api/favorites` | List favorites |
 | GET/POST | `/api/sounds` | List/upload sounds |
 | GET/POST | `/api/images` | List/upload images |
 | GET | `/ai/{path}` | Serve ai-generated files |

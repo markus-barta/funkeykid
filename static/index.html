@@ -166,18 +166,14 @@
                 <div class="flex gap-2">
                   <select class="select select-xs select-bordered flex-1" x-model="entry.sound">
                     <option value="">kein Sound</option>
-                    <option x-show="entry.sound && !sounds.includes(entry.sound)"
-                            :value="entry.sound" x-text="entry.sound + ' ⚠️'" selected></option>
-                    <template x-for="s in sounds" :key="s">
+                    <template x-for="s in allSounds(entry.sound)" :key="s">
                       <option :value="s" x-text="s"></option>
                     </template>
                   </select>
                   <button class="btn btn-xs btn-ghost" @click="previewSound(entry.sound)">&#9654;</button>
                   <select class="select select-xs select-bordered flex-1" x-model="entry.image">
                     <option value="">kein Bild</option>
-                    <option x-show="entry.image && !images.includes(entry.image)"
-                            :value="entry.image" x-text="entry.image + ' ⚠️'" selected></option>
-                    <template x-for="img in images" :key="img">
+                    <template x-for="img in allImages(entry.image)" :key="img">
                       <option :value="img" x-text="img"></option>
                     </template>
                   </select>
@@ -513,6 +509,15 @@ function funkeykid() {
     },
     firstEntry(letter) {
       return this.getEntries(letter).find(e => e.enabled) || this.getEntries(letter)[0];
+    },
+    allSounds(current) {
+      // Ensure current value is always in the list
+      if (current && !this.sounds.includes(current)) return [current, ...this.sounds];
+      return this.sounds;
+    },
+    allImages(current) {
+      if (current && !this.images.includes(current)) return [current, ...this.images];
+      return this.images;
     },
     randomColor(l) {
       const c = ['#FF0000','#00CC00','#0066FF','#FF6600','#CC00CC','#00CCCC','#FFCC00','#FF3399'];

@@ -41,6 +41,9 @@ last_letter = None
 favorites = []
 # AI generation jobs tracking
 gen_jobs = {}  # {job_id: {type, word, status, filename, error}}
+# AI request/response log (circular buffer, last 50)
+ai_log = []
+AI_LOG_MAX = 50
 
 
 def load_settings():
@@ -626,6 +629,19 @@ AI_IMAGES_RESIZED_DIR = os.path.join(AI_DIR, "images-resized")
 
 FALLBACK_SOUND_PROMPT = "Clear, distinct {word} sound effect, high quality, recognizable for children"
 FALLBACK_IMAGE_PROMPT = "Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children's animation style."
+FALLBACK_SUGGEST_PROMPT = """Schlage EIN deutsches Wort vor, das mit dem Buchstaben {letter} beginnt.
+
+Anforderungen:
+- Sprache: Deutsch (Österreich)
+- Zielgruppe: Kinder 2-5 Jahre
+- Das Wort muss ein konkretes Ding/Tier/Objekt sein (kein abstraktes Konzept)
+- Es muss ein dazu passendes, klar erkennbares Geräusch geben
+- Nicht anstößig, kindgerecht
+- VERBOTEN — diese Wörter dürfen NICHT vorgeschlagen werden: {excluded}
+- Wenn du eines dieser verbotenen Wörter vorschlägst, ist die Antwort FALSCH
+
+Antworte NUR mit einem JSON-Objekt (keine Erklärung):
+{{"word": "Wort", "sound_description": "Geräusch auf Englisch", "image_description": "Bildbeschreibung auf Englisch"}}"""
 
 
 def _get_sound_prompt():
@@ -636,6 +652,26 @@ def _get_image_prompt():
     return settings.get("ai_prompts", {}).get("image", FALLBACK_IMAGE_PROMPT)
 
 
+def _get_suggest_prompt():
+    return settings.get("ai_prompts", {}).get("suggest", FALLBACK_SUGGEST_PROMPT)
+
+
+def _ai_log_entry(action, model, prompt_sent, response_text, status="ok"):
+    """Log an AI request/response for the debug tab."""
+    entry = {
+        "timestamp": time.time(),
+        "action": action,
+        "model": model,
+        "prompt": prompt_sent[:500],
+        "response": response_text[:500] if response_text else "",
+        "status": status,
+    }
+    ai_log.append(entry)
+    if len(ai_log) > AI_LOG_MAX:
+        ai_log.pop(0)
+    sse_broadcast("ai_log", entry)
+
+
 def _gen_sound_worker(job_id, word, prompt, duration, filename):
     """Background worker for sound generation."""
     import urllib.request, shutil
@@ -643,6 +679,7 @@ def _gen_sound_worker(job_id, word, prompt, duration, filename):
     sse_broadcast("gen_update", gen_jobs[job_id])
     api_key = os.environ.get("ELEVENLABS_API_KEY", "")
     os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
+    _ai_log_entry("sound", "elevenlabs/sfx", prompt, None, "sending")
     try:
         payload = json.dumps({"text": prompt, "duration_seconds": duration, "prompt_influence": 0.6}).encode()
         req = urllib.request.Request("https://api.elevenlabs.io/v1/sound-generation",
@@ -656,8 +693,10 @@ def _gen_sound_worker(job_id, word, prompt, duration, filename):
             f.write(audio_data)
         shutil.copy2(outpath, os.path.join(SOUNDS_DIR, filename))
         gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}"})
+        _ai_log_entry("sound", "elevenlabs/sfx", prompt, f"OK: {len(audio_data)} bytes → {filename}", "ok")
     except Exception as e:
         gen_jobs[job_id].update({"status": "error", "error": str(e)})
+        _ai_log_entry("sound", "elevenlabs/sfx", prompt, str(e), "error")
     sse_broadcast("gen_update", gen_jobs[job_id])
 
 
@@ -742,41 +781,31 @@ async def api_suggest_word(request):
     """AI-suggest a fitting German word for a letter, not already used."""
     data = await request.json()
     letter = data.get("letter", "A").upper()
-    language = data.get("language", "de-AT")
 
     # Collect ALL used words for this letter (from all sets)
     used_words = set()
     for s in settings.get("sets", {}).values():
         for entry in s.get("letters", {}).get(letter, {}).get("entries", []):
-            used_words.add(entry.get("word", "").lower())
-
+            used_words.add(entry.get("word", ""))
     # Also include blacklisted words
-    blacklist = set(w.lower() for w in settings.get("blacklist", {}).get(letter, []))
-    excluded = sorted(used_words | blacklist)
+    blacklist = list(settings.get("blacklist", {}).get(letter, []))
+    all_excluded = sorted(set(list(used_words) + blacklist))
 
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key:
         return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
 
-    excluded_list = ", ".join(excluded) if excluded else "keine"
-    prompt = f"""Schlage EIN deutsches Wort vor, das mit dem Buchstaben {letter} beginnt.
+    excluded_str = ", ".join(all_excluded) if all_excluded else "keine"
+    prompt_template = _get_suggest_prompt()
+    prompt = prompt_template.format(letter=letter, excluded=excluded_str)
 
-Anforderungen:
-- Sprache: Deutsch (Österreich)
-- Zielgruppe: Kinder 2-5 Jahre
-- Das Wort muss ein konkretes Ding/Tier/Objekt sein (kein abstraktes Konzept)
-- Es muss ein dazu passendes, klar erkennbares Geräusch geben
-- Nicht anstößig, kindgerecht
-- VERBOTEN — diese Wörter dürfen NICHT vorgeschlagen werden: {excluded_list}
-- Wenn du eines dieser verbotenen Wörter vorschlägst, ist die Antwort FALSCH
-
-Antworte NUR mit einem JSON-Objekt in diesem Format (keine Erklärung):
-{{"word": "Wort", "sound_description": "Beschreibung des Geräuschs auf Englisch für Sound-KI", "image_description": "Beschreibung des Bildes auf Englisch für Bild-KI"}}"""
+    model = "openai/gpt-4.1-mini"
+    _ai_log_entry("suggest", model, prompt, None, "sending")
 
     try:
-        import urllib.request
+        import urllib.request, re
         payload = json.dumps({
-            "model": "openai/gpt-4.1-mini",
+            "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.9,
         }).encode()
@@ -789,14 +818,25 @@ Antworte NUR mit einem JSON-Objekt in diesem Format (keine Erklärung):
             d = json.load(resp)
 
         content = d["choices"][0]["message"]["content"]
-        # Parse JSON from response (might have markdown wrapping)
-        import re
+        _ai_log_entry("suggest", model, prompt, content, "received")
+
         json_match = re.search(r'\{[^}]+\}', content)
         if json_match:
             suggestion = json.loads(json_match.group())
+            # Server-side validation: reject if word is in excluded list
+            suggested_word = suggestion.get("word", "")
+            if suggested_word.lower() in [w.lower() for w in all_excluded]:
+                _ai_log_entry("suggest", model, prompt, f"REJECTED: {suggested_word} is excluded", "rejected")
+                return web.json_response({
+                    "error": f'KI hat "{suggested_word}" vorgeschlagen, aber das ist ausgeschlossen. Nochmal versuchen.',
+                    "rejected_word": suggested_word,
+                })
+            _ai_log_entry("suggest", model, prompt, f"OK: {suggested_word}", "ok")
             return web.json_response(suggestion)
+        _ai_log_entry("suggest", model, prompt, content[:200], "parse_error")
         return web.json_response({"error": "KI-Antwort nicht parsebar", "raw": content[:200]}, status=500)
     except Exception as e:
+        _ai_log_entry("suggest", model, prompt, str(e), "error")
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -918,6 +958,7 @@ def create_app():
     app.router.add_get("/api/blacklist/{letter}", api_get_blacklist)
     app.router.add_put("/api/blacklist/{letter}", api_put_blacklist)
     app.router.add_get("/api/jobs", lambda r: web.json_response(list(gen_jobs.values())))
+    app.router.add_get("/api/ai-log", lambda r: web.json_response(ai_log))
     app.router.add_get("/api/favorites", lambda r: web.json_response(favorites))
     app.router.add_post("/api/archive", api_archive_file)
     app.router.add_get("/api/archive", api_list_archive)

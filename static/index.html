@@ -132,6 +132,7 @@
     <a class="tab" :class="tab === 'test' && 'tab-active'" @click="tab='test'">Tastatur</a>
     <a class="tab" :class="tab === 'settings' && 'tab-active'" @click="tab='settings'">Einstellungen</a>
     <a class="tab" :class="tab === 'files' && 'tab-active'" @click="tab='files'">Dateien</a>
+    <a class="tab" :class="tab === 'ailog' && 'tab-active'" @click="tab='ailog'; loadAiLog()">KI-Log</a>
   </div>
 
   <div class="container mx-auto px-4 pb-8">
@@ -434,6 +435,13 @@
             <div class="text-[10px] opacity-30 mt-0.5">Platzhalter: {description} wird durch die Bildbeschreibung ersetzt</div>
           </div>
 
+          <div class="form-control mb-3">
+            <label class="label"><span class="label-text">Wort-Vorschlag-Prompt</span></label>
+            <textarea class="textarea textarea-bordered text-xs h-24" x-model="settings.ai_prompts.suggest" @change="autoSave()"
+                      placeholder="Prompt mit {letter} und {excluded} Platzhaltern"></textarea>
+            <div class="text-[10px] opacity-30 mt-0.5">Platzhalter: {letter} = Buchstabe, {excluded} = ausgeschlossene Wörter</div>
+          </div>
+
           <div class="text-xs opacity-40 mt-4 text-center">Änderungen werden automatisch gespeichert</div>
         </div>
       </div>
@@ -470,6 +478,42 @@
             </div>
             <input type="file" class="file-input file-input-bordered file-input-sm w-full mt-3"
                    accept=".png,.jpg,.jpeg,.gif" @change="uploadFile($event, 'images')">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ AI LOG TAB ═══ -->
+    <div x-show="tab === 'ailog'" x-cloak>
+      <div class="card bg-base-100 shadow">
+        <div class="card-body p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="card-title text-sm">KI-Anfragen & Antworten</h2>
+            <button class="btn btn-xs btn-ghost" @click="loadAiLog()">Aktualisieren</button>
+          </div>
+          <div class="overflow-y-auto max-h-[70vh] space-y-2">
+            <template x-for="(log, i) in aiLogEntries" :key="i">
+              <div class="rounded bg-base-200 p-2 text-xs">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="badge badge-xs"
+                        :class="log.status === 'ok' ? 'badge-success' : log.status === 'error' ? 'badge-error' : log.status === 'rejected' ? 'badge-warning' : 'badge-info'"
+                        x-text="log.status"></span>
+                  <span class="font-semibold" x-text="log.action"></span>
+                  <span class="opacity-40" x-text="log.model"></span>
+                  <span class="opacity-30 ml-auto" x-text="new Date(log.timestamp * 1000).toLocaleTimeString('de')"></span>
+                </div>
+                <details>
+                  <summary class="cursor-pointer opacity-50 hover:opacity-80">Prompt & Antwort anzeigen</summary>
+                  <div class="mt-1 space-y-1">
+                    <div class="bg-base-300 rounded p-1.5 font-mono text-[10px] whitespace-pre-wrap max-h-32 overflow-y-auto" x-text="log.prompt"></div>
+                    <div class="bg-base-300 rounded p-1.5 font-mono text-[10px] whitespace-pre-wrap max-h-32 overflow-y-auto"
+                         :class="log.status === 'error' ? 'text-error' : log.status === 'rejected' ? 'text-warning' : 'text-success'"
+                         x-text="log.response || '(kein Inhalt)'"></div>
+                  </div>
+                </details>
+              </div>
+            </template>
+            <div x-show="!aiLogEntries.length" class="text-center opacity-40 py-8">Noch keine KI-Anfragen</div>
           </div>
         </div>
       </div>
@@ -521,6 +565,7 @@ function funkeykid() {
     _suggesting: false,
     _blacklist: [],
     genJobs: {},
+    aiLogEntries: [],
     favorites: [],
 
     // Test state
@@ -596,6 +641,11 @@ function funkeykid() {
           this.showToast(d.word + ': ' + d.error, 'error');
         }
       });
+      es.addEventListener('ai_log', (e) => {
+        const d = JSON.parse(e.data);
+        this.aiLogEntries.unshift(d);
+        if (this.aiLogEntries.length > 50) this.aiLogEntries.pop();
+      });
       es.addEventListener('favorites', (e) => {
         this.favorites = JSON.parse(e.data).favorites || [];
       });
@@ -622,6 +672,7 @@ function funkeykid() {
           fetch('/api/images').then(r => r.json()),
         ]);
         if (!s.ai_prompts) s.ai_prompts = {
+          suggest: 'Schlage EIN deutsches Wort vor, das mit dem Buchstaben {letter} beginnt.\n\nAnforderungen:\n- Sprache: Deutsch (Österreich)\n- Zielgruppe: Kinder 2-5 Jahre\n- Konkretes Ding/Tier/Objekt (kein abstraktes Konzept)\n- Erkennbares Geräusch muss dazu passen\n- Kindgerecht, nicht anstößig\n- VERBOTEN: {excluded}\n\nAntworte NUR mit JSON: {{"word": "Wort", "sound_description": "...", "image_description": "..."}}',
           sound: 'Clear, distinct {word} sound effect, high quality, recognizable for children',
           image: 'Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children\'s animation style.',
         };
@@ -666,6 +717,10 @@ function funkeykid() {
       } catch (e) {
         this.showToast('Fehler: ' + e.message, 'error');
       }
+    },
+
+    async loadAiLog() {
+      try { this.aiLogEntries = (await fetch('/api/ai-log').then(r => r.json())).reverse(); } catch {}
     },
 
     // ── Letter helpers ──

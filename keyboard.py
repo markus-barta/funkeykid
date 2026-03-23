@@ -78,8 +78,8 @@ class KeyboardListener:
     def _should_process(self, key_name):
         """Debounce check."""
         now = time.time()
-        # Volume/space keys bypass debounce
-        if key_name in ('EQUAL', 'MINUS', 'KPPLUS', 'KPMINUS', 'SPACE'):
+        # Volume/space/replay keys bypass debounce
+        if key_name in ('EQUAL', 'MINUS', 'KPPLUS', 'KPMINUS', 'SPACE', 'ENTER'):
             return True
         if now - self._last_any_key_time < self.debounce_seconds:
             return False

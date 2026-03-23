@@ -189,6 +189,17 @@ def _play_entry(key_name, entry, entry_index=0):
         display.publish_letter(key_name, word, image)
 
 
+def _replay_last():
+    """Replay the last played sound without advancing the cycle."""
+    if not last_letter:
+        return
+    entries = get_enabled_entries(last_letter)
+    if not entries:
+        return
+    idx = cycle_index.get(last_letter, 0) % len(entries)
+    _play_entry(last_letter, entries[idx], idx)
+
+
 def handle_key(key_name, raw_key=None):
     """Handle a key press — cycles through enabled entries per letter."""
     global last_letter, cycle_index, favorites
@@ -211,6 +222,11 @@ def handle_key(key_name, raw_key=None):
         return
     if key_name in ("MINUS", "KPMINUS"):
         change_volume(-10)
+        return
+
+    # Enter = replay last sound
+    if key_name == "ENTER":
+        _replay_last()
         return
 
     # Tab = toggle favorite for last played letter

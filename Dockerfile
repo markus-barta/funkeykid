@@ -17,7 +17,7 @@ COPY pyproject.toml .
 RUN pip install --no-cache-dir evdev paho-mqtt requests aiohttp Pillow
 
 # App code
-COPY keyboard.py display.py server.py ./
+COPY keyboard.py display.py server.py version.py ./
 COPY static/ ./static/
 COPY settings.json /app/defaults/settings.json
 

@@ -881,6 +881,76 @@ Antwort NUR als JSON: {{"word": "...", "sound_description": "... (Englisch)", "i
     })
 
 
+async def api_integrations_status(request):
+    """Check health and credits for all AI integrations."""
+    import urllib.request
+    loop = asyncio.get_event_loop()
+
+    def _check_elevenlabs():
+        api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+        if not api_key:
+            return {"status": "not_configured", "error": "ELEVENLABS_API_KEY nicht gesetzt"}
+        try:
+            req = urllib.request.Request("https://api.elevenlabs.io/v1/user/subscription",
+                headers={"xi-api-key": api_key})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                d = json.load(resp)
+            used = d.get("character_count", 0)
+            limit = d.get("character_limit", 0)
+            remaining = limit - used
+            status = "warning" if (limit > 0 and remaining / limit < 0.05) else "ok"
+            return {
+                "status": status,
+                "tier": d.get("tier", "unknown"),
+                "characters_used": used,
+                "characters_limit": limit,
+                "characters_remaining": remaining,
+                "next_reset": d.get("next_character_count_reset_unix"),
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    def _check_openrouter():
+        api_key = os.environ.get("OPENROUTER_API_KEY", "")
+        if not api_key:
+            return {"status": "not_configured", "error": "OPENROUTER_API_KEY nicht gesetzt"}
+        try:
+            req = urllib.request.Request("https://openrouter.ai/api/v1/auth/key",
+                headers={"Authorization": f"Bearer {api_key}"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                d = json.load(resp)
+            data = d.get("data", {})
+            limit = data.get("limit")
+            usage = data.get("usage", 0)
+            remaining = data.get("limit_remaining")
+            if limit is None:
+                # Unlimited key (pay-as-you-go with balance)
+                return {
+                    "status": "ok",
+                    "credits_used": round(usage, 4),
+                    "credits_limit": None,
+                    "credits_remaining": round(remaining, 4) if remaining is not None else None,
+                    "label": data.get("label", ""),
+                }
+            remaining = limit - usage if remaining is None else remaining
+            status = "warning" if (limit > 0 and remaining / limit < 0.10) else "ok"
+            return {
+                "status": status,
+                "credits_used": round(usage, 4),
+                "credits_limit": round(limit, 4),
+                "credits_remaining": round(remaining, 4),
+                "label": data.get("label", ""),
+            }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
+    el, orr = await asyncio.gather(
+        loop.run_in_executor(None, _check_elevenlabs),
+        loop.run_in_executor(None, _check_openrouter),
+    )
+    return web.json_response({"elevenlabs": el, "openrouter": orr})
+
+
 async def api_get_blacklist(request):
     """Get blacklisted words for a letter."""
     letter = request.match_info["letter"].upper()
@@ -1000,6 +1070,7 @@ def create_app():
     app.router.add_put("/api/blacklist/{letter}", api_put_blacklist)
     app.router.add_get("/api/jobs", lambda r: web.json_response(list(gen_jobs.values())))
     app.router.add_get("/api/ai-log", lambda r: web.json_response(ai_log))
+    app.router.add_get("/api/integrations/status", api_integrations_status)
     app.router.add_get("/api/favorites", lambda r: web.json_response(favorites))
     app.router.add_post("/api/archive", api_archive_file)
     app.router.add_get("/api/archive", api_list_archive)

@@ -134,7 +134,7 @@
     <a class="tab" :class="tab === 'test' && 'tab-active'" @click="tab='test'">Tastatur</a>
     <a class="tab" :class="tab === 'settings' && 'tab-active'" @click="tab='settings'">Einstellungen</a>
     <a class="tab" :class="tab === 'files' && 'tab-active'" @click="tab='files'">Dateien</a>
-    <a class="tab" :class="tab === 'ailog' && 'tab-active'" @click="tab='ailog'; loadAiLog()">KI-Log</a>
+    <a class="tab" :class="tab === 'ailog' && 'tab-active'" @click="tab='ailog'; loadAiLog(); loadIntegrations()">KI & Dienste</a>
   </div>
 
   <div class="container mx-auto px-4 pb-8">
@@ -472,8 +472,126 @@
       </div>
     </div>
 
-    <!-- ═══ AI LOG TAB ═══ -->
+    <!-- ═══ AI & INTEGRATIONS TAB ═══ -->
     <div x-show="tab === 'ailog'" x-cloak>
+
+      <!-- Integration Status -->
+      <div class="grid md:grid-cols-2 gap-3 mb-4">
+
+        <!-- ElevenLabs -->
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <div class="w-2.5 h-2.5 rounded-full" :class="{
+                  'bg-success': integrations.elevenlabs?.status === 'ok',
+                  'bg-warning animate-pulse': integrations.elevenlabs?.status === 'warning',
+                  'bg-error': integrations.elevenlabs?.status === 'error',
+                  'bg-base-300': !integrations.elevenlabs || integrations.elevenlabs?.status === 'not_configured'
+                }"></div>
+                <h3 class="font-bold text-sm">ElevenLabs</h3>
+                <span class="badge badge-xs badge-ghost">Sound</span>
+              </div>
+              <button class="btn btn-xs btn-ghost" @click="loadIntegrations()" :disabled="integrationsLoading">
+                <span x-show="integrationsLoading" class="loading loading-spinner loading-xs"></span>
+                <span x-show="!integrationsLoading">Testen</span>
+              </button>
+            </div>
+
+            <template x-if="!integrations.elevenlabs">
+              <div class="text-xs opacity-30">Klicke "Testen" um den Status zu prüfen</div>
+            </template>
+            <template x-if="integrations.elevenlabs?.status === 'not_configured'">
+              <div class="text-xs opacity-50">ELEVENLABS_API_KEY nicht gesetzt</div>
+            </template>
+            <template x-if="integrations.elevenlabs?.status === 'error'">
+              <div class="text-xs text-error" x-text="integrations.elevenlabs.error"></div>
+            </template>
+            <template x-if="integrations.elevenlabs?.status === 'ok' || integrations.elevenlabs?.status === 'warning'">
+              <div class="text-xs space-y-1.5">
+                <div class="flex justify-between">
+                  <span>Tier: <span class="font-semibold capitalize" x-text="integrations.elevenlabs.tier"></span></span>
+                  <span class="opacity-50" x-show="integrations.elevenlabs.next_reset"
+                        x-text="'Reset: ' + new Date(integrations.elevenlabs.next_reset * 1000).toLocaleDateString('de')"></span>
+                </div>
+                <div class="flex justify-between">
+                  <span>Zeichen</span>
+                  <span><span class="font-semibold" x-text="integrations.elevenlabs.characters_remaining?.toLocaleString('de')"></span> verbleibend</span>
+                </div>
+                <progress class="progress progress-sm w-full"
+                  :class="integrations.elevenlabs.status === 'warning' ? 'progress-warning' : 'progress-success'"
+                  :value="integrations.elevenlabs.characters_used"
+                  :max="integrations.elevenlabs.characters_limit"></progress>
+                <div class="flex justify-between opacity-40">
+                  <span x-text="integrations.elevenlabs.characters_used?.toLocaleString('de') + ' verwendet'"></span>
+                  <span x-text="'von ' + integrations.elevenlabs.characters_limit?.toLocaleString('de')"></span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- OpenRouter -->
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center gap-2">
+                <div class="w-2.5 h-2.5 rounded-full" :class="{
+                  'bg-success': integrations.openrouter?.status === 'ok',
+                  'bg-warning animate-pulse': integrations.openrouter?.status === 'warning',
+                  'bg-error': integrations.openrouter?.status === 'error',
+                  'bg-base-300': !integrations.openrouter || integrations.openrouter?.status === 'not_configured'
+                }"></div>
+                <h3 class="font-bold text-sm">OpenRouter</h3>
+                <span class="badge badge-xs badge-ghost">Bild & Wort</span>
+              </div>
+              <button class="btn btn-xs btn-ghost" @click="loadIntegrations()" :disabled="integrationsLoading">
+                <span x-show="integrationsLoading" class="loading loading-spinner loading-xs"></span>
+                <span x-show="!integrationsLoading">Testen</span>
+              </button>
+            </div>
+
+            <template x-if="!integrations.openrouter">
+              <div class="text-xs opacity-30">Klicke "Testen" um den Status zu prüfen</div>
+            </template>
+            <template x-if="integrations.openrouter?.status === 'not_configured'">
+              <div class="text-xs opacity-50">OPENROUTER_API_KEY nicht gesetzt</div>
+            </template>
+            <template x-if="integrations.openrouter?.status === 'error'">
+              <div class="text-xs text-error" x-text="integrations.openrouter.error"></div>
+            </template>
+            <template x-if="integrations.openrouter?.status === 'ok' || integrations.openrouter?.status === 'warning'">
+              <div class="text-xs space-y-1.5">
+                <div class="flex justify-between" x-show="integrations.openrouter.label">
+                  <span>Key: <span class="font-semibold" x-text="integrations.openrouter.label"></span></span>
+                </div>
+                <div class="flex justify-between">
+                  <span>Credits</span>
+                  <span><span class="font-semibold" x-text="'$' + integrations.openrouter.credits_remaining?.toFixed(2)"></span> verbleibend</span>
+                </div>
+                <template x-if="integrations.openrouter.credits_limit">
+                  <div>
+                    <progress class="progress progress-sm w-full"
+                      :class="integrations.openrouter.status === 'warning' ? 'progress-warning' : 'progress-success'"
+                      :value="integrations.openrouter.credits_used"
+                      :max="integrations.openrouter.credits_limit"></progress>
+                    <div class="flex justify-between opacity-40 mt-0.5">
+                      <span x-text="'$' + integrations.openrouter.credits_used?.toFixed(2) + ' verwendet'"></span>
+                      <span x-text="'von $' + integrations.openrouter.credits_limit?.toFixed(2)"></span>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="!integrations.openrouter.credits_limit">
+                  <div class="opacity-40">Pay-as-you-go (kein Limit)</div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- AI Log -->
       <div class="card bg-base-100 shadow">
         <div class="card-body p-4">
           <div class="flex items-center justify-between mb-3">
@@ -555,6 +673,8 @@ function funkeykid() {
     _blacklist: [],
     genJobs: {},
     aiLogEntries: [],
+    integrations: { elevenlabs: null, openrouter: null },
+    integrationsLoading: false,
     favorites: [],
 
     // Test state
@@ -729,6 +849,12 @@ function funkeykid() {
 
     async loadAiLog() {
       try { this.aiLogEntries = (await fetch('/api/ai-log').then(r => r.json())).reverse(); } catch {}
+    },
+    async loadIntegrations() {
+      this.integrationsLoading = true;
+      try { this.integrations = await fetch('/api/integrations/status').then(r => r.json()); }
+      catch { this.integrations = { elevenlabs: { status: 'error', error: 'Netzwerkfehler' }, openrouter: { status: 'error', error: 'Netzwerkfehler' } }; }
+      this.integrationsLoading = false;
     },
 
     // ── Letter helpers ──

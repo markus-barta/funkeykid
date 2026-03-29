@@ -37,6 +37,8 @@ STARTUP_GRACE_SECONDS = 3  # Ignore keypresses for 3s after start (prevents stal
 # Per-letter cycling state: {letter: index} — persists across letter switches
 cycle_index = {}
 last_letter = None
+# Flat playlist position for arrow-key navigation (index into _build_flat_playlist())
+flat_pos = -1
 # Favorites: list of {letter, entry_index} — up to 10
 favorites = []
 # AI generation jobs tracking
@@ -111,6 +113,48 @@ def get_enabled_entries(letter):
     letters = get_active_set()
     letter_cfg = letters.get(letter, {})
     return [e for e in letter_cfg.get("entries", []) if e.get("enabled", True)]
+
+
+def _build_flat_playlist():
+    """Build flat list of (letter, entry_index, entry) from A-Z, enabled entries only."""
+    letters = get_active_set()
+    playlist = []
+    for letter in sorted(letters.keys()):
+        for i, entry in enumerate(get_enabled_entries(letter)):
+            playlist.append((letter, i, entry))
+    return playlist
+
+
+def _flat_pos_for(letter, entry_index=0):
+    """Find flat playlist position for a given letter + entry index."""
+    playlist = _build_flat_playlist()
+    for i, (l, ei, _) in enumerate(playlist):
+        if l == letter and ei == entry_index:
+            return i
+    # Letter not found — find first entry of this letter
+    for i, (l, _, _) in enumerate(playlist):
+        if l == letter:
+            return i
+    return 0
+
+
+def _navigate_flat(delta):
+    """Move through the flat playlist by delta (+1 = right, -1 = left). Wraps around."""
+    global flat_pos, last_letter, cycle_index
+    playlist = _build_flat_playlist()
+    if not playlist:
+        return
+
+    # If no position yet, start at beginning (right) or end (left)
+    if flat_pos < 0:
+        flat_pos = 0 if delta > 0 else len(playlist) - 1
+
+    new_pos = (flat_pos + delta) % len(playlist)
+    flat_pos = new_pos
+    letter, entry_index, entry = playlist[flat_pos]
+    last_letter = letter
+    cycle_index[letter] = entry_index
+    _play_entry(letter, entry, entry_index)
 
 
 def stop_all_sounds():
@@ -209,7 +253,7 @@ def _replay_last():
 
 def handle_key(key_name, raw_key=None):
     """Handle a key press — cycles through enabled entries per letter."""
-    global last_letter, cycle_index, favorites
+    global last_letter, cycle_index, favorites, flat_pos
     raw_key = raw_key or key_name
     if time.time() - startup_time < STARTUP_GRACE_SECONDS:
         return
@@ -239,6 +283,14 @@ def handle_key(key_name, raw_key=None):
     # Tab = toggle favorite for last played letter
     if key_name == "TAB":
         _toggle_favorite()
+        return
+
+    # Arrow keys = navigate flat playlist (all sounds A-Z sequentially)
+    if key_name == "RIGHT":
+        _navigate_flat(+1)
+        return
+    if key_name == "LEFT":
+        _navigate_flat(-1)
         return
 
     # Number keys 1-0 = play favorite
@@ -271,6 +323,7 @@ def handle_key(key_name, raw_key=None):
         idx = cycle_index.get(key_name, 0) % len(entries)
     cycle_index[key_name] = idx
     last_letter = key_name
+    flat_pos = _flat_pos_for(key_name, idx)
 
     _play_entry(key_name, entries[idx], idx)
 

@@ -132,8 +132,15 @@ def play_sound(sound_file):
     stop_all_sounds()
     pa_vol = int(current_volume / 100 * 65536)
     env = os.environ.copy()
-    # Use container's PULSE_SERVER (set via docker-compose, points to kiosk's PipeWire)
-    # Don't override if already set correctly
+    # Pin PipeWire sink to 100% before every play — prevents drift from affecting output.
+    # Node-RED babycam is unaffected (controls VLC internal volume via telnet, not the sink).
+    try:
+        subprocess.run(
+            ["pactl", "set-sink-volume", "@DEFAULT_SINK@", "100%"],
+            env=env, timeout=2, capture_output=True,
+        )
+    except Exception:
+        pass  # non-fatal — paplay still works, just at whatever sink level
     try:
         proc = subprocess.Popen(
             ["paplay", f"--volume={pa_vol}", str(sound_file)],

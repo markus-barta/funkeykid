@@ -1,68 +1,59 @@
 # funkeykid
 
-Educational keyboard toy for children. Turns a dedicated Bluetooth keyboard into a learning tool.
+Educational keyboard toy for children. Turns a dedicated Bluetooth keyboard into a learning tool with sounds, Pixoo64 display, and AI-generated content.
+
+**Host**: hsb1 · **Image**: `ghcr.io/markus-barta/funkeykid:latest` · **UI**: http://hsb1.lan:8081
 
 ## Features
 
 - **Letter sounds**: Each key plays a language-appropriate sound (A = Apfel, K = Katze, ...)
-- **Pixoo display**: Shows pressed letter on a Pixoo64 LED matrix via pixdcon MQTT
-- **TTS**: Optionally speaks the word ("A wie Apfel") via ElevenLabs
-- **Language packs**: Configurable per language (starting with de-AT)
-- **Mode toggles**: Sound, display, and speak modes independently on/off
-
-## Setup
-
-```bash
-cp config.example.json config.json
-# Edit config.json with your device name, MQTT settings, paths
-```
-
-### Sound files
-
-Sound files are NOT included in this repo (copyright protected). Deploy them to the target host:
-
-```bash
-rsync -avz ~/sounds/ mba@hsb1.lan:/var/lib/funkeykid-sounds/
-```
-
-### NixOS
-
-This is designed to run as a NixOS service. The NixOS module lives in [nixcfg](https://github.com/markus-barta/nixcfg) at `modules/funkeykid.nix`.
-
-### Development
-
-```bash
-nix develop  # Enter dev shell with Python + deps
-python funkeykid.py  # Run locally (needs config.json + keyboard)
-```
-
-## Configuration
-
-See `config.example.json` for all options. Key settings:
-
-- `language`: Language pack to use (e.g., `de-AT`)
-- `modes.sound`: Play sounds on keypress
-- `modes.display`: Show letter on Pixoo via MQTT
-- `modes.speak`: Speak word via TTS
-- `tts.engine`: TTS provider (`elevenlabs`)
-
-## Language packs
-
-Language packs live in `lang/` as JSON files. Each maps letters to:
-- A word in that language
-- A sound file name
-- TTS text to speak
-
-See `lang/de-AT.json` for the format.
+- **Arrow navigation**: RIGHT/LEFT step through all sounds sequentially; UP/DOWN jump by letter
+- **Pixoo display**: Shows letter + word on Pixoo64 via pixdcon MQTT (50% darkened text strip)
+- **Keyboard status**: Connection state published to MQTT → shown as dots in pixdcon home scene
+- **AI generation**: Create sounds (ElevenLabs) and images (Gemini) from the web UI
+- **Sets**: Multiple letter/word collections, switchable from the UI
+- **Web UI**: Full management at port 8081 (letters, sets, files, settings, AI tools)
 
 ## Architecture
 
 ```
-Keyboard (BT) → evdev → funkeykid.py
-                              ├── paplay (sound)
-                              ├── MQTT → pixdcon → Pixoo64 (display)
-                              └── ElevenLabs API → cached mp3 (TTS)
+ACME BK03 (Bluetooth keyboard)
+  → evdev → keyboard.py (QWERTZ layout mapping)
+  → server.py handle_key()
+      ├── pactl set-sink-volume 100% → paplay → kiosk PipeWire → speakers
+      ├── MQTT display topic → pixdcon funkeykid.js → Pixoo64 (letter+image)
+      └── MQTT keyboard-info → pixdcon home.js → Pixoo64 (status dots)
 ```
+
+## Keyboard Controls
+
+| Key | Action |
+|-----|--------|
+| A-Z | Play letter sound, cycle through entries on repeat |
+| RIGHT/LEFT | Step through all sounds sequentially (wraps) |
+| UP/DOWN | Jump to previous/next letter (wraps) |
+| ENTER | Replay last sound |
+| SPACE | Stop all sounds |
+| +/- | Volume up/down (10% steps) |
+| TAB | Toggle favorite on current entry |
+| 1-0 | Play favorite #1-#10 |
+
+## Deploy
+
+```bash
+# CI path (normal)
+git push → gh run watch → ssh hsb1 "cd ~/docker && docker compose pull funkeykid && docker compose up -d funkeykid"
+
+# Hotfix (no CI, lost on next pull)
+scp server.py mba@hsb1.lan:/tmp/fk.py
+ssh mba@hsb1.lan "docker cp /tmp/fk.py funkeykid:/app/server.py && docker restart funkeykid"
+```
+
+## Docs
+
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** — Full dev guide (architecture, audio routing, APIs, AI generation)
+- **[DEPLOY.md](DEPLOY.md)** — Deployment guide (Docker, NixOS, audio, file locations)
+- **[FAQ.md](FAQ.md)** — Troubleshooting (no sound, keyboard issues, volume)
 
 ## License
 

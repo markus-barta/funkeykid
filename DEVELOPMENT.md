@@ -1,6 +1,6 @@
 # funkeykid — Development Guide
 
-**Version**: 2.4.0
+**Version**: 2.6.0
 **Repo**: https://github.com/markus-barta/funkeykid
 **Host**: hsb1 (Home Server Barta 1)
 **Image**: ghcr.io/markus-barta/funkeykid:latest
@@ -53,9 +53,14 @@ Physical keyboard (ACME BK03, Bluetooth)
     → server.py handle_key():
         1. SSE broadcast "rawkey" (ALL keys, even unmapped)
         2. SSE broadcast "keypress" (letter + word + sound + image)
-        3. play_sound() → paplay via kiosk PipeWire → speakers
+        3. play_sound() → pactl set-sink-volume 100% → paplay via kiosk PipeWire → speakers
         4. display.publish_letter() → MQTT → pixdcon → Pixoo64
     → Web UI updates instantly via SSE EventSource
+
+Keyboard connect/disconnect:
+    → keyboard.py detects via evdev
+    → display.publish_keyboard_status() → MQTT (retained) → pixdcon home scene
+    → home.js: 3 green dots (connected) or 2 gray dots (disconnected) in header
 ```
 
 ---
@@ -140,6 +145,11 @@ Both audio streams mix via PipeWire.
 - Set `XDG_RUNTIME_DIR=/run/user/1001` and `PULSE_SERVER=unix:/run/user/1001/pulse/native`
 - paplay exits 0 on null sink but produces no audible output — always verify with real sink
 - DO NOT break kiosk's PipeWire session — babycam depends on it
+
+**Sink volume pinning (v2.5+):** Every `play_sound()` call runs
+`pactl set-sink-volume @DEFAULT_SINK@ 100%` before `paplay`. This prevents
+PipeWire sink drift (observed at 41%) from making sounds quiet. Safe because
+babycam volume is controlled via VLC's internal telnet interface, not the sink.
 
 ---
 
@@ -389,14 +399,19 @@ ssh mba@hsb1.lan "cd ~/docker && docker compose pull funkeykid && docker compose
 
 The Dockerfile includes bluez + Pillow. After image pull, these are baked in. Manual `apt-get install` only needed when hotfixing the running container (which uses the old image).
 
-### pixdcon Scene
+### pixdcon Scenes
 
-The funkeykid scene (`scenes/pixoo/funkeykid.js`) in pixdcon:
+**funkeykid scene** (`scenes/pixoo/funkeykid.js`) on pixoo-189:
 - Subscribes to `home/hsb1/funkeykid/display` MQTT
 - Loads images from `/app/assets/pixoo/funkeykid/` (host-mounted)
-- Renders: bg image + letter (top-left, shadow) + word (bottom-center, shadow)
+- Renders: bg image + letter (top-left, big font) + word (bottom-center on 50% darkened strip)
+- Bottom 8px of bg image darkened by halving RGB values → readable text on any background
 - Idle: shows last bg image after 10s
 - Hot-reloads on file change (ScenesWatcher)
+
+**home scene** (`scenes/pixoo/home.js`) on pixoo-159:
+- Subscribes to `home/hsb1/funkeykid/keyboard-info` (retained)
+- Header indicator at x=30,33,36 y=3: 3 green dots (connected), 2 gray dots (disconnected)
 
 To update images for pixdcon, copy to both:
 ```bash
@@ -426,6 +441,23 @@ Switching letters does NOT reset the cycle position. Example:
 - Press W → Wind (idx 2, continues from where you left off)
 
 Implemented via `cycle_index = {}` dict — never reset on letter change.
+
+---
+
+## Arrow Key Navigation (v2.6+)
+
+Four arrow keys provide sequential navigation through all sounds:
+
+| Key | Action | Wraps? |
+|-----|--------|--------|
+| RIGHT | Next sound in flat playlist (A1→A2→...→A4→B1→B2→...) | Yes, Z last → A first |
+| LEFT | Previous sound in flat playlist | Yes, A first → Z last |
+| DOWN | Jump to next letter's first entry (A→B→C→...→Z→A) | Yes |
+| UP | Jump to previous letter's first entry (Z→Y→...→A→Z) | Yes |
+
+- Pressing a letter key syncs the flat playlist position
+- Arrow keys bypass debounce for responsive rapid navigation
+- All four directions wrap around — a child can hold RIGHT forever
 
 ---
 
@@ -466,6 +498,22 @@ Sound and image generation runs in background threads:
 - SSE `gen_update` events notify UI on status changes (queued → generating → done/error)
 - Generation jobs panel in header shows active/failed jobs
 - File lists auto-refresh on completion
+
+---
+
+## MQTT Topics
+
+All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funkeykid`).
+
+| Topic | Direction | Retained | Payload |
+|-------|-----------|----------|---------|
+| `…/display` | publish | no | `{letter, word, image, color, timestamp}` |
+| `…/keyboard-info` | publish | **yes** | `{connected, battery_level, device_name, timestamp}` |
+| `…/debug` | publish | no | `{timestamp, level, message}` |
+
+**Consumers:**
+- `…/display` → pixdcon `funkeykid.js` scene (Pixoo64 letter rendering)
+- `…/keyboard-info` → pixdcon `home.js` scene (keyboard status dots in header)
 
 ---
 

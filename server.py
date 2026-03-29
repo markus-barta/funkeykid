@@ -157,6 +157,42 @@ def _navigate_flat(delta):
     _play_entry(letter, entry, entry_index)
 
 
+def _navigate_letter(delta):
+    """Jump to next (+1) or previous (-1) letter's first entry. Wraps A↔Z."""
+    global flat_pos, last_letter, cycle_index
+    playlist = _build_flat_playlist()
+    if not playlist:
+        return
+
+    # Build ordered list of unique letters in the playlist
+    seen = set()
+    letter_order = []
+    for l, _, _ in playlist:
+        if l not in seen:
+            seen.add(l)
+            letter_order.append(l)
+
+    if not letter_order:
+        return
+
+    # Find current letter's position in the letter list
+    if last_letter in letter_order:
+        cur = letter_order.index(last_letter)
+    else:
+        cur = 0 if delta > 0 else len(letter_order) - 1
+
+    target_letter = letter_order[(cur + delta) % len(letter_order)]
+
+    # Jump to first entry of that letter
+    for i, (l, ei, entry) in enumerate(playlist):
+        if l == target_letter:
+            flat_pos = i
+            last_letter = l
+            cycle_index[l] = ei
+            _play_entry(l, entry, ei)
+            return
+
+
 def stop_all_sounds():
     global active_processes
     for proc in active_processes[:]:
@@ -285,12 +321,18 @@ def handle_key(key_name, raw_key=None):
         _toggle_favorite()
         return
 
-    # Arrow keys = navigate flat playlist (all sounds A-Z sequentially)
+    # Arrow keys: LEFT/RIGHT = step through all sounds, UP/DOWN = jump by letter
     if key_name == "RIGHT":
         _navigate_flat(+1)
         return
     if key_name == "LEFT":
         _navigate_flat(-1)
+        return
+    if key_name == "DOWN":
+        _navigate_letter(+1)
+        return
+    if key_name == "UP":
+        _navigate_letter(-1)
         return
 
     # Number keys 1-0 = play favorite
@@ -1166,9 +1208,11 @@ def main():
     debounce = settings.get("debounce_seconds", 0.8)
     keyboard = KeyboardListener(device_name, layout=layout, debounce_seconds=debounce)
     keyboard.on_key(handle_key)
-    keyboard.on_connection_change(
-        lambda connected, status: sse_broadcast("connection", status)
-    )
+    def _on_keyboard_connection(connected, status):
+        sse_broadcast("connection", status)
+        if display:
+            display.publish_keyboard_status(status)
+    keyboard.on_connection_change(_on_keyboard_connection)
     keyboard.start()
     print(f"[funkeykid] Keyboard: {device_name} (layout={layout})", flush=True)
 

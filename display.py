@@ -91,6 +91,25 @@ class Display:
                 "timestamp": time.time(),
             })
 
+    def publish_keyboard_status(self, status):
+        """Publish keyboard connection status to MQTT (retained)."""
+        payload = {
+            "connected": status.get("connected", False),
+            "battery_level": status.get("battery_level"),
+            "device_name": status.get("device_name"),
+            "timestamp": time.time(),
+        }
+        if self._mqtt_client and self._mqtt_connected:
+            try:
+                self._mqtt_client.publish(
+                    self._topic("keyboard-info"),
+                    json.dumps(payload),
+                    qos=0,
+                    retain=True,
+                )
+            except Exception as e:
+                print(f"[display] MQTT keyboard-info error: {e}", flush=True)
+
     def log(self, message, level="info"):
         """Debug log via MQTT."""
         self._mqtt_publish(self._topic("debug"), {

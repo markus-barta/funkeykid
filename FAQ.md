@@ -141,3 +141,26 @@ pixdcon's `loadPixooImage()` caches images at scene init. After updating images:
 ### Settings reset after update
 
 Settings live in `/data/settings.json` (volume mount), NOT in the image. They survive container recreation. If settings reset: check the volume mount is correct in docker-compose.yml.
+
+### Container exits with code 127 / PipeWire socket mount fails
+
+**Symptom**: Container won't start, `docker inspect` shows error like:
+```
+error mounting "/run/user/1001/pipewire-0": not a directory:
+Are you trying to mount a directory onto a file (or vice-versa)?
+```
+
+**Cause**: PipeWire creates `/run/user/1001/pipewire-0` as a Unix socket. If Docker tries to mount it and the path doesn't exist yet, Docker creates a **directory** at that path instead. This blocks PipeWire from creating its socket on next start, killing audio for everything on the kiosk session (funkeykid, babycam/VLC, etc.).
+
+**Fix**: Do NOT mount `pipewire-0` directly in docker-compose.yml. Audio goes through PulseAudio's compatibility socket at `/run/user/1001/pulse/native` (already mounted). If this already happened:
+
+```bash
+# Remove the stale directory Docker created
+sudo rmdir /run/user/1001/pipewire-0
+
+# Restart PipeWire + PulseAudio for the kiosk user
+sudo systemctl --user -M kiosk@ restart pipewire.socket pipewire.service pipewire-pulse.socket pipewire-pulse.service
+
+# Recreate the container
+cd ~/docker && docker compose up -d funkeykid
+```

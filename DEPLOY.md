@@ -57,7 +57,6 @@ funkeykid:
     - ./mounts/funkeykid/ai-generated:/data/ai-generated
     - /dev/input:/dev/input
     - /run/user/1001/pulse:/run/user/1001/pulse
-    - /run/user/1001/pipewire-0:/run/user/1001/pipewire-0
     - /run/dbus:/run/dbus
 ```
 

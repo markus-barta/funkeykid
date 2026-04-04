@@ -164,3 +164,25 @@ sudo systemctl --user -M kiosk@ restart pipewire.socket pipewire.service pipewir
 # Recreate the container
 cd ~/docker && docker compose up -d funkeykid
 ```
+
+### No sound after reboot (paplay: Connection refused)
+
+**Symptom**: Container starts fine but `paplay` reports `Connection refused`. `pactl info` inside the container also fails.
+
+**Cause**: Docker's bind mount of `/run/user/1001/pulse` creates the `pulse/` directory as **root** before the kiosk user's PipeWire session starts. When `pipewire-pulse.socket` tries to create its listening socket at `/run/user/1001/pulse/native`, it gets **Permission denied** because the parent directory is owned by root.
+
+Check with: `sudo journalctl _UID=1001 --grep 'pipewire-pulse'` — look for `Failed to create listening socket: Permission denied`.
+
+**Quick fix** (manual, does not survive reboot):
+```bash
+sudo systemctl --user -M kiosk@ restart pipewire-pulse.socket pipewire-pulse.service
+cd ~/docker && docker compose restart funkeykid
+```
+
+**Permanent fix (TODO)**: Replace the specific pulse mount with the parent runtime directory so Docker doesn't create child directories as root:
+```yaml
+# Replace this:
+- /run/user/1001/pulse:/run/user/1001/pulse
+# With this:
+- /run/user/1001:/run/user/1001
+```

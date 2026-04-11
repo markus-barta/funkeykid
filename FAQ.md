@@ -179,10 +179,8 @@ sudo systemctl --user -M kiosk@ restart pipewire-pulse.socket pipewire-pulse.ser
 cd ~/docker && docker compose restart funkeykid
 ```
 
-**Permanent fix (TODO)**: Replace the specific pulse mount with the parent runtime directory so Docker doesn't create child directories as root:
+**Permanent fix (applied 2026-04-11)**: The bind mount in `~/docker/docker-compose.yml` on hsb1 now points at the parent runtime directory so Docker never creates the `pulse/` child as root:
 ```yaml
-# Replace this:
-- /run/user/1001/pulse:/run/user/1001/pulse
-# With this:
 - /run/user/1001:/run/user/1001
 ```
+This relies on the kiosk user session (uid 1001) being up before Docker starts the container, so `/run/user/1001` already exists and Docker simply binds the existing tmpfs. If the container ever boots before the kiosk session, the old symptom can return — in that case bounce the container after the kiosk session is up.

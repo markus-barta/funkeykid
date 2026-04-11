@@ -37,6 +37,25 @@ STARTUP_GRACE_SECONDS = 3  # Ignore keypresses for 3s after start (prevents stal
 # Per-letter cycling state: {letter: index} — persists across letter switches
 cycle_index = {}
 last_letter = None
+# Per-digit background cycling state: {digit: bg_index}
+number_cycle_index = {}
+last_number = None
+NUMBER_KEYS = ("0","1","2","3","4","5","6","7","8","9")
+# Default number content — seeded into any set missing a `numbers` key on load
+DEFAULT_NUMBERS = {
+    "0": {"word": "Null",           "image_subject": "an empty wooden bowl, nothing inside, plain background"},
+    "1": {"word": "Ein Apfel",      "image_subject": "one red apple"},
+    "2": {"word": "Zwei Bananen",   "image_subject": "two yellow bananas"},
+    "3": {"word": "Drei Enten",     "image_subject": "three ducks"},
+    "4": {"word": "Vier Autos",     "image_subject": "four toy cars"},
+    "5": {"word": "Fünf Sterne",    "image_subject": "five yellow stars"},
+    "6": {"word": "Sechs Bälle",    "image_subject": "six colorful balls"},
+    "7": {"word": "Sieben Fische",  "image_subject": "seven fish"},
+    "8": {"word": "Acht Blumen",    "image_subject": "eight flowers"},
+    "9": {"word": "Neun Marienkäfer","image_subject": "nine ladybugs"},
+}
+# Default ElevenLabs voice id for number TTS (overridable in settings.numbers_tts.voice_id)
+DEFAULT_NUMBER_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 # Flat playlist position for arrow-key navigation (index into _build_flat_playlist())
 flat_pos = -1
 # Favorites: list of {letter, entry_index} — up to 10
@@ -56,8 +75,37 @@ def load_settings():
     # Migrate old flat format → sets format
     if "letters" in settings and "sets" not in settings:
         _migrate_to_sets()
+    _ensure_numbers_defaults()
     current_volume = settings.get("volume", 100)
     return settings
+
+
+def _ensure_numbers_defaults():
+    """Seed `numbers` block into every set if missing. Ships metadata only — sound/image files are generated later via the web UI."""
+    changed = False
+    for set_data in settings.get("sets", {}).values():
+        nums = set_data.get("numbers")
+        if nums is None:
+            set_data["numbers"] = {}
+            nums = set_data["numbers"]
+            changed = True
+        for digit, default in DEFAULT_NUMBERS.items():
+            if digit not in nums:
+                nums[digit] = {
+                    "word": default["word"],
+                    "image_subject": default["image_subject"],
+                    "sound": "",
+                    "backgrounds": [],
+                }
+                changed = True
+    if "numbers_tts" not in settings:
+        settings["numbers_tts"] = {"voice_id": DEFAULT_NUMBER_VOICE_ID}
+        changed = True
+    if changed:
+        try:
+            save_settings()
+        except Exception as e:
+            print(f"[settings] failed to persist numbers defaults: {e}", flush=True)
 
 
 def _migrate_to_sets():
@@ -287,6 +335,57 @@ def _replay_last():
     _play_entry(last_letter, entries[idx], idx)
 
 
+def get_active_numbers():
+    """Return the active set's numbers dict."""
+    set_id = settings.get("active_set", "")
+    return settings.get("sets", {}).get(set_id, {}).get("numbers", {})
+
+
+def get_enabled_backgrounds(digit):
+    """Return enabled backgrounds for a digit (cycled on repeated presses)."""
+    cfg = get_active_numbers().get(digit, {})
+    return [b for b in cfg.get("backgrounds", []) if b.get("enabled", True)]
+
+
+def _play_number(digit):
+    """Play a number entry — fixed word/sound, cycling background on repeat."""
+    global number_cycle_index, last_number
+    cfg = get_active_numbers().get(digit)
+    if not cfg:
+        print(f"[num] {digit}: no config", flush=True)
+        return
+    word = cfg.get("word", digit)
+    sound = cfg.get("sound", "")
+    bgs = get_enabled_backgrounds(digit)
+    if bgs:
+        if digit == last_number:
+            idx = (number_cycle_index.get(digit, 0) + 1) % len(bgs)
+        else:
+            idx = number_cycle_index.get(digit, 0) % len(bgs)
+        number_cycle_index[digit] = idx
+        image = bgs[idx].get("image", "")
+    else:
+        idx = 0
+        image = ""
+    last_number = digit
+    print(f"[num] {digit} → {word} (sound={sound}, image={image})", flush=True)
+    try:
+        sse_broadcast("keypress", {
+            "letter": digit, "word": word, "sound": sound, "image": image,
+            "entry_index": idx, "timestamp": time.time(),
+        })
+    except Exception as e:
+        print(f"[sse] broadcast error: {e}", flush=True)
+    if sound:
+        sound_path = os.path.join(SOUNDS_DIR, sound)
+        if os.path.exists(sound_path):
+            play_sound(sound_path)
+        else:
+            print(f"[num] sound not found: {sound_path}", flush=True)
+    if display:
+        display.publish_letter(digit, word, image)
+
+
 def handle_key(key_name, raw_key=None):
     """Handle a key press — cycles through enabled entries per letter."""
     global last_letter, cycle_index, favorites, flat_pos
@@ -335,10 +434,16 @@ def handle_key(key_name, raw_key=None):
         _navigate_letter(-1)
         return
 
-    # Number keys 1-0 = play favorite
-    if key_name in ("1","2","3","4","5","6","7","8","9","0"):
-        fav_idx = int(key_name) - 1 if key_name != "0" else 9
+    # Shift+digit = play favorite (1..9 → 0..8, 0 → 9)
+    if key_name.startswith("SHIFT_") and key_name[6:] in NUMBER_KEYS:
+        d = key_name[6:]
+        fav_idx = int(d) - 1 if d != "0" else 9
         _play_favorite(fav_idx)
+        return
+
+    # Digit alone = play number entry (word + sound + cycling bg)
+    if key_name in NUMBER_KEYS:
+        _play_number(key_name)
         return
 
     # Get enabled entries for this letter
@@ -497,7 +602,8 @@ async def api_put_settings(request):
     data = await request.json()
     # Only update top-level config keys, not sets (those have own endpoints)
     for k in ("keyboard_layout", "keyboard_device", "volume", "random_sounds_enabled",
-              "display_mode", "pixoo_ip", "debounce_seconds", "active_set", "mqtt", "ai_prompts"):
+              "display_mode", "pixoo_ip", "debounce_seconds", "active_set", "mqtt", "ai_prompts",
+              "numbers_tts"):
         if k in data:
             settings[k] = data[k]
     save_settings()
@@ -640,6 +746,42 @@ async def api_add_entry(request):
     letter_data["entries"].append(entry)
     save_settings()
     return web.json_response({"ok": True, "index": len(letter_data["entries"]) - 1})
+
+
+# ── Numbers (per set) ────────────────────────────────────────────────────────
+
+async def api_get_numbers(request):
+    """Return the numbers dict of a set."""
+    set_id = request.match_info["set_id"]
+    sets = settings.get("sets", {})
+    if set_id not in sets:
+        return web.json_response({"error": "Set not found"}, status=404)
+    return web.json_response(sets[set_id].get("numbers", {}))
+
+
+async def api_put_number(request):
+    """Replace the full config for a digit."""
+    set_id = request.match_info["set_id"]
+    digit = request.match_info["digit"]
+    if digit not in NUMBER_KEYS:
+        return web.json_response({"error": "Invalid digit"}, status=400)
+    data = await request.json()
+    sets = settings.get("sets", {})
+    if set_id not in sets:
+        return web.json_response({"error": "Set not found"}, status=404)
+    numbers = sets[set_id].setdefault("numbers", {})
+    # Keep only known fields
+    numbers[digit] = {
+        "word": data.get("word", ""),
+        "image_subject": data.get("image_subject", ""),
+        "sound": data.get("sound", ""),
+        "backgrounds": [
+            {"image": b.get("image", ""), "enabled": bool(b.get("enabled", True))}
+            for b in data.get("backgrounds", [])
+        ],
+    }
+    save_settings()
+    return web.json_response({"ok": True})
 
 
 async def api_delete_entry(request):
@@ -892,6 +1034,66 @@ async def api_generate_image(request):
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
     threading.Thread(target=_gen_image_worker, args=(job_id, word, prompt, filename), daemon=True).start()
+    return web.json_response({"ok": True, "job_id": job_id})
+
+
+def _gen_tts_worker(job_id, text, voice_id, filename):
+    """Background worker for ElevenLabs TTS (text-to-speech) — used for number words."""
+    import urllib.request, shutil
+    gen_jobs[job_id]["status"] = "generating"
+    sse_broadcast("gen_update", gen_jobs[job_id])
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
+    _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text, None, "sending")
+    try:
+        payload = json.dumps({
+            "text": text,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "style": 0.0, "use_speaker_boost": True},
+        }).encode()
+        req = urllib.request.Request(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            data=payload,
+            headers={
+                "xi-api-key": api_key,
+                "Content-Type": "application/json",
+                "Accept": "audio/mpeg",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            audio_data = resp.read()
+        if len(audio_data) < 1000:
+            raise ValueError("TTS-Ausgabe zu klein")
+        outpath = os.path.join(AI_SOUNDS_DIR, filename)
+        with open(outpath, "wb") as f:
+            f.write(audio_data)
+        shutil.copy2(outpath, os.path.join(SOUNDS_DIR, filename))
+        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}"})
+        _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text, f"OK: {len(audio_data)}b → {filename}", "ok")
+    except Exception as e:
+        gen_jobs[job_id].update({"status": "error", "error": str(e)})
+        _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text, str(e), "error")
+    sse_broadcast("gen_update", gen_jobs[job_id])
+
+
+async def api_generate_tts(request):
+    """Start TTS generation — returns job ID immediately. Uses ElevenLabs multilingual v2."""
+    data = await request.json()
+    text = (data.get("text") or "").strip()
+    if not text:
+        return web.json_response({"error": "text fehlt"}, status=400)
+    voice_id = (data.get("voice_id")
+                or settings.get("numbers_tts", {}).get("voice_id")
+                or DEFAULT_NUMBER_VOICE_ID)
+    filename = data.get("filename") or (_slugify(text) + ".mp3")
+    word = data.get("word", text)
+    if not os.environ.get("ELEVENLABS_API_KEY"):
+        return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
+    job_id = f"tts_{uuid.uuid4().hex[:8]}"
+    gen_jobs[job_id] = {"id": job_id, "type": "sound", "word": word, "filename": filename, "status": "queued"}
+    sse_broadcast("gen_update", gen_jobs[job_id])
+    import threading
+    threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
     return web.json_response({"ok": True, "job_id": job_id})
 
 
@@ -1154,6 +1356,9 @@ def create_app():
     app.router.add_put("/api/sets/{set_id}/letters/{letter}", api_put_letter)
     app.router.add_post("/api/sets/{set_id}/letters/{letter}/entries", api_add_entry)
     app.router.add_delete("/api/sets/{set_id}/letters/{letter}/entries/{index}", api_delete_entry)
+    # Numbers within a set
+    app.router.add_get("/api/sets/{set_id}/numbers", api_get_numbers)
+    app.router.add_put("/api/sets/{set_id}/numbers/{digit}", api_put_number)
     # Files
     app.router.add_get("/api/sounds", api_get_sounds)
     app.router.add_post("/api/sounds/upload", api_upload_sound)
@@ -1167,6 +1372,7 @@ def create_app():
     # AI Generation
     app.router.add_post("/api/generate/sound", api_generate_sound)
     app.router.add_post("/api/generate/image", api_generate_image)
+    app.router.add_post("/api/generate/tts", api_generate_tts)
     app.router.add_post("/api/suggest-word", api_suggest_word)
     app.router.add_get("/api/blacklist/{letter}", api_get_blacklist)
     app.router.add_put("/api/blacklist/{letter}", api_put_blacklist)

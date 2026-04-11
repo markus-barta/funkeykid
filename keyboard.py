@@ -245,6 +245,16 @@ class KeyboardListener:
                     # Apply layout
                     key = self._translate_key(raw)
 
+                    # Shift+digit → SHIFT_<digit> (used for favorites)
+                    if key in ("1","2","3","4","5","6","7","8","9","0"):
+                        try:
+                            active = set(device.active_keys())
+                            if (evdev.ecodes.KEY_LEFTSHIFT in active or
+                                evdev.ecodes.KEY_RIGHTSHIFT in active):
+                                key = "SHIFT_" + key
+                        except Exception:
+                            pass
+
                     # Track for status
                     self.last_key = key
                     self.last_raw_key = raw

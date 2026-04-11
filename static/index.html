@@ -131,6 +131,7 @@
   <!-- Tabs -->
   <div class="tabs tabs-boxed justify-center my-3 mx-4">
     <a class="tab" :class="tab === 'letters' && 'tab-active'" @click="tab='letters'">Buchstaben</a>
+    <a class="tab" :class="tab === 'numbers' && 'tab-active'" @click="tab='numbers'">Nummern</a>
     <a class="tab" :class="tab === 'sets' && 'tab-active'" @click="tab='sets'">Sets</a>
     <a class="tab" :class="tab === 'test' && 'tab-active'" @click="tab='test'">Tastatur</a>
     <a class="tab" :class="tab === 'settings' && 'tab-active'" @click="tab='settings'">Einstellungen</a>
@@ -275,6 +276,102 @@
       </dialog>
     </div>
 
+    <!-- ═══ NUMBERS TAB ═══ -->
+    <div x-show="tab === 'numbers'" x-cloak>
+      <div class="text-xs opacity-50 mb-3">
+        Ziffer gedrückt → TTS spricht das Wort, Ziffer + Hintergrundbild erscheinen.
+        Mehrfaches Drücken wechselt das Hintergrundbild. <span class="opacity-60">(Shift + Ziffer = Favorit)</span>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+        <template x-for="digit in ['0','1','2','3','4','5','6','7','8','9']" :key="digit">
+          <div class="card bg-base-100 shadow letter-card" @click="editNumber(digit)">
+            <div class="card-body p-3">
+              <div class="flex items-start gap-2">
+                <span class="text-3xl font-black" x-text="digit"
+                      :style="'color:' + randomColor(digit)"></span>
+                <img :src="firstNumberBg(digit) ? '/images/' + firstNumberBg(digit) : ''"
+                     class="img-preview ml-auto" loading="lazy"
+                     x-show="firstNumberBg(digit)">
+              </div>
+              <div class="text-sm opacity-70 mt-1" x-text="getNumber(digit)?.word || '—'"></div>
+              <div class="text-xs opacity-40">
+                <span x-text="(getNumber(digit)?.sound ? '♫' : '·')"></span>
+                <span x-text="(getNumber(digit)?.backgrounds || []).filter(b=>b.enabled).length + '/' + (getNumber(digit)?.backgrounds || []).length + ' Bg'"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Edit Number Modal -->
+      <dialog class="modal" :class="editingNumber !== null && 'modal-open'">
+        <div class="modal-box max-w-2xl" x-show="editingNumber !== null">
+          <h3 class="font-bold text-2xl mb-4">
+            <span x-text="editingNumber" class="text-primary"></span>
+            <span class="text-sm font-normal opacity-60 ml-2">bearbeiten</span>
+          </h3>
+
+          <div class="space-y-3">
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs opacity-60">Gesprochenes Wort (TTS)</span></label>
+              <input type="text" class="input input-sm input-bordered"
+                     x-model="editNumberData.word" placeholder="z.B. Drei Enten">
+            </div>
+            <div class="form-control">
+              <label class="label py-1"><span class="label-text text-xs opacity-60">Bild-Motiv (Englisch, für KI)</span></label>
+              <input type="text" class="input input-sm input-bordered"
+                     x-model="editNumberData.image_subject" placeholder="z.B. three ducks">
+            </div>
+
+            <div class="flex items-center gap-2">
+              <label class="text-2xs opacity-40 w-12 flex-shrink-0">Sound</label>
+              <select class="select select-xs select-bordered flex-1" x-model="editNumberData.sound">
+                <option value="">—</option>
+                <template x-for="s in sounds" :key="s"><option :value="s" x-text="s"></option></template>
+              </select>
+              <button class="p-1 opacity-30 hover:opacity-80 flex-shrink-0" @click="previewSound(editNumberData.sound)"
+                      :disabled="!editNumberData.sound" title="Abspielen">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg>
+              </button>
+              <button class="p-1 opacity-30 hover:opacity-80 flex-shrink-0"
+                      @click="generateNumberTTS()" :disabled="!editNumberData.word" title="TTS erzeugen (ElevenLabs)">
+                <span x-show="_genTTS" class="loading loading-spinner loading-xs"></span>
+                <svg x-show="!_genTTS" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
+              </button>
+            </div>
+
+            <div>
+              <label class="text-2xs opacity-40">Hintergrundbilder (Mehrfachdrücken wechselt)</label>
+              <div class="flex flex-wrap gap-2 mt-1">
+                <template x-for="(bg, bi) in editNumberData.backgrounds" :key="bi">
+                  <div class="relative">
+                    <img :src="'/images/' + bg.image + '?v=' + (bg._v||0)"
+                         class="w-16 h-16 rounded bg-base-300 border-2"
+                         :class="bg.enabled ? 'border-success' : 'border-base-300 opacity-40'"
+                         style="image-rendering:pixelated"
+                         @click="bg.enabled = !bg.enabled">
+                    <button class="absolute -top-1 -right-1 btn btn-xs btn-circle btn-error"
+                            @click="editNumberData.backgrounds.splice(bi,1)">×</button>
+                  </div>
+                </template>
+                <button class="w-16 h-16 rounded bg-base-200 border-2 border-dashed border-base-300 hover:border-primary text-xs opacity-60 flex items-center justify-center"
+                        @click="generateNumberBg()" :disabled="!editNumberData.image_subject">
+                  <span x-show="_genBg" class="loading loading-spinner loading-xs"></span>
+                  <span x-show="!_genBg">+ KI-Bg</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-action">
+            <button class="btn btn-ghost" @click="editingNumber=null">Abbrechen</button>
+            <button class="btn btn-primary" @click="saveNumber()">Speichern</button>
+          </div>
+        </div>
+        <form method="dialog" class="modal-backdrop" @click="editingNumber=null"></form>
+      </dialog>
+    </div>
+
     <!-- ═══ SETS TAB ═══ -->
     <div x-show="tab === 'sets'" x-cloak>
       <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -321,6 +418,12 @@
         </div>
         <div class="flex gap-1 ml-8">
           <template x-for="k in 'YXCVBNM'.split('')" :key="k">
+            <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
+                    @click="testKey(k)" x-text="k"></button>
+          </template>
+        </div>
+        <div class="flex gap-1 mt-2">
+          <template x-for="k in '1234567890'.split('')" :key="k">
             <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
                     @click="testKey(k)" x-text="k"></button>
           </template>
@@ -670,6 +773,10 @@ function funkeykid() {
     // Edit state
     editingLetter: null,
     editEntries: [],
+    editingNumber: null,
+    editNumberData: { word:'', image_subject:'', sound:'', backgrounds:[] },
+    _genTTS: false,
+    _genBg: false,
     _suggesting: false,
     _blacklist: [],
     genJobs: {},
@@ -752,7 +859,7 @@ function funkeykid() {
           ]).then(([snd, img]) => {
             this.sounds = snd;
             this.images = img;
-            // If edit modal is open, update the matching entry's dropdown selection
+            // If letter edit modal is open, update the matching entry's dropdown selection
             if (this.editingLetter && this.editEntries) {
               for (const entry of this.editEntries) {
                 if (entry.word === d.word && d.filename) {
@@ -762,6 +869,15 @@ function funkeykid() {
                     entry._imgVer = (entry._imgVer||0) + 1;
                   }
                 }
+              }
+            }
+            // If number edit modal is open, refresh its sound/bg thumbs
+            if (this.editingNumber !== null && this.editNumberData) {
+              if (d.filename === this.editNumberData.sound) {
+                // TTS just finished — nothing to bump, dropdown list refreshed above
+              }
+              for (const bg of this.editNumberData.backgrounds) {
+                if (bg.image === d.filename) bg._v = (bg._v||0) + 1;
               }
             }
           });
@@ -878,6 +994,101 @@ function funkeykid() {
     randomColor(l) {
       const c = ['#FF0000','#00CC00','#0066FF','#FF6600','#CC00CC','#00CCCC','#FFCC00','#FF3399'];
       return c[l.charCodeAt(0) % c.length];
+    },
+
+    // ── Number helpers ──
+    getNumber(digit) {
+      return this.activeSet?.numbers?.[digit] || null;
+    },
+    firstNumberBg(digit) {
+      const n = this.getNumber(digit);
+      if (!n) return '';
+      const bg = (n.backgrounds || []).find(b => b.enabled);
+      return bg ? bg.image : (n.backgrounds?.[0]?.image || '');
+    },
+    async editNumber(digit) {
+      const [snd, img] = await Promise.all([
+        fetch('/api/sounds').then(r => r.json()),
+        fetch('/api/images').then(r => r.json()),
+      ]);
+      this.sounds = snd;
+      this.images = img;
+      const cur = this.getNumber(digit) || { word: '', image_subject: '', sound: '', backgrounds: [] };
+      this.editNumberData = JSON.parse(JSON.stringify({
+        word: cur.word || '',
+        image_subject: cur.image_subject || '',
+        sound: cur.sound || '',
+        backgrounds: cur.backgrounds || [],
+      }));
+      await this.$nextTick();
+      this.editingNumber = digit;
+    },
+    async saveNumber() {
+      const digit = this.editingNumber;
+      await fetch(`/api/sets/${this.activeSetId}/numbers/${digit}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(this.editNumberData),
+      });
+      this.editingNumber = null;
+      await this.refresh();
+      this.showToast(`${digit} gespeichert ✓`);
+    },
+    async generateNumberTTS() {
+      if (!this.editNumberData.word) return;
+      this._genTTS = true;
+      const digit = this.editingNumber;
+      const slug = this.editNumberData.word.toLowerCase()
+        .replace(/[äöüß ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',ß:'ss',' ':'-'}[c]||c))
+        .replace(/[^a-z0-9_-]/g,'');
+      const filename = this._nextFilename(`${digit}_${slug}`, 'mp3', this.sounds);
+      try {
+        const r = await fetch('/api/generate/tts', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            text: this.editNumberData.word,
+            word: this.editNumberData.word,
+            filename,
+          }),
+        }).then(r => r.json());
+        if (r.ok) {
+          this.editNumberData.sound = filename;
+        } else {
+          this.showToast(r.error || 'Fehler', 'error');
+        }
+      } catch (e) { this.showToast(e.message, 'error'); }
+      this._genTTS = false;
+    },
+    async generateNumberBg() {
+      if (!this.editNumberData.image_subject) return;
+      this._genBg = true;
+      const digit = this.editingNumber;
+      const count = digit === '0' ? 'no' : digit;
+      const subject = this.editNumberData.image_subject;
+      const slug = subject.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const filename = this._nextFilename(`${digit}_${slug}`, 'png', this.images);
+      const prompt = `Flat bold child-friendly cartoon illustration showing exactly ${count} ${subject}, arranged clearly on a plain white background, each object large and unambiguous with clear outlines, high contrast, no text, no numbers, no shadows, readable at 64x64 pixels. Minimalist counting picture for a toddler.`;
+      try {
+        const r = await fetch('/api/generate/image', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            word: this.editNumberData.word || digit,
+            description: `${count} ${subject}`,
+            prompt,
+            filename,
+          }),
+        }).then(r => r.json());
+        if (r.ok) {
+          this.editNumberData.backgrounds.push({ image: filename, enabled: true, _v: 0 });
+        } else {
+          this.showToast(r.error || 'Fehler', 'error');
+        }
+      } catch (e) { this.showToast(e.message, 'error'); }
+      this._genBg = false;
     },
 
     // ── Letter editing ──

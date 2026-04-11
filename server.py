@@ -977,7 +977,7 @@ async def api_generate_sound(request):
     return web.json_response({"ok": True, "job_id": job_id})
 
 
-def _gen_image_worker(job_id, word, prompt, filename):
+def _gen_image_worker(job_id, word, prompt, filename, model=None):
     """Background worker for image generation."""
     import urllib.request, base64, shutil
     gen_jobs[job_id]["status"] = "generating"
@@ -985,9 +985,11 @@ def _gen_image_worker(job_id, word, prompt, filename):
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     os.makedirs(AI_IMAGES_ORIG_DIR, exist_ok=True)
     os.makedirs(AI_IMAGES_RESIZED_DIR, exist_ok=True)
+    model = model or settings.get("ai_prompts", {}).get("image_model", "google/gemini-3-pro-image-preview")
+    _ai_log_entry("image", model, prompt, None, "sending")
     try:
         payload = json.dumps({
-            "model": "google/gemini-2.5-flash-image",
+            "model": model,
             "messages": [{"role": "user", "content": f"Generate a 512x512 image: {prompt}"}],
         }).encode()
         req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
@@ -1015,8 +1017,10 @@ def _gen_image_worker(job_id, word, prompt, filename):
                 f.write(img_data)
         shutil.copy2(resized_path, os.path.join(IMAGES_DIR, filename))
         gen_jobs[job_id].update({"status": "done", "size": len(img_data), "path": f"/images/{filename}"})
+        _ai_log_entry("image", model, prompt, f"OK: {len(img_data)}b → {filename}", "ok")
     except Exception as e:
         gen_jobs[job_id].update({"status": "error", "error": str(e)})
+        _ai_log_entry("image", model, prompt, str(e), "error")
     sse_broadcast("gen_update", gen_jobs[job_id])
 
 
@@ -1027,13 +1031,14 @@ async def api_generate_image(request):
     description = data.get("description", word)
     prompt = data.get("prompt", _get_image_prompt().format(description=description))
     filename = data.get("filename", _slugify(word) + ".png")
+    model = data.get("model")
     if not os.environ.get("OPENROUTER_API_KEY"):
         return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
     job_id = f"img_{uuid.uuid4().hex[:8]}"
     gen_jobs[job_id] = {"id": job_id, "type": "image", "word": word, "filename": filename, "status": "queued"}
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
-    threading.Thread(target=_gen_image_worker, args=(job_id, word, prompt, filename), daemon=True).start()
+    threading.Thread(target=_gen_image_worker, args=(job_id, word, prompt, filename, model), daemon=True).start()
     return web.json_response({"ok": True, "job_id": job_id})
 
 

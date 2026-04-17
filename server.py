@@ -873,11 +873,14 @@ async def serve_image(request):
 
 
 async def serve_index(request):
-    return web.FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    resp = web.FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
 
 
 async def api_version(request):
-    return web.json_response({"version": VERSION, "build": BUILD, "repo": REPO})
+    from version import build_time
+    return web.json_response({"version": VERSION, "build": BUILD, "repo": REPO, "build_time": build_time()})
 
 
 # ── AI Generation ───────────────────────────────────────────────────────────

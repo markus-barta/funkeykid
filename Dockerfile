@@ -27,7 +27,9 @@ RUN mkdir -p /data/sounds /data/images
 ENV FUNKEYKID_DATA=/data
 ENV FUNKEYKID_PORT=8081
 ARG BUILD_SHA=dev
+ARG BUILD_TIME=unknown
 ENV FUNKEYKID_BUILD=$BUILD_SHA
+RUN echo "$BUILD_TIME" > /app/.build_time
 
 EXPOSE 8081
 

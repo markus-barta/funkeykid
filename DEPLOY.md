@@ -88,6 +88,31 @@ When updating images, copy to both:
 
 ---
 
+## Versioning
+
+Version is in `version.py`. Format: `MAJOR.MINOR.PATCH`
+
+**Every deploy bumps at least the patch version.** No exceptions.
+
+| Change | Bump | Example |
+|--------|------|---------|
+| Bug fix, hotfix, styling tweak | PATCH | 2.6.1 → 2.6.2 |
+| New feature, UI rework, new API | MINOR | 2.6.2 → 2.7.0 |
+| Breaking change, major rearchitecture | MAJOR | 2.7.0 → 3.0.0 |
+
+Before pushing:
+```bash
+# Edit version.py
+VERSION = "X.Y.Z"
+
+# Commit with the version in the message
+git add -A && git commit -m "feat: description (vX.Y.Z)"
+```
+
+The CI build bakes `BUILD_SHA` into the Docker image via `--build-arg`. The footer shows version + commit hash linked to GitHub.
+
+---
+
 ## Deploy Workflows
 
 ### Normal: Push → CI → Pull

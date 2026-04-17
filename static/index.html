@@ -186,12 +186,37 @@
       </div>
 
       <!-- Edit Letter Modal -->
-      <dialog class="modal" :class="editingLetter && 'modal-open'">
+      <dialog class="modal" :class="editingLetter && 'modal-open'"
+              @keydown.shift.left.window="editingLetter && !['INPUT','TEXTAREA','SELECT'].includes($event.target.tagName) && navLetter(-1)"
+              @keydown.shift.right.window="editingLetter && !['INPUT','TEXTAREA','SELECT'].includes($event.target.tagName) && navLetter(1)">
         <div class="modal-box fk-modal-xl" x-show="editingLetter">
 
           <!-- ── Top bar (full-width) ── -->
           <div class="flex items-center gap-3 px-5 py-3 border-b border-base-content/5 flex-shrink-0">
-            <h3 class="font-bold text-lg flex-1">Einträge bearbeiten</h3>
+            <h3 class="font-bold text-lg">Einträge bearbeiten</h3>
+
+            <!-- Letter nav -->
+            <div class="flex items-center gap-1 ml-2">
+              <button class="btn btn-sm btn-ghost btn-square" @click="navLetter(-1)"
+                      :disabled="_navBusy" title="Vorheriger Buchstabe (Shift+←)">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
+              </button>
+              <select class="select select-sm select-bordered w-24 text-center font-bold"
+                      :value="editingLetter"
+                      @change="navLetterTo($event.target.value)"
+                      :disabled="_navBusy">
+                <template x-for="l in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')" :key="l">
+                  <option :value="l" x-text="l"></option>
+                </template>
+              </select>
+              <button class="btn btn-sm btn-ghost btn-square" @click="navLetter(1)"
+                      :disabled="_navBusy" title="Nächster Buchstabe (Shift+→)">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+              </button>
+              <span x-show="_navBusy" class="loading loading-spinner loading-xs opacity-60 ml-1"></span>
+            </div>
+
+            <div class="flex-1"></div>
             <kbd class="kbd kbd-sm opacity-60" title="Schließen">Esc</kbd>
             <button class="btn btn-sm btn-circle btn-ghost" @click="editingLetter=null" title="Schließen">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
@@ -220,12 +245,51 @@
                   <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
                   Manueller Eintrag
                 </button>
-                <button class="btn btn-sm btn-primary btn-block gap-1.5"
-                        @click="suggestWord()" :disabled="_suggesting">
+
+                <!-- KI-Vorschlag (collapsed) -->
+                <button x-show="!_suggestOpen"
+                        class="btn btn-sm btn-primary btn-block gap-1.5"
+                        @click="openSuggest()" :disabled="_suggesting">
                   <span x-show="_suggesting" class="loading loading-spinner loading-xs"></span>
                   <svg x-show="!_suggesting" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
                   <span x-text="_suggesting ? 'Denke nach…' : 'KI-Vorschlag'"></span>
                 </button>
+
+                <!-- KI-Vorschlag (expanded: editable prompt) -->
+                <div x-show="_suggestOpen" x-cloak
+                     class="rounded-lg bg-base-300/50 border border-primary/20 p-3 space-y-2">
+                  <div class="flex items-center gap-1.5 text-xs opacity-70 font-semibold">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
+                    Prompt bearbeiten
+                    <button class="ml-auto opacity-40 hover:opacity-100"
+                            @click="_suggestOpen = false" title="Schließen">
+                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                    </button>
+                  </div>
+                  <div class="text-2xs opacity-50 leading-snug">
+                    Platzhalter: <code class="opacity-80">{letter}</code>, <code class="opacity-80">{excluded}</code>
+                  </div>
+                  <textarea class="textarea textarea-bordered textarea-xs text-xs w-full h-40 font-mono"
+                            x-model="_suggestPrompt"
+                            placeholder="Schlage EIN deutsches Wort vor das mit &quot;{letter}&quot; beginnt..."></textarea>
+                  <div class="flex flex-col gap-1.5">
+                    <button class="btn btn-xs btn-primary gap-1"
+                            @click="runSuggest(true)" :disabled="_suggesting || !_suggestPrompt.trim()">
+                      <span x-show="_suggesting" class="loading loading-spinner loading-xs"></span>
+                      <span x-show="!_suggesting">Speichern &amp; vorschlagen</span>
+                    </button>
+                    <button class="btn btn-xs btn-ghost gap-1"
+                            @click="runSuggest(false)" :disabled="_suggesting || !_suggestPrompt.trim()">
+                      Einmal verwenden
+                    </button>
+                    <button class="btn btn-xs btn-ghost gap-1 opacity-60"
+                            @click="_suggestPrompt = _defaultSuggestPrompt(); $nextTick(() => { /* force textarea sync */ })"
+                            :disabled="_suggesting"
+                            title="Auf Standard zurücksetzen">
+                      ↺ Standard-Prompt
+                    </button>
+                  </div>
+                </div>
 
                 <!-- Blacklist -->
                 <details class="mt-4" x-show="_blacklist.length > 0">
@@ -1151,6 +1215,9 @@ function funkeykid() {
     _genTTS: false,
     _genBg: false,
     _suggesting: false,
+    _suggestOpen: false,
+    _suggestPrompt: '',
+    _navBusy: false,
     _genWizard: null,
     _blacklist: [],
     genJobs: {},
@@ -1504,6 +1571,7 @@ function funkeykid() {
         if (!e._imageDesc) e._imageDesc = '';
         return e;
       }) : [{ word: '', sound: '', image: '', enabled: true, _soundDesc: '', _imageDesc: '' }];
+      this._suggestOpen = false;
       // Open modal after data is set — $nextTick ensures Alpine renders options before x-model binds
       await this.$nextTick();
       this.editingLetter = letter;
@@ -1623,28 +1691,100 @@ function funkeykid() {
       this.showToast('Wiedergabe gestoppt');
     },
 
-    async suggestWord() {
+    _defaultSuggestPrompt() {
+      return 'Schlage EIN deutsches Wort vor das mit "{letter}" beginnt.\n'
+           + '- Zielgruppe: Kinder 2-5 Jahre, Deutsch (Österreich)\n'
+           + '- Konkretes Ding/Tier/Objekt mit erkennbarem Geräusch\n'
+           + '- Kindgerecht\n'
+           + '- NICHT: {excluded}\n\n'
+           + 'Antwort NUR als JSON: {"word": "...", "sound_description": "... (Englisch)", "image_description": "... (Englisch)"}';
+    },
+    openSuggest() {
+      this._suggestPrompt = (this.settings.ai_prompts && this.settings.ai_prompts.suggest) || this._defaultSuggestPrompt();
+      this._suggestOpen = true;
+    },
+    async runSuggest(persistPrompt) {
       if (!this.editingLetter) return;
+      const userPrompt = this._suggestPrompt.trim();
+      if (!userPrompt) return;
       this._suggesting = true;
       try {
+        if (persistPrompt) {
+          if (!this.settings.ai_prompts) this.settings.ai_prompts = {};
+          this.settings.ai_prompts.suggest = userPrompt;
+          await fetch('/api/settings', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(this.settings),
+          });
+        }
         const r = await fetch('/api/suggest-word', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ letter: this.editingLetter }),
+          body: JSON.stringify({ letter: this.editingLetter, user_prompt: userPrompt }),
         }).then(r => r.json());
         if (r.word) {
-          const entry = {
+          this.editEntries.push({
             word: r.word, sound: '', image: '', enabled: true,
             _soundDesc: r.sound_description || '',
             _imageDesc: r.image_description || '',
-          };
-          this.editEntries.push(entry);
-          this.showToast('Vorschlag: ' + r.word + ' — Sound & Bild separat generieren');
+          });
+          this.showToast((persistPrompt ? 'Prompt gespeichert · ' : '') + 'Vorschlag: ' + r.word);
+          this._suggestOpen = false;
         } else {
           this.showToast(r.error || 'Kein Vorschlag', 'error');
         }
       } catch (e) { this.showToast(e.message, 'error'); }
       this._suggesting = false;
+    },
+
+    // Letter nav — auto-saves current before opening next
+    async navLetter(delta) {
+      if (!this.editingLetter || this._navBusy) return;
+      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const cur = alphabet.indexOf(this.editingLetter);
+      if (cur < 0) return;
+      const next = alphabet[(cur + delta + 26) % 26];
+      await this.navLetterTo(next);
+    },
+    async navLetterTo(target) {
+      if (!target || target === this.editingLetter || this._navBusy) return;
+      this._navBusy = true;
+      try {
+        // Save current silently (no close)
+        const letter = this.editingLetter;
+        const cleanEntries = this.editEntries.map(e => {
+          const c = { word: e.word, sound: e.sound, image: e.image, enabled: e.enabled };
+          if (e._soundDesc) c._soundDesc = e._soundDesc;
+          if (e._imageDesc) c._imageDesc = e._imageDesc;
+          return c;
+        });
+        await fetch(`/api/sets/${this.activeSetId}/letters/${letter}`, {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ entries: cleanEntries }),
+        });
+        // Refresh activeSet in background (non-blocking for UX)
+        this.refresh().catch(() => {});
+        // Open next letter: reuse editLetter but skip modal re-toggle
+        const [bl] = await Promise.all([
+          fetch('/api/blacklist/' + target).then(r => r.json()),
+        ]);
+        this._blacklist = bl || [];
+        // Re-read entries from the in-memory active set after save
+        const updated = await fetch(`/api/sets/${this.activeSetId}/letters/${target}`).then(r => r.json());
+        const entries = updated.entries || [];
+        this.editEntries = entries.length ? JSON.parse(JSON.stringify(entries)).map(e => {
+          delete e._genSound; delete e._genImg; delete e._imgVer; delete e._genExtra;
+          if (!e._soundDesc) e._soundDesc = '';
+          if (!e._imageDesc) e._imageDesc = '';
+          return e;
+        }) : [{ word: '', sound: '', image: '', enabled: true, _soundDesc: '', _imageDesc: '' }];
+        this._suggestOpen = false;
+        await this.$nextTick();
+        this.editingLetter = target;
+      } catch (e) { this.showToast('Nav-Fehler: ' + e.message, 'error'); }
+      this._navBusy = false;
     },
 
     async blacklistWord(word) {

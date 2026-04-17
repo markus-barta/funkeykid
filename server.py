@@ -1130,19 +1130,31 @@ async def api_suggest_word(request):
 
     model = settings.get("ai_prompts", {}).get("suggest_model", "openai/gpt-4.1-mini")
 
+    # User prompt: from request body > settings.ai_prompts.suggest > hardcoded default.
+    # Supports {letter} and {excluded} placeholders.
+    default_user_tpl = (
+        'Schlage EIN deutsches Wort vor das mit "{letter}" beginnt.\n'
+        '- Zielgruppe: Kinder 2-5 Jahre, Deutsch (Österreich)\n'
+        '- Konkretes Ding/Tier/Objekt mit erkennbarem Geräusch\n'
+        '- Kindgerecht\n'
+        '- NICHT: {excluded}\n\n'
+        'Antwort NUR als JSON: {{"word": "...", "sound_description": "... (Englisch)", "image_description": "... (Englisch)"}}'
+    )
+    user_tpl = (
+        data.get("user_prompt")
+        or settings.get("ai_prompts", {}).get("suggest")
+        or default_user_tpl
+    )
+    try:
+        user_msg = user_tpl.replace("{letter}", letter).replace("{excluded}", excluded_str)
+    except Exception:
+        user_msg = default_user_tpl.replace("{letter}", letter).replace("{excluded}", excluded_str)
+
     system_msg = f"""Du bist ein Kinderwort-Generator. Du schlägst deutsche Wörter vor die mit einem bestimmten Buchstaben beginnen.
 STRENG VERBOTEN sind diese Wörter — du darfst sie NIEMALS vorschlagen:
 {forbidden_lines}
 
 Wenn du eines der verbotenen Wörter vorschlägst, wird deine Antwort verworfen."""
-
-    user_msg = f"""Schlage EIN deutsches Wort vor das mit "{letter}" beginnt.
-- Zielgruppe: Kinder 2-5 Jahre, Deutsch (Österreich)
-- Konkretes Ding/Tier/Objekt mit erkennbarem Geräusch
-- Kindgerecht
-- NICHT: {excluded_str}
-
-Antwort NUR als JSON: {{"word": "...", "sound_description": "... (Englisch)", "image_description": "... (Englisch)"}}"""
 
     _ai_log_entry("suggest", model, f"SYSTEM: {system_msg[:200]}...\nUSER: {user_msg}", None, "sending")
 

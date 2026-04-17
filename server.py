@@ -124,6 +124,29 @@ def _normalize_number_entry(n):
     return _normalize_tracks(n, "DE")
 
 
+def _add_legacy_sound_alias(entry, preferred_kind):
+    """Back-compat: expose `sound` + `_soundDesc` keys synthesized from `tracks`
+    so the pre-multi-track UI continues to work. Returns the entry.
+
+    Prefers `preferred_kind` (FX for letters, DE for numbers). Falls back to
+    any other track so a legacy client still sees *something* selected.
+    """
+    tracks = entry.get("tracks") or {}
+    chosen = None
+    if preferred_kind in tracks and tracks[preferred_kind].get("file"):
+        chosen = tracks[preferred_kind]
+    else:
+        for k in TRACK_KINDS:
+            if k in tracks and tracks[k].get("file"):
+                chosen = tracks[k]
+                break
+    if chosen:
+        entry["sound"] = chosen.get("file", "")
+        if chosen.get("prompt"):
+            entry["_soundDesc"] = chosen["prompt"]
+    return entry
+
+
 def _strip_legacy_sound(entry):
     """After tracks are in place, drop the legacy `sound` + `_soundDesc` keys."""
     entry.pop("sound", None)
@@ -879,14 +902,22 @@ async def api_get_set(request):
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
     s = sets[set_id]
-    # Normalize entries on the fly so clients always see the new shape.
+    import copy as _copy
+    # Normalize in-place, then deep-copy for output and decorate with legacy aliases.
     for letter_cfg in s.get("letters", {}).values():
         for e in letter_cfg.get("entries", []):
             _normalize_letter_entry(e)
     for n in s.get("numbers", {}).values():
         _normalize_number_entry(n)
     s["track_order"] = _normalize_track_order(s.get("track_order"))
-    return web.json_response(s)
+
+    out = _copy.deepcopy(s)
+    for letter_cfg in out.get("letters", {}).values():
+        for e in letter_cfg.get("entries", []):
+            _add_legacy_sound_alias(e, "FX")
+    for n in out.get("numbers", {}).values():
+        _add_legacy_sound_alias(n, "DE")
+    return web.json_response(out)
 
 
 async def api_create_set(request):
@@ -961,9 +992,16 @@ async def api_get_letter(request):
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
     letter_cfg = sets[set_id].get("letters", {}).get(letter, {"entries": []})
+    # Clone entries for response so we can decorate with legacy aliases
+    # without mutating the persisted in-memory state.
+    out_entries = []
     for e in letter_cfg.get("entries", []):
         _normalize_letter_entry(e)
-    return web.json_response(letter_cfg)
+        import copy as _copy
+        alias = _copy.deepcopy(e)
+        _add_legacy_sound_alias(alias, "FX")
+        out_entries.append(alias)
+    return web.json_response({**letter_cfg, "entries": out_entries})
 
 
 async def api_put_letter(request):
@@ -1020,9 +1058,14 @@ async def api_get_numbers(request):
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
     nums = sets[set_id].get("numbers", {})
-    for n in nums.values():
+    import copy as _copy
+    out = {}
+    for digit, n in nums.items():
         _normalize_number_entry(n)
-    return web.json_response(nums)
+        alias = _copy.deepcopy(n)
+        _add_legacy_sound_alias(alias, "DE")
+        out[digit] = alias
+    return web.json_response(out)
 
 
 async def api_put_number(request):

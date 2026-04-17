@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import random
+import threading
 import time
 import uuid
 import weakref
@@ -56,6 +57,143 @@ DEFAULT_NUMBERS = {
 }
 # Default ElevenLabs voice id for number TTS (overridable in settings.numbers_tts.voice_id)
 DEFAULT_NUMBER_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
+
+# ── Multi-track audio model ────────────────────────────────────────────────
+# Each entry (letter or number) has a `tracks` dict keyed by kind:
+#   { "FX": {"file": "x.mp3", "enabled": true, "prompt": "..."}, "DE": {...} }
+# Sets carry a `track_order` list describing playback order + per-kind enable:
+#   [{"kind": "FX", "enabled": true}, {"kind": "DE", "enabled": true}, ...]
+TRACK_KINDS = ("FX", "DE", "EN")
+TRACK_KIND_META = {
+    "FX": {"label": "Effekt",   "short": "FX", "generator": "sfx"},
+    "DE": {"label": "Deutsch",  "short": "DE", "generator": "tts", "lang": "de"},
+    "EN": {"label": "Englisch", "short": "EN", "generator": "tts", "lang": "en"},
+}
+DEFAULT_TRACK_ORDER = [
+    {"kind": "FX", "enabled": True},
+    {"kind": "DE", "enabled": True},
+    {"kind": "EN", "enabled": False},
+]
+# Default voices per language. Can be overridden via settings.tts_voices.
+DEFAULT_TTS_VOICES = {
+    "de": DEFAULT_NUMBER_VOICE_ID,      # Rachel (existing default)
+    "en": "pNInz6obpgDQGcFmaJgB",       # Adam
+}
+
+
+def _normalize_tracks(entry, legacy_kind):
+    """Ensure entry has a valid `tracks` dict. Synthesize from legacy `sound` once.
+
+    `legacy_kind` is the kind to migrate a legacy `.sound` file into:
+      - letters: "FX" (historically sound effects)
+      - numbers: "DE" (historically German TTS)
+    Does not strip the legacy `sound` key (kept for back-compat reads until
+    a full save writes the new shape back).
+    """
+    tracks = entry.get("tracks")
+    if not isinstance(tracks, dict):
+        tracks = {}
+        entry["tracks"] = tracks
+    legacy_sound = entry.get("sound")
+    if legacy_sound and legacy_kind not in tracks:
+        tracks[legacy_kind] = {
+            "file": legacy_sound,
+            "enabled": True,
+            "prompt": entry.get("_soundDesc", "") or "",
+        }
+    # Drop any unknown kinds / malformed entries silently
+    for k in list(tracks.keys()):
+        if k not in TRACK_KINDS:
+            del tracks[k]
+            continue
+        t = tracks[k]
+        if not isinstance(t, dict):
+            del tracks[k]
+            continue
+        t.setdefault("file", "")
+        t.setdefault("enabled", True)
+        t.setdefault("prompt", "")
+    return entry
+
+
+def _normalize_letter_entry(e):
+    return _normalize_tracks(e, "FX")
+
+
+def _normalize_number_entry(n):
+    return _normalize_tracks(n, "DE")
+
+
+def _strip_legacy_sound(entry):
+    """After tracks are in place, drop the legacy `sound` + `_soundDesc` keys."""
+    entry.pop("sound", None)
+    entry.pop("_soundDesc", None)
+    return entry
+
+
+def _normalize_track_order(order):
+    """Ensure order is a list of {kind, enabled} with every known kind present."""
+    if not isinstance(order, list):
+        order = []
+    seen = set()
+    out = []
+    for cfg in order:
+        if not isinstance(cfg, dict):
+            continue
+        kind = cfg.get("kind")
+        if kind in TRACK_KINDS and kind not in seen:
+            seen.add(kind)
+            out.append({"kind": kind, "enabled": bool(cfg.get("enabled", True))})
+    for default in DEFAULT_TRACK_ORDER:
+        if default["kind"] not in seen:
+            out.append({"kind": default["kind"], "enabled": default["enabled"]})
+    return out
+
+
+def _get_active_set_cfg():
+    """Return full active-set dict (metadata + letters + numbers + track_order)."""
+    set_id = settings.get("active_set", "")
+    sets = settings.get("sets", {})
+    if set_id in sets:
+        return sets[set_id]
+    if sets:
+        return next(iter(sets.values()))
+    return {}
+
+
+def _get_active_track_order():
+    """Return normalized track_order of the active set."""
+    return _normalize_track_order(_get_active_set_cfg().get("track_order"))
+
+
+def _voice_for_kind(kind):
+    """ElevenLabs voice id for a TTS kind (DE/EN). Returns None for non-TTS kinds."""
+    meta = TRACK_KIND_META.get(kind, {})
+    if meta.get("generator") != "tts":
+        return None
+    lang = meta.get("lang", "de")
+    voices = settings.get("tts_voices") or {}
+    return voices.get(lang) or DEFAULT_TTS_VOICES.get(lang, DEFAULT_NUMBER_VOICE_ID)
+
+
+def _collect_playable_files(entry):
+    """Resolve entry + active set's track_order into a list of absolute sound paths."""
+    order = _get_active_track_order()
+    tracks = entry.get("tracks") or {}
+    files = []
+    for cfg in order:
+        if not cfg.get("enabled", True):
+            continue
+        t = tracks.get(cfg["kind"])
+        if not t or not t.get("enabled", True):
+            continue
+        fname = t.get("file")
+        if not fname:
+            continue
+        path = os.path.join(SOUNDS_DIR, fname)
+        if os.path.exists(path):
+            files.append(path)
+    return files
 # Flat playlist position for arrow-key navigation (index into _build_flat_playlist())
 flat_pos = -1
 # Favorites: list of {letter, entry_index} — up to 10
@@ -76,8 +214,54 @@ def load_settings():
     if "letters" in settings and "sets" not in settings:
         _migrate_to_sets()
     _ensure_numbers_defaults()
+    _migrate_to_tracks_v2()
     current_volume = settings.get("volume", 100)
     return settings
+
+
+def _migrate_to_tracks_v2():
+    """Migrate legacy {sound: "x.mp3"} entries → {tracks: {KIND: {...}}}.
+
+    Letters migrate legacy sound → FX (sound effects).
+    Numbers migrate legacy sound → DE (German TTS).
+    Each set also gets a default track_order if missing.
+    Runs at most once per entry — once `tracks` exists, this is a no-op.
+    """
+    changed = False
+    sets = settings.get("sets", {})
+    for set_id, set_data in sets.items():
+        # Set-level: track_order
+        if "track_order" not in set_data:
+            set_data["track_order"] = [dict(c) for c in DEFAULT_TRACK_ORDER]
+            changed = True
+        # Letters
+        for letter_cfg in set_data.get("letters", {}).values():
+            for entry in letter_cfg.get("entries", []):
+                had_tracks = "tracks" in entry
+                _normalize_letter_entry(entry)
+                if entry.get("sound"):
+                    _strip_legacy_sound(entry)
+                    changed = True
+                elif not had_tracks:
+                    # Blank entry, just added tracks:{} — record it but no data change
+                    pass
+        # Numbers
+        for digit_cfg in set_data.get("numbers", {}).values():
+            had_tracks = "tracks" in digit_cfg
+            _normalize_number_entry(digit_cfg)
+            if digit_cfg.get("sound"):
+                _strip_legacy_sound(digit_cfg)
+                changed = True
+    # tts_voices default block
+    if "tts_voices" not in settings:
+        settings["tts_voices"] = dict(DEFAULT_TTS_VOICES)
+        changed = True
+    if changed:
+        try:
+            save_settings()
+            print("[migrate] tracks v2: settings.json rewritten", flush=True)
+        except Exception as e:
+            print(f"[migrate] failed: {e}", flush=True)
 
 
 def _ensure_numbers_defaults():
@@ -241,15 +425,71 @@ def _navigate_letter(delta):
             return
 
 
+_play_seq_abort = False
+
+
 def stop_all_sounds():
-    global active_processes
+    global active_processes, _play_seq_abort
+    _play_seq_abort = True
     for proc in active_processes[:]:
         if proc.poll() is None:
             try:
                 proc.terminate()
             except Exception:
                 pass
-        active_processes.remove(proc)
+        try:
+            active_processes.remove(proc)
+        except ValueError:
+            pass
+
+
+def play_sound_sequence(paths, gap_ms=120):
+    """Play sound files back-to-back in a daemon thread. Aborts on stop_all_sounds.
+
+    `gap_ms` is a small silence inserted between tracks so FX doesn't step on TTS.
+    """
+    global _play_seq_abort
+    stop_all_sounds()
+    if not paths:
+        return
+    _play_seq_abort = False
+    env = os.environ.copy()
+    # Pin the sink once per sequence (cheap, prevents external volume drift).
+    try:
+        subprocess.run(
+            ["pactl", "set-sink-volume", "@DEFAULT_SINK@", "100%"],
+            env=env, timeout=2, capture_output=True,
+        )
+    except Exception:
+        pass
+
+    def _runner(file_list):
+        global _play_seq_abort
+        pa_vol = int(current_volume / 100 * 65536)
+        for i, p in enumerate(file_list):
+            if _play_seq_abort:
+                return
+            try:
+                proc = subprocess.Popen(
+                    ["paplay", f"--volume={pa_vol}", str(p)],
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    env=env,
+                )
+                active_processes.append(proc)
+                proc.wait()
+                try:
+                    active_processes.remove(proc)
+                except ValueError:
+                    pass
+            except Exception as e:
+                print(f"[sound] sequence error on {p}: {e}", flush=True)
+                return
+            if _play_seq_abort:
+                return
+            if i < len(file_list) - 1 and gap_ms > 0:
+                time.sleep(gap_ms / 1000.0)
+
+    threading.Thread(target=_runner, args=(list(paths),), daemon=True).start()
 
 
 def play_sound(sound_file):
@@ -301,25 +541,25 @@ def change_volume(delta):
 
 
 def _play_entry(key_name, entry, entry_index=0):
-    """Play a specific entry — sound + display + SSE broadcast."""
+    """Play an entry's tracks in the active set's configured order."""
+    _normalize_letter_entry(entry)
     word = entry.get("word", key_name)
-    sound = entry.get("sound", "")
     image = entry.get("image", "")
 
-    print(f"[key] {key_name} → {word} (sound={sound}, image={image})", flush=True)
+    files = _collect_playable_files(entry)
+    first_sound = os.path.basename(files[0]) if files else ""
+    print(f"[key] {key_name} → {word} ({len(files)} tracks, image={image})", flush=True)
 
     try:
         sse_broadcast("keypress", {
-            "letter": key_name, "word": word, "sound": sound, "image": image,
+            "letter": key_name, "word": word, "sound": first_sound, "image": image,
             "entry_index": entry_index, "timestamp": time.time(),
         })
     except Exception as e:
         print(f"[sse] broadcast error: {e}", flush=True)
 
-    if sound:
-        sound_path = os.path.join(SOUNDS_DIR, sound)
-        print(f"[key] Playing: {sound_path}", flush=True)
-        play_sound(sound_path)
+    if files:
+        play_sound_sequence(files)
     if display:
         display.publish_letter(key_name, word, image)
 
@@ -348,14 +588,14 @@ def get_enabled_backgrounds(digit):
 
 
 def _play_number(digit):
-    """Play a number entry — fixed word/sound, cycling background on repeat."""
+    """Play a number entry — tracks in set order, cycling background on repeat."""
     global number_cycle_index, last_number
     cfg = get_active_numbers().get(digit)
     if not cfg:
         print(f"[num] {digit}: no config", flush=True)
         return
+    _normalize_number_entry(cfg)
     word = cfg.get("word", digit)
-    sound = cfg.get("sound", "")
     bgs = get_enabled_backgrounds(digit)
     if bgs:
         if digit == last_number:
@@ -368,20 +608,18 @@ def _play_number(digit):
         idx = 0
         image = ""
     last_number = digit
-    print(f"[num] {digit} → {word} (sound={sound}, image={image})", flush=True)
+    files = _collect_playable_files(cfg)
+    first_sound = os.path.basename(files[0]) if files else ""
+    print(f"[num] {digit} → {word} ({len(files)} tracks, image={image})", flush=True)
     try:
         sse_broadcast("keypress", {
-            "letter": digit, "word": word, "sound": sound, "image": image,
+            "letter": digit, "word": word, "sound": first_sound, "image": image,
             "entry_index": idx, "timestamp": time.time(),
         })
     except Exception as e:
         print(f"[sse] broadcast error: {e}", flush=True)
-    if sound:
-        sound_path = os.path.join(SOUNDS_DIR, sound)
-        if os.path.exists(sound_path):
-            play_sound(sound_path)
-        else:
-            print(f"[num] sound not found: {sound_path}", flush=True)
+    if files:
+        play_sound_sequence(files)
     if display:
         display.publish_letter(digit, word, image)
 
@@ -454,12 +692,16 @@ def handle_key(key_name, raw_key=None):
             all_sounds = []
             for ldata in get_active_set().values():
                 for e in ldata.get("entries", []):
-                    if e.get("enabled") and e.get("sound"):
-                        p = os.path.join(SOUNDS_DIR, e["sound"])
-                        if os.path.exists(p):
-                            all_sounds.append(p)
+                    if not e.get("enabled"):
+                        continue
+                    _normalize_letter_entry(e)
+                    for t in (e.get("tracks") or {}).values():
+                        if t.get("enabled", True) and t.get("file"):
+                            p = os.path.join(SOUNDS_DIR, t["file"])
+                            if os.path.exists(p):
+                                all_sounds.append(p)
             if all_sounds:
-                play_sound(random.choice(all_sounds))
+                play_sound_sequence([random.choice(all_sounds)])
         return
 
     # Position memory: advance index if same letter, keep position if returning
@@ -631,12 +873,20 @@ async def api_get_sets(request):
 
 
 async def api_get_set(request):
-    """Get full set data including all letters and entries."""
+    """Get full set data including all letters, entries and track_order."""
     set_id = request.match_info["set_id"]
     sets = settings.get("sets", {})
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
-    return web.json_response(sets[set_id])
+    s = sets[set_id]
+    # Normalize entries on the fly so clients always see the new shape.
+    for letter_cfg in s.get("letters", {}).values():
+        for e in letter_cfg.get("entries", []):
+            _normalize_letter_entry(e)
+    for n in s.get("numbers", {}).values():
+        _normalize_number_entry(n)
+    s["track_order"] = _normalize_track_order(s.get("track_order"))
+    return web.json_response(s)
 
 
 async def api_create_set(request):
@@ -670,6 +920,8 @@ async def api_update_set(request):
         sets[set_id]["name"] = data["name"]
     if "description" in data:
         sets[set_id]["description"] = data["description"]
+    if "track_order" in data:
+        sets[set_id]["track_order"] = _normalize_track_order(data["track_order"])
     save_settings()
     return web.json_response({"ok": True})
 
@@ -708,12 +960,18 @@ async def api_get_letter(request):
     sets = settings.get("sets", {})
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
-    letters = sets[set_id].get("letters", {})
-    return web.json_response(letters.get(letter, {"entries": []}))
+    letter_cfg = sets[set_id].get("letters", {}).get(letter, {"entries": []})
+    for e in letter_cfg.get("entries", []):
+        _normalize_letter_entry(e)
+    return web.json_response(letter_cfg)
 
 
 async def api_put_letter(request):
-    """Replace all entries for a letter in a set."""
+    """Replace all entries for a letter in a set.
+
+    Accepts entries with either `tracks` dict (new shape) or legacy `sound`
+    field (auto-migrated). Always persists the new shape.
+    """
     set_id = request.match_info["set_id"]
     letter = request.match_info["letter"].upper()
     data = await request.json()
@@ -722,7 +980,12 @@ async def api_put_letter(request):
         return web.json_response({"error": "Set not found"}, status=404)
     if "letters" not in sets[set_id]:
         sets[set_id]["letters"] = {}
-    sets[set_id]["letters"][letter] = data
+    cleaned = []
+    for e in data.get("entries", []):
+        _normalize_letter_entry(e)
+        _strip_legacy_sound(e)
+        cleaned.append(e)
+    sets[set_id]["letters"][letter] = {"entries": cleaned}
     save_settings()
     return web.json_response({"ok": True})
 
@@ -756,11 +1019,18 @@ async def api_get_numbers(request):
     sets = settings.get("sets", {})
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
-    return web.json_response(sets[set_id].get("numbers", {}))
+    nums = sets[set_id].get("numbers", {})
+    for n in nums.values():
+        _normalize_number_entry(n)
+    return web.json_response(nums)
 
 
 async def api_put_number(request):
-    """Replace the full config for a digit."""
+    """Replace the full config for a digit.
+
+    Accepts legacy (with `sound` field) or new (`tracks` dict) shapes.
+    Always persists the new shape.
+    """
     set_id = request.match_info["set_id"]
     digit = request.match_info["digit"]
     if digit not in NUMBER_KEYS:
@@ -770,16 +1040,19 @@ async def api_put_number(request):
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
     numbers = sets[set_id].setdefault("numbers", {})
-    # Keep only known fields
-    numbers[digit] = {
+    new_cfg = {
         "word": data.get("word", ""),
         "image_subject": data.get("image_subject", ""),
-        "sound": data.get("sound", ""),
+        "tracks": data.get("tracks", {}),
+        "sound": data.get("sound", ""),  # transient — stripped below
         "backgrounds": [
             {"image": b.get("image", ""), "enabled": bool(b.get("enabled", True))}
             for b in data.get("backgrounds", [])
         ],
     }
+    _normalize_number_entry(new_cfg)
+    _strip_legacy_sound(new_cfg)
+    numbers[digit] = new_cfg
     save_settings()
     return web.json_response({"ok": True})
 
@@ -1105,6 +1378,59 @@ async def api_generate_tts(request):
     return web.json_response({"ok": True, "job_id": job_id})
 
 
+async def api_generate_track(request):
+    """Dispatch generation for a single track based on its `kind`.
+
+    Body:
+      kind: "FX" | "DE" | "EN"  — track kind
+      word: entry word (used for filename slug + default prompts)
+      slug_prefix: optional "a" (letter) or "3" (digit) so files are grouped
+      prompt: optional override. For FX → sound description; for TTS → text to speak
+      filename: optional explicit filename (else auto-generated)
+      duration: optional (FX only)
+
+    Returns {ok, job_id, filename} — generation runs in background, listen to SSE.
+    """
+    data = await request.json()
+    kind = (data.get("kind") or "").upper()
+    if kind not in TRACK_KINDS:
+        return web.json_response({"error": f"Unbekannte Art: {kind!r}"}, status=400)
+    meta = TRACK_KIND_META[kind]
+    word = (data.get("word") or "").strip()
+    if not word:
+        return web.json_response({"error": "word fehlt"}, status=400)
+    prefix = (data.get("slug_prefix") or "").strip().lower()
+    slug = _slugify(word)
+    base = f"{prefix}_{slug}_{kind.lower()}" if prefix else f"{slug}_{kind.lower()}"
+    filename = data.get("filename") or (base + ".mp3")
+
+    if meta["generator"] == "sfx":
+        if not os.environ.get("ELEVENLABS_API_KEY"):
+            return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
+        prompt = data.get("prompt") or _get_sound_prompt().format(word=word)
+        duration = data.get("duration", 4)
+        job_id = f"trk_{uuid.uuid4().hex[:8]}"
+        gen_jobs[job_id] = {"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind, "status": "queued"}
+        sse_broadcast("gen_update", gen_jobs[job_id])
+        threading.Thread(target=_gen_sound_worker, args=(job_id, word, prompt, duration, filename), daemon=True).start()
+        return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
+
+    if meta["generator"] == "tts":
+        if not os.environ.get("ELEVENLABS_API_KEY"):
+            return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
+        # For TTS the `prompt` IS the text to speak. If caller didn't pass one,
+        # fall back to the word (works for DE; EN callers should send an English word).
+        text = (data.get("prompt") or word).strip()
+        voice_id = data.get("voice_id") or _voice_for_kind(kind)
+        job_id = f"trk_{uuid.uuid4().hex[:8]}"
+        gen_jobs[job_id] = {"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind, "status": "queued"}
+        sse_broadcast("gen_update", gen_jobs[job_id])
+        threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
+        return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
+
+    return web.json_response({"error": f"Generator nicht implementiert: {meta['generator']}"}, status=500)
+
+
 async def api_suggest_word(request):
     """AI-suggest a fitting German word for a letter, not already used."""
     data = await request.json()
@@ -1393,6 +1719,7 @@ def create_app():
     app.router.add_post("/api/generate/sound", api_generate_sound)
     app.router.add_post("/api/generate/image", api_generate_image)
     app.router.add_post("/api/generate/tts", api_generate_tts)
+    app.router.add_post("/api/generate/track", api_generate_track)
     app.router.add_post("/api/suggest-word", api_suggest_word)
     app.router.add_get("/api/blacklist/{letter}", api_get_blacklist)
     app.router.add_put("/api/blacklist/{letter}", api_put_blacklist)

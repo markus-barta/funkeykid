@@ -81,13 +81,24 @@ class Display:
             self._pixoo_direct(letter, word, image, color)
 
     def publish_volume(self, volume):
-        """Show volume on display."""
+        """Show volume on display.
+
+        Emits both the legacy letter/word fields (text fallback) and
+        structured `bar`/`percent` metadata so a scene can render a
+        bar-graph visualization instead of plain text.
+        """
         mode = self.settings.get("display_mode", "mqtt")
         if mode in ("mqtt", "both"):
+            # Clamp 0-100 for the bar percentage (some volumes can transiently go higher).
+            bar_pct = max(0, min(100, int(volume)))
             self._mqtt_publish(self._topic("display"), {
                 "letter": f"{volume}%",
                 "word": "lautstaerke",
                 "color": "#FFCC00" if volume > 0 else "#FF0000",
+                "bar": True,
+                "percent": bar_pct,
+                "bars_total": 10,
+                "bars_filled": (bar_pct + 5) // 10,  # round to nearest 10%
                 "timestamp": time.time(),
             })
 

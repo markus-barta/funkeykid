@@ -100,6 +100,7 @@ def _normalize_tracks(entry, legacy_kind):
             "file": legacy_sound,
             "enabled": True,
             "prompt": entry.get("_soundDesc", "") or "",
+            "volume": 100,
         }
     # Drop any unknown kinds / malformed entries silently
     for k in list(tracks.keys()):
@@ -113,6 +114,12 @@ def _normalize_tracks(entry, legacy_kind):
         t.setdefault("file", "")
         t.setdefault("enabled", True)
         t.setdefault("prompt", "")
+        # Volume: 0-200 percent. Defaults to 100 (neutral). Clamp silently.
+        try:
+            v = int(t.get("volume", 100))
+        except (TypeError, ValueError):
+            v = 100
+        t["volume"] = max(0, min(200, v))
     return entry
 
 
@@ -200,7 +207,7 @@ def _voice_for_kind(kind):
 
 
 def _collect_playable_files(entry):
-    """Resolve entry + active set's track_order into a list of absolute sound paths."""
+    """Resolve entry + active set's track_order into a list of (path, volume_pct)."""
     order = _get_active_track_order()
     tracks = entry.get("tracks") or {}
     files = []
@@ -215,7 +222,11 @@ def _collect_playable_files(entry):
             continue
         path = os.path.join(SOUNDS_DIR, fname)
         if os.path.exists(path):
-            files.append(path)
+            try:
+                vol = int(t.get("volume", 100))
+            except (TypeError, ValueError):
+                vol = 100
+            files.append((path, max(0, min(200, vol))))
     return files
 # Flat playlist position for arrow-key navigation (index into _build_flat_playlist())
 flat_pos = -1
@@ -469,15 +480,25 @@ def stop_all_sounds():
 def play_sound_sequence(paths, gap_ms=120):
     """Play sound files back-to-back in a daemon thread. Aborts on stop_all_sounds.
 
+    `paths` accepts either raw path strings (uses global volume) or
+    (path, per_track_volume_pct) tuples — the per-track pct multiplies the
+    global volume so users can trim quiet/loud clips individually.
+
     `gap_ms` is a small silence inserted between tracks so FX doesn't step on TTS.
     """
     global _play_seq_abort
     stop_all_sounds()
     if not paths:
         return
+    # Normalize to list of (path, vol_pct) tuples
+    norm = []
+    for p in paths:
+        if isinstance(p, (tuple, list)):
+            norm.append((p[0], int(p[1]) if len(p) > 1 else 100))
+        else:
+            norm.append((p, 100))
     _play_seq_abort = False
     env = os.environ.copy()
-    # Pin the sink once per sequence (cheap, prevents external volume drift).
     try:
         subprocess.run(
             ["pactl", "set-sink-volume", "@DEFAULT_SINK@", "100%"],
@@ -488,10 +509,12 @@ def play_sound_sequence(paths, gap_ms=120):
 
     def _runner(file_list):
         global _play_seq_abort
-        pa_vol = int(current_volume / 100 * 65536)
-        for i, p in enumerate(file_list):
+        for i, (p, vol_pct) in enumerate(file_list):
             if _play_seq_abort:
                 return
+            # global × per-track scaling. paplay --volume units: 65536 = 100%.
+            # Go up to 200% per track (131072); paplay clamps safely.
+            pa_vol = int(current_volume / 100 * vol_pct / 100 * 65536)
             try:
                 proc = subprocess.Popen(
                     ["paplay", f"--volume={pa_vol}", str(p)],
@@ -512,7 +535,7 @@ def play_sound_sequence(paths, gap_ms=120):
             if i < len(file_list) - 1 and gap_ms > 0:
                 time.sleep(gap_ms / 1000.0)
 
-    threading.Thread(target=_runner, args=(list(paths),), daemon=True).start()
+    threading.Thread(target=_runner, args=(norm,), daemon=True).start()
 
 
 def play_sound(sound_file):
@@ -570,7 +593,7 @@ def _play_entry(key_name, entry, entry_index=0):
     image = entry.get("image", "")
 
     files = _collect_playable_files(entry)
-    first_sound = os.path.basename(files[0]) if files else ""
+    first_sound = os.path.basename(files[0][0]) if files else ""
     print(f"[key] {key_name} → {word} ({len(files)} tracks, image={image})", flush=True)
 
     try:
@@ -632,7 +655,7 @@ def _play_number(digit):
         image = ""
     last_number = digit
     files = _collect_playable_files(cfg)
-    first_sound = os.path.basename(files[0]) if files else ""
+    first_sound = os.path.basename(files[0][0]) if files else ""
     print(f"[num] {digit} → {word} ({len(files)} tracks, image={image})", flush=True)
     try:
         sse_broadcast("keypress", {

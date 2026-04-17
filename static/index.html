@@ -486,9 +486,18 @@
                             <input type="text" class="input input-xs input-bordered w-full"
                                    x-model="entry.tracks[cfg.kind].prompt"
                                    :placeholder="kindPromptPlaceholder(cfg.kind)">
+                            <div class="flex items-center gap-2 text-2xs">
+                              <span class="opacity-50 w-10 flex-shrink-0">Laut.</span>
+                              <input type="range" min="0" max="200" step="5"
+                                     class="range range-xs flex-1"
+                                     x-model.number="entry.tracks[cfg.kind].volume"
+                                     :disabled="!entry.tracks[cfg.kind].file">
+                              <span class="font-mono opacity-60 w-10 text-right"
+                                    x-text="(entry.tracks[cfg.kind].volume || 100) + '%'"></span>
+                            </div>
                             <div class="flex gap-1.5">
                               <button class="btn btn-xs btn-ghost gap-1 flex-1"
-                                      @click="previewSound(entry.tracks[cfg.kind].file)"
+                                      @click="previewSound(entry.tracks[cfg.kind].file, entry.tracks[cfg.kind].volume)"
                                       :disabled="!entry.tracks[cfg.kind].file">
                                 <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg>
                                 Abspielen
@@ -750,9 +759,18 @@
                       <input type="text" class="input input-xs input-bordered w-full"
                              x-model="editNumberData.tracks[cfg.kind].prompt"
                              :placeholder="kindPromptPlaceholder(cfg.kind)">
+                      <div class="flex items-center gap-2 text-2xs">
+                        <span class="opacity-50 w-10 flex-shrink-0">Laut.</span>
+                        <input type="range" min="0" max="200" step="5"
+                               class="range range-xs flex-1"
+                               x-model.number="editNumberData.tracks[cfg.kind].volume"
+                               :disabled="!editNumberData.tracks[cfg.kind].file">
+                        <span class="font-mono opacity-60 w-10 text-right"
+                              x-text="(editNumberData.tracks[cfg.kind].volume || 100) + '%'"></span>
+                      </div>
                       <div class="flex gap-1.5">
                         <button class="btn btn-xs btn-ghost gap-1 flex-1"
-                                @click="previewSound(editNumberData.tracks[cfg.kind].file)"
+                                @click="previewSound(editNumberData.tracks[cfg.kind].file, editNumberData.tracks[cfg.kind].volume)"
                                 :disabled="!editNumberData.tracks[cfg.kind].file">
                           <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg>
                           Abspielen
@@ -876,36 +894,67 @@
 
     <!-- ═══ TEST TAB ═══ -->
     <div x-show="tab === 'test'" x-cloak>
-      <div class="text-center mb-4 opacity-60">Klicke Buchstaben — spielt Sound + zeigt Bild</div>
+      <div class="text-center mb-4 opacity-60">Klicke Tasten — spielt Sound + zeigt Bild</div>
       <div class="flex flex-col items-center gap-1">
+        <!-- Number row -->
         <div class="flex gap-1">
-          <template x-for="k in 'QWERTZUIOP'.split('')" :key="k">
+          <template x-for="k in '1234567890'.split('')" :key="'n'+k">
             <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
                     @click="testKey(k)" x-text="k"></button>
           </template>
+          <button class="btn btn-sm kbd-key w-20" :class="pressedKey==='BACKSPACE' && 'pressed'"
+                  @click="testKey('BACKSPACE')" title="Backspace">⌫</button>
         </div>
+        <!-- QWERTZ -->
+        <div class="flex gap-1">
+          <template x-for="k in 'QWERTZUIOP'.split('')" :key="'q'+k">
+            <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
+                    @click="testKey(k)" x-text="k"></button>
+          </template>
+          <button class="btn btn-sm kbd-key" :class="pressedKey==='Ü' && 'pressed'"
+                  @click="testKey('Ü')">Ü</button>
+        </div>
+        <!-- ASDFGH -->
         <div class="flex gap-1 ml-4">
-          <template x-for="k in 'ASDFGHJKL'.split('')" :key="k">
+          <template x-for="k in 'ASDFGHJKL'.split('')" :key="'a'+k">
             <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
                     @click="testKey(k)" x-text="k"></button>
           </template>
+          <button class="btn btn-sm kbd-key" :class="pressedKey==='Ö' && 'pressed'"
+                  @click="testKey('Ö')">Ö</button>
+          <button class="btn btn-sm kbd-key" :class="pressedKey==='Ä' && 'pressed'"
+                  @click="testKey('Ä')">Ä</button>
+          <button class="btn btn-sm kbd-key w-20" :class="pressedKey==='ENTER' && 'pressed'"
+                  @click="testKey('ENTER')" title="Enter">↵</button>
         </div>
+        <!-- YXCVBNM -->
         <div class="flex gap-1 ml-8">
-          <template x-for="k in 'YXCVBNM'.split('')" :key="k">
+          <template x-for="k in 'YXCVBNM'.split('')" :key="'y'+k">
             <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
                     @click="testKey(k)" x-text="k"></button>
           </template>
+          <button class="btn btn-sm kbd-key" :class="pressedKey==='ß' && 'pressed'"
+                  @click="testKey('ß')">ß</button>
         </div>
-        <div class="flex gap-1 mt-2">
-          <template x-for="k in '1234567890'.split('')" :key="k">
-            <button class="btn btn-sm kbd-key" :class="pressedKey===k && 'pressed'"
-                    @click="testKey(k)" x-text="k"></button>
-          </template>
+        <!-- Modifier + space + arrows -->
+        <div class="flex gap-1 mt-2 items-center">
+          <button class="btn btn-sm kbd-key w-16" :class="pressedKey==='TAB' && 'pressed'"
+                  @click="testKey('TAB')" title="Tab / Favorit">Tab ★</button>
+          <button class="btn btn-sm kbd-key w-12" @click="testKey('MINUS')" title="Leiser">−</button>
+          <button class="btn btn-sm kbd-key w-64" :class="pressedKey==='SPACE' && 'pressed'"
+                  @click="testKey('SPACE')">Leertaste</button>
+          <button class="btn btn-sm kbd-key w-12" @click="testKey('EQUAL')" title="Lauter">+</button>
         </div>
+        <!-- Arrow keys -->
         <div class="flex gap-1 mt-2">
-          <button class="btn btn-sm kbd-key w-12" @click="testKey('MINUS')">-</button>
-          <button class="btn btn-sm kbd-key w-48" @click="testKey('SPACE')">Leertaste</button>
-          <button class="btn btn-sm kbd-key w-12" @click="testKey('EQUAL')">+</button>
+          <button class="btn btn-sm kbd-key" :class="pressedKey==='LEFT' && 'pressed'"
+                  @click="testKey('LEFT')" title="Vorheriger Sound">◀</button>
+          <button class="btn btn-sm kbd-key" :class="pressedKey==='UP' && 'pressed'"
+                  @click="testKey('UP')" title="Vorheriger Buchstabe">▲</button>
+          <button class="btn btn-sm kbd-key" :class="pressedKey==='DOWN' && 'pressed'"
+                  @click="testKey('DOWN')" title="Nächster Buchstabe">▼</button>
+          <button class="btn btn-sm kbd-key" :class="pressedKey==='RIGHT' && 'pressed'"
+                  @click="testKey('RIGHT')" title="Nächster Sound">▶</button>
         </div>
       </div>
       <div class="flex justify-center mt-6 gap-6" x-show="lastTestLetter">
@@ -1441,8 +1490,13 @@ function funkeykid() {
               for (const entry of this.editEntries) {
                 if (entry.word === d.word && d.filename) {
                   if (d.type === 'sound' && d.kind && entry.tracks && entry.tracks[d.kind]) {
-                    entry.tracks[d.kind].file = d.filename;
-                    entry.tracks[d.kind].enabled = true;
+                    const t = entry.tracks[d.kind];
+                    t.file = d.filename;
+                    t.enabled = true;
+                    if (t._autoPlay) {
+                      t._autoPlay = false;
+                      this.previewSound(d.filename, t.volume);
+                    }
                   }
                   if (d.type === 'image') {
                     entry.image = d.filename;
@@ -1454,8 +1508,13 @@ function funkeykid() {
             // If number edit modal is open, update its track dropdowns and bg thumbs
             if (this.editingNumber !== null && this.editNumberData) {
               if (d.type === 'sound' && d.kind && this.editNumberData.tracks?.[d.kind]) {
-                this.editNumberData.tracks[d.kind].file = d.filename;
-                this.editNumberData.tracks[d.kind].enabled = true;
+                const t = this.editNumberData.tracks[d.kind];
+                t.file = d.filename;
+                t.enabled = true;
+                if (t._autoPlay) {
+                  t._autoPlay = false;
+                  this.previewSound(d.filename, t.volume);
+                }
               }
               for (const bg of this.editNumberData.backgrounds || []) {
                 if (bg.image === d.filename) bg._v = (bg._v||0) + 1;
@@ -1733,26 +1792,29 @@ function funkeykid() {
       if (!obj.tracks || typeof obj.tracks !== 'object') obj.tracks = {};
       for (const k of this.trackKinds) {
         if (!obj.tracks[k] || typeof obj.tracks[k] !== 'object') {
-          obj.tracks[k] = { file: '', enabled: true, prompt: '' };
+          obj.tracks[k] = { file: '', enabled: true, prompt: '', volume: 100 };
         } else {
           if (obj.tracks[k].file === undefined) obj.tracks[k].file = '';
           if (obj.tracks[k].enabled === undefined) obj.tracks[k].enabled = true;
           if (obj.tracks[k].prompt === undefined) obj.tracks[k].prompt = '';
+          if (obj.tracks[k].volume === undefined) obj.tracks[k].volume = 100;
           delete obj.tracks[k]._generating;
+          delete obj.tracks[k]._autoPlay;
         }
       }
       return obj;
     },
     _cleanTracks(tracks) {
-      // Drop empty tracks (no file AND no prompt) so settings.json stays tidy.
+      // Drop empty tracks (no file, no prompt, default volume) so settings.json stays tidy.
       const out = {};
       for (const k of this.trackKinds) {
         const t = tracks && tracks[k];
         if (!t) continue;
         const file = t.file || '';
         const prompt = t.prompt || '';
-        if (!file && !prompt) continue;
-        out[k] = { file, enabled: t.enabled !== false, prompt };
+        const volume = Math.max(0, Math.min(200, parseInt(t.volume, 10) || 100));
+        if (!file && !prompt && volume === 100) continue;
+        out[k] = { file, enabled: t.enabled !== false, prompt, volume };
       }
       return out;
     },
@@ -1768,13 +1830,16 @@ function funkeykid() {
       return this.trackKinds.some(k => t[k] && t[k].file);
     },
 
-    async generateTrack(entry, idx, kind, slugPrefix) {
+    async generateTrack(entry, idx, kind, slugPrefix, opts = {}) {
       if (!entry.word) return;
       if (!entry.tracks || !entry.tracks[kind]) {
         this._ensureTracks(entry);
       }
       const track = entry.tracks[kind];
+      const autoPlay = opts.autoPlay !== false; // default true
       track._generating = true;
+      // Mark so the SSE handler knows to auto-play (or not) when this job completes.
+      track._autoPlay = !!autoPlay;
       try {
         const body = {
           kind,
@@ -1793,8 +1858,12 @@ function funkeykid() {
           // Job runs in background — SSE gen_update will notify on completion.
         } else {
           this.showToast(r.error || 'Fehler', 'error');
+          track._autoPlay = false;
         }
-      } catch (e) { this.showToast(e.message, 'error'); }
+      } catch (e) {
+        this.showToast(e.message, 'error');
+        track._autoPlay = false;
+      }
       track._generating = false;
     },
 
@@ -1947,12 +2016,16 @@ function funkeykid() {
 
     // ── Files ──
     _previewAudio: null,
-    previewSound(f) {
+    previewSound(f, volumePct) {
       this.stopPreview();
-      if (f) {
-        this._previewAudio = new Audio(`/sounds/${f}`);
-        this._previewAudio.play().catch(()=>{});
-      }
+      if (!f) return;
+      this._previewAudio = new Audio(`/sounds/${f}`);
+      // HTML audio.volume is clamped 0-1. Per-track volume goes 0-200%,
+      // so we cap at 1.0 for preview (no amplification in-browser) but
+      // still apply the user's trim for quiet clips.
+      const v = Math.max(0, Math.min(1, (parseInt(volumePct, 10) || 100) / 100));
+      this._previewAudio.volume = v;
+      this._previewAudio.play().catch(() => {});
     },
     stopPreview() {
       if (this._previewAudio) {
@@ -2005,15 +2078,20 @@ function funkeykid() {
           const entry = this._blankEntry();
           entry.word = r.word;
           entry._imageDesc = r.image_description || '';
-          // Seed the FX prompt with the AI's sound description,
-          // the DE prompt with the German word itself (TTS reads it),
-          // and the EN prompt with the AI's English translation.
           if (r.sound_description) entry.tracks.FX.prompt = r.sound_description;
           entry.tracks.DE.prompt = r.word;
           if (r.word_en) entry.tracks.EN.prompt = r.word_en;
           this.editEntries.push(entry);
           this.showToast((persistPrompt ? 'Prompt gespeichert · ' : '') + 'Vorschlag: ' + r.word + (r.word_en ? ' / ' + r.word_en : ''));
           this._suggestOpen = false;
+          // Auto-chain: fire image + all three sound tracks in parallel.
+          // No auto-play (too many sounds arriving near-simultaneously).
+          const newIdx = this.editEntries.length - 1;
+          const prefix = this.editingLetter.toLowerCase();
+          this.generateImage(entry, newIdx);
+          this.generateTrack(entry, newIdx, 'FX', prefix, { autoPlay: false });
+          this.generateTrack(entry, newIdx, 'DE', prefix, { autoPlay: false });
+          if (r.word_en) this.generateTrack(entry, newIdx, 'EN', prefix, { autoPlay: false });
         } else {
           this.showToast(r.error || 'Kein Vorschlag', 'error');
         }

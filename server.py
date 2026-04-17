@@ -1507,7 +1507,10 @@ async def api_suggest_word(request):
         '- Konkretes Ding/Tier/Objekt mit erkennbarem Geräusch\n'
         '- Kindgerecht\n'
         '- NICHT: {excluded}\n\n'
-        'Antwort NUR als JSON: {{"word": "...", "sound_description": "... (Englisch)", "image_description": "... (Englisch)"}}'
+        'Antwort NUR als JSON (ein einzelnes englisches Wort bei word_en, '
+        'das dem deutschen Wort entspricht — z.B. Ameise → Ant):\n'
+        '{{"word": "...", "word_en": "...", '
+        '"sound_description": "... (Englisch)", "image_description": "... (Englisch)"}}'
     )
     user_tpl = (
         data.get("user_prompt")

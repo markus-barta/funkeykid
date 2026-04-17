@@ -62,6 +62,17 @@
     .fk-track-icon-sm svg { width: 1.8rem; height: 1.8rem; opacity: 0.4; }
     .fk-track-icon-sm.has-file svg { opacity: 0.85; color: oklch(var(--p)); }
 
+    /* ── Grid-tile track-presence dots ──────────────────────────── */
+    .fk-dot-row { display: inline-flex; gap: 3px; align-items: center; }
+    .fk-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      transition: background 0.2s;
+    }
+    .fk-dot.fx { background: oklch(75% 0.18 45); }
+    .fk-dot.de { background: oklch(68% 0.15 155); }
+    .fk-dot.en { background: oklch(70% 0.17 260); }
+    .fk-dot.off { background: oklch(var(--b3)); opacity: 0.35; }
+
     /* ── Sets tab: track_order editor ───────────────────────────── */
     .fk-order-row {
       display: flex; align-items: center; gap: 0.5rem;
@@ -208,8 +219,15 @@
               </div>
               <div class="text-sm opacity-70 mt-1"
                    x-text="getEntries(letter).map(e => (e.enabled ? '' : '(') + e.word + (e.enabled ? '' : ')')).join(', ')"></div>
-              <div class="text-xs opacity-40"
-                   x-text="getEntries(letter).filter(e=>e.enabled).length + '/' + getEntries(letter).length + ' aktiv'"></div>
+              <div class="flex items-center justify-between mt-1">
+                <div class="text-xs opacity-40"
+                     x-text="getEntries(letter).filter(e=>e.enabled).length + '/' + getEntries(letter).length + ' aktiv'"></div>
+                <div class="fk-dot-row" :title="letterTrackPresenceTooltip(letter)">
+                  <template x-for="k in trackKinds" :key="k">
+                    <span class="fk-dot" :class="letterHasTrack(letter, k) ? k.toLowerCase() : 'off'"></span>
+                  </template>
+                </div>
+              </div>
             </div>
           </div>
         </template>
@@ -649,9 +667,14 @@
                      x-show="firstNumberBg(digit)">
               </div>
               <div class="text-sm opacity-70 mt-1" x-text="getNumber(digit)?.word || '—'"></div>
-              <div class="text-xs opacity-40">
-                <span x-text="numberHasAnyTrack(digit) ? '♫' : '·'"></span>
-                <span x-text="(getNumber(digit)?.backgrounds || []).filter(b=>b.enabled).length + '/' + (getNumber(digit)?.backgrounds || []).length + ' Bg'"></span>
+              <div class="flex items-center justify-between mt-1">
+                <div class="text-xs opacity-40"
+                     x-text="(getNumber(digit)?.backgrounds || []).filter(b=>b.enabled).length + '/' + (getNumber(digit)?.backgrounds || []).length + ' Bg'"></div>
+                <div class="fk-dot-row" :title="numberTrackPresenceTooltip(digit)">
+                  <template x-for="k in trackKinds" :key="k">
+                    <span class="fk-dot" :class="numberHasTrack(digit, k) ? k.toLowerCase() : 'off'"></span>
+                  </template>
+                </div>
               </div>
             </div>
           </div>
@@ -1413,11 +1436,14 @@ function funkeykid() {
           ]).then(([snd, img]) => {
             this.sounds = snd;
             this.images = img;
-            // If letter edit modal is open, update the matching entry's dropdown selection
+            // If letter edit modal is open, update the matching entry's track dropdown
             if (this.editingLetter && this.editEntries) {
               for (const entry of this.editEntries) {
                 if (entry.word === d.word && d.filename) {
-                  if (d.type === 'sound') entry.sound = d.filename;
+                  if (d.type === 'sound' && d.kind && entry.tracks && entry.tracks[d.kind]) {
+                    entry.tracks[d.kind].file = d.filename;
+                    entry.tracks[d.kind].enabled = true;
+                  }
                   if (d.type === 'image') {
                     entry.image = d.filename;
                     entry._imgVer = (entry._imgVer||0) + 1;
@@ -1425,12 +1451,13 @@ function funkeykid() {
                 }
               }
             }
-            // If number edit modal is open, refresh its sound/bg thumbs
+            // If number edit modal is open, update its track dropdowns and bg thumbs
             if (this.editingNumber !== null && this.editNumberData) {
-              if (d.filename === this.editNumberData.sound) {
-                // TTS just finished — nothing to bump, dropdown list refreshed above
+              if (d.type === 'sound' && d.kind && this.editNumberData.tracks?.[d.kind]) {
+                this.editNumberData.tracks[d.kind].file = d.filename;
+                this.editNumberData.tracks[d.kind].enabled = true;
               }
-              for (const bg of this.editNumberData.backgrounds) {
+              for (const bg of this.editNumberData.backgrounds || []) {
                 if (bg.image === d.filename) bg._v = (bg._v||0) + 1;
               }
             }
@@ -1584,6 +1611,31 @@ function funkeykid() {
       if (!t) return false;
       return ['FX','DE','EN'].some(k => t[k] && t[k].file);
     },
+    numberHasTrack(digit, kind) {
+      const t = this.getNumber(digit)?.tracks;
+      return !!(t && t[kind] && t[kind].file);
+    },
+    letterHasTrack(letter, kind) {
+      for (const e of this.getEntries(letter)) {
+        if (!e.enabled) continue;
+        if (e.tracks && e.tracks[kind] && e.tracks[kind].file) return true;
+      }
+      return false;
+    },
+    _trackTooltip(hasFn, keyLike) {
+      const parts = [];
+      for (const k of this.trackKinds) {
+        const has = hasFn.call(this, keyLike, k);
+        parts.push(`${k}: ${has ? '✓' : '—'} ${this.kindLabel(k)}`);
+      }
+      return parts.join('\n');
+    },
+    letterTrackPresenceTooltip(letter) {
+      return this._trackTooltip(this.letterHasTrack, letter);
+    },
+    numberTrackPresenceTooltip(digit) {
+      return this._trackTooltip(this.numberHasTrack, digit);
+    },
     async editNumber(digit) {
       const [snd, img] = await Promise.all([
         fetch('/api/sounds').then(r => r.json()),
@@ -1620,32 +1672,6 @@ function funkeykid() {
       this.editingNumber = null;
       await this.refresh();
       this.showToast(`${digit} gespeichert ✓`);
-    },
-    async generateNumberTTS() {
-      if (!this.editNumberData.word) return;
-      this._genTTS = true;
-      const digit = this.editingNumber;
-      const slug = this.editNumberData.word.toLowerCase()
-        .replace(/[äöüß ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',ß:'ss',' ':'-'}[c]||c))
-        .replace(/[^a-z0-9_-]/g,'');
-      const filename = this._nextFilename(`${digit}_${slug}`, 'mp3', this.sounds);
-      try {
-        const r = await fetch('/api/generate/tts', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            text: this.editNumberData.word,
-            word: this.editNumberData.word,
-            filename,
-          }),
-        }).then(r => r.json());
-        if (r.ok) {
-          this.editNumberData.sound = filename;
-        } else {
-          this.showToast(r.error || 'Fehler', 'error');
-        }
-      } catch (e) { this.showToast(e.message, 'error'); }
-      this._genTTS = false;
     },
     async generateNumberBg() {
       if (!this.editNumberData.image_subject) return;
@@ -1947,7 +1973,9 @@ function funkeykid() {
            + '- Konkretes Ding/Tier/Objekt mit erkennbarem Geräusch\n'
            + '- Kindgerecht\n'
            + '- NICHT: {excluded}\n\n'
-           + 'Antwort NUR als JSON: {"word": "...", "sound_description": "... (Englisch)", "image_description": "... (Englisch)"}';
+           + 'Antwort NUR als JSON (ein einzelnes englisches Wort bei word_en, '
+           + 'das dem deutschen Wort entspricht — z.B. Ameise → Ant):\n'
+           + '{"word": "...", "word_en": "...", "sound_description": "... (Englisch)", "image_description": "... (Englisch)"}';
     },
     openSuggest() {
       this._suggestPrompt = (this.settings.ai_prompts && this.settings.ai_prompts.suggest) || this._defaultSuggestPrompt();
@@ -1977,10 +2005,14 @@ function funkeykid() {
           const entry = this._blankEntry();
           entry.word = r.word;
           entry._imageDesc = r.image_description || '';
-          // Seed the FX track's prompt with the AI's sound description.
+          // Seed the FX prompt with the AI's sound description,
+          // the DE prompt with the German word itself (TTS reads it),
+          // and the EN prompt with the AI's English translation.
           if (r.sound_description) entry.tracks.FX.prompt = r.sound_description;
+          entry.tracks.DE.prompt = r.word;
+          if (r.word_en) entry.tracks.EN.prompt = r.word_en;
           this.editEntries.push(entry);
-          this.showToast((persistPrompt ? 'Prompt gespeichert · ' : '') + 'Vorschlag: ' + r.word);
+          this.showToast((persistPrompt ? 'Prompt gespeichert · ' : '') + 'Vorschlag: ' + r.word + (r.word_en ? ' / ' + r.word_en : ''));
           this._suggestOpen = false;
         } else {
           this.showToast(r.error || 'Kein Vorschlag', 'error');
@@ -2059,14 +2091,18 @@ function funkeykid() {
 
     async archiveEntry(idx) {
       const entry = this.editEntries[idx];
-      if (!confirm(`"${entry.word}" archivieren? Sound und Bild werden ins Archiv verschoben.`)) return;
-      // Archive sound
-      if (entry.sound) {
-        await fetch('/api/archive', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ type: 'sound', filename: entry.sound }),
-        });
+      if (!confirm(`"${entry.word}" archivieren? Sound-Dateien und Bild werden ins Archiv verschoben.`)) return;
+      // Archive every track's file
+      const tracks = entry.tracks || {};
+      for (const k of this.trackKinds) {
+        const fname = tracks[k] && tracks[k].file;
+        if (fname) {
+          await fetch('/api/archive', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ type: 'sound', filename: fname }),
+          });
+        }
       }
       // Archive image
       if (entry.image) {
@@ -2091,31 +2127,6 @@ function funkeykid() {
         if (!existing.includes(name)) return name;
       }
       return `${base}_${Date.now()}.${ext}`;
-    },
-
-    async generateSound(entry, idx) {
-      if (!entry.word) return;
-      entry._genSound = true;
-      const letter = this.editingLetter.toLowerCase();
-      const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
-      const filename = this._nextFilename(`${letter}_${slug}`, 'mp3', this.sounds);
-      const extra = entry._genExtra || '';
-      const basePrompt = entry._soundDesc || `${entry.word} sound effect, clear and recognizable for children`;
-      const prompt = `${basePrompt}. ${extra}`.trim();
-      try {
-        const r = await fetch('/api/generate/sound', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ word: entry.word, prompt, filename, duration: 4 }),
-        }).then(r => r.json());
-        if (r.ok) {
-          entry.sound = filename;
-          // Job runs in background — SSE gen_update will notify on completion
-        } else {
-          this.showToast(r.error || 'Fehler', 'error');
-        }
-      } catch (e) { this.showToast(e.message, 'error'); }
-      entry._genSound = false; // Button re-enabled — job continues in background
     },
 
     async generateImage(entry, idx) {

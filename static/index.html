@@ -1129,7 +1129,7 @@
 function funkeykid() {
   return {
     tab: 'letters',
-    settings: {},
+    settings: { ai_prompts: { suggest_model: '', suggest: '', sound: '', image: '' } },
     sets: {},
     activeSetId: '',
     activeSet: null,
@@ -1386,6 +1386,7 @@ function funkeykid() {
       return this.images.filter(s => s.toLowerCase().includes(f));
     },
     randomColor(l) {
+      if (!l) return '#888';
       const c = ['#FF0000','#00CC00','#0066FF','#FF6600','#CC00CC','#00CCCC','#FFCC00','#FF3399'];
       return c[l.charCodeAt(0) % c.length];
     },

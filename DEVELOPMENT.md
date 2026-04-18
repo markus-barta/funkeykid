@@ -1,9 +1,10 @@
 # funkeykid — Development Guide
 
-**Version**: 2.6.0
+**Version**: 3.1.0
 **Repo**: https://github.com/markus-barta/funkeykid
 **Host**: hsb1 (Home Server Barta 1)
 **Image**: ghcr.io/markus-barta/funkeykid:latest
+**Related repo**: [pixdicon](https://github.com/markus-barta/pixdcon) — Pixoo scene renderer (separate codebase, funkeykid publishes MQTT into its funkeykid scene).
 
 ---
 
@@ -593,7 +594,136 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 ### Key Concepts
 
 - **Sets**: Named collections, switchable from navbar dropdown
-- **Entries**: Per-letter, each with own word + sound + image + enabled flag
+- **Entries**: Per-letter, each with own word + image + tracks + enabled flag
 - **Cycling**: Same key pressed consecutively cycles through enabled entries
 - **Auto-save**: Every change persisted immediately
-- **Migration**: Old flat format auto-migrated to sets format on load
+- **Migration**: Old flat `letters` format auto-migrated to `sets` on load; single `sound` field migrated to `tracks` dict on v3 startup (see below)
+
+---
+
+## Multi-track audio model (v3.0.0)
+
+Each entry carries a `tracks` dict keyed by kind. Kinds are defined in
+`TRACK_KINDS = ("FX", "DE", "EN")` in `server.py`:
+
+| Kind | Label     | Generator                           |
+|------|-----------|-------------------------------------|
+| FX   | Effekt    | ElevenLabs `sound-generation`       |
+| DE   | Deutsch   | ElevenLabs `text-to-speech` (DE voice) |
+| EN   | Englisch  | ElevenLabs `text-to-speech` (EN voice) |
+
+**Entry shape (letter or number):**
+
+```json
+{
+  "word": "Ameise",
+  "image": "a_ameise.png",
+  "enabled": true,
+  "tracks": {
+    "FX": {"file": "a_ameise.mp3",    "enabled": true, "prompt": "Ant crawling on dry leaves", "volume": 100},
+    "DE": {"file": "a_ameise_de.mp3", "enabled": true, "prompt": "Ameise",                     "volume": 100},
+    "EN": {"file": "a_ameise_en.mp3", "enabled": true, "prompt": "Ant",                        "volume": 120}
+  },
+  "_imageDesc": "Friendly cartoon ant"
+}
+```
+
+**Set-level playback control:**
+
+```json
+{
+  "name": "v2.0 Komplett",
+  "track_order": [
+    {"kind": "FX", "enabled": true},
+    {"kind": "DE", "enabled": true},
+    {"kind": "EN", "enabled": false}
+  ],
+  "letters": { ... },
+  "numbers": { ... }
+}
+```
+
+`track_order` controls playback order *and* per-kind global enable.
+
+**Playback pipeline** (`play_sound_sequence` in `server.py`):
+
+1. On keypress, `_collect_playable_files(entry)` iterates the active set's `track_order`, picks tracks that are present + enabled at both the set level and the track level, returns a list of `(path, volume_pct)` tuples.
+2. A daemon thread runs `paplay` serially per file with a small gap (default 120 ms).
+3. Per-track volume multiplies the global volume (`pa_vol = global * track / 100 * 65536`).
+4. The global `_play_seq_abort` flag is raised by `stop_all_sounds()`; the thread checks it between tracks so the next keypress aborts mid-sequence.
+
+**Migration (one-shot on startup)** — `_migrate_to_tracks_v2()`:
+
+- Letter entries: legacy `sound` → `tracks.FX.file`; `_soundDesc` → `tracks.FX.prompt`; legacy keys stripped.
+- Number entries: legacy `sound` → `tracks.DE.file` (number sounds historically were German TTS phrases).
+- Each set gets `track_order` seeded with `[FX✓, DE✓, EN✗]` if missing.
+- `settings.tts_voices` seeded with `{de: <default-voice>, en: <default-voice>}`.
+- Idempotent: the marker check is "already has `tracks` dict and no `sound` field".
+
+**API routing:**
+
+- `POST /api/generate/track` — unified dispatcher, body `{kind, word, slug_prefix, prompt?}` → returns `{ok, job_id, filename}`. FX routes to SFX worker, DE/EN to TTS worker with kind-specific voice.
+- `GET /api/sets/:id/letters/:L` — always returns normalized entries; additionally synthesizes a legacy `sound` alias from the first track with a file for back-compat.
+- `PUT /api/sets/:id/letters/:L` — accepts either legacy or new shape; always persists new shape.
+- `PUT /api/sets/:id` — accepts `track_order`.
+
+---
+
+## Loudness normalization (v3.1.0, FKID-1)
+
+Every sound landing in `/data/sounds` now passes through `ffmpeg loudnorm` so FX, TTS and parent recordings match in perceived loudness.
+
+**Pipeline** — `normalize_mp3(in_path, out_path)` in `server.py`:
+
+```
+ffmpeg -y -i in.mp3 \
+       -af loudnorm=I=-16:LRA=11:TP=-1.5 \
+       -ar 44100 -b:a 128k -loglevel error \
+       out.mp3
+```
+
+Single-pass (not two-pass): accuracy is fine for toy-fidelity, finishes in ~1 s per clip. Falls back to `shutil.copy2` when ffmpeg is absent, disabled, times out, or exits non-zero — the caller always gets a usable file.
+
+**Wiring:**
+
+- SFX + TTS workers (`_gen_sound_worker`, `_gen_tts_worker`) route their output through `normalize_mp3(ai_path, sounds_path)`. Originals stay in `/data/ai-generated/sounds`.
+- Upload endpoint (`POST /api/sounds/upload`) writes to `ai-generated/sounds` first, then `normalize_mp3` into `/data/sounds`.
+- `gen_jobs[job_id].normalized` boolean reflects whether the normalization actually ran (vs. fallback copy).
+
+**Settings:**
+
+- `settings.audio_normalize` — bool, default `true` on first run.
+- `settings.audio_normalize_lufs` — float, default `-16`. UI slider range `-30 … -10` step `0.5`.
+
+**Batch endpoint** — `POST /api/sounds/normalize-all`:
+
+- Iterates `/data/sounds/*.mp3` in a daemon thread.
+- First time a file is processed, the raw clip is backed up to `ai-generated/sounds/<name>_original.mp3` and a `<name>_normalized.marker` file is written. Subsequent runs skip files with a marker (idempotent).
+- Streams `normalize_progress` SSE events (`{file, index, total, status: start|done|skipped|error}`) and a final `{status: complete, total, done, skipped, failed}`.
+- The **"Bestehende Library normalisieren"** button in Settings triggers this; UI shows live progress from the SSE stream.
+
+---
+
+## Pixoo integration — volume VU-meter overlay (v3.0.0, FKID-2)
+
+`display.publish_volume(volume)` now publishes an enriched payload:
+
+```json
+{
+  "letter": "80%",
+  "word": "lautstaerke",
+  "color": "#FFCC00",
+  "bar": true,
+  "percent": 80,
+  "bars_total": 10,
+  "bars_filled": 8,
+  "timestamp": 1741180000
+}
+```
+
+Rendering lives in **`pixdicon/scenes/pixoo/funkeykid.js`**:
+
+- `bar:true` payloads touch only the overlay state (`_volumeBar`, `_volumeBarAt`) so the letter-render path isn't polluted with "80 %" text once the overlay expires.
+- Overlay TTL **1.5 s**; a real letter/image payload cancels it instantly.
+- Renders a **vertical tapered VU-meter**: 10 segments, narrow-green at the bottom → wide-red at the top, with simple 3-row 3D shading (lighter top row, darker bottom row), neutral-gray "VOLUME" label above, `NN%` in neutral gray below.
+- Takes priority over the idle branch so volume changes show even on an otherwise-idle canvas.

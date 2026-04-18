@@ -86,6 +86,20 @@ When updating images, copy to both:
 ~/docker/mounts/pixdcon/assets/pixoo/funkeykid/  # NOT needed — mounted from above
 ```
 
+#### Updating the Pixoo scene (pixdicon repo)
+
+The `funkeykid.js` scene on the Pixoo lives in the separate **pixdicon** repo. Its scene files are host-mounted and hot-reloaded by pixdicon — no container rebuild needed for scene tweaks:
+
+```bash
+# From pixdicon working copy:
+scp scenes/pixoo/funkeykid.js mba@hsb1.lan:~/docker/mounts/pixdcon/scenes/pixoo/funkeykid.js
+# ScenesWatcher logs "Changed: funkeykid.js" and reinitializes the scene.
+```
+
+Core pixdicon code changes (src/, lib/, package.json) still go via its own CI → GHCR → `docker compose pull pixdcon`.
+
+See `pixdicon/docs/DEPLOY.md` for the full pixdicon deploy guide.
+
 ---
 
 ## Versioning
@@ -96,9 +110,11 @@ Version is in `version.py`. Format: `MAJOR.MINOR.PATCH`
 
 | Change | Bump | Example |
 |--------|------|---------|
-| Bug fix, hotfix, styling tweak | PATCH | 2.6.1 → 2.6.2 |
-| New feature, UI rework, new API | MINOR | 2.6.2 → 2.7.0 |
-| Breaking change, major rearchitecture | MAJOR | 2.7.0 → 3.0.0 |
+| Bug fix, hotfix, styling tweak | PATCH | 3.1.0 → 3.1.1 |
+| New feature, UI rework, new API | MINOR | 3.1.0 → 3.2.0 |
+| Breaking change, major rearchitecture | MAJOR | 3.1.0 → 4.0.0 |
+
+Current: **3.1.0** (ffmpeg loudnorm pipeline). **3.0.0** was the multi-track refactor.
 
 Before pushing:
 ```bash

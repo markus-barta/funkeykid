@@ -993,6 +993,34 @@
               <input type="checkbox" class="toggle toggle-primary" x-model="settings.random_sounds_enabled" @change="autoSave()">
             </label>
           </div>
+
+          <!-- Audio normalization (FKID-1) -->
+          <div class="form-control mb-3">
+            <label class="label cursor-pointer">
+              <span class="label-text">Lautheits-Normalisierung (EBU R128)</span>
+              <input type="checkbox" class="toggle toggle-primary"
+                     x-model="settings.audio_normalize" @change="autoSave()">
+            </label>
+            <div class="text-2xs opacity-50 -mt-1 mb-1">
+              Neu generierte &amp; hochgeladene Sounds werden automatisch auf gleiche wahrgenommene Lautstärke gebracht.
+            </div>
+            <div class="flex items-center gap-3" x-show="settings.audio_normalize">
+              <span class="text-xs opacity-60 w-16">Ziel (LUFS)</span>
+              <input type="range" class="range range-xs range-primary flex-1"
+                     min="-30" max="-10" step="0.5"
+                     x-model.number="settings.audio_normalize_lufs" @change="autoSave()">
+              <span class="badge badge-sm font-mono"
+                    x-text="(settings.audio_normalize_lufs ?? -16).toFixed(1) + ' LUFS'"></span>
+            </div>
+            <div class="mt-2 flex items-center gap-2" x-show="settings.audio_normalize">
+              <button class="btn btn-sm btn-outline btn-primary gap-2"
+                      @click="normalizeAllSounds()" :disabled="_normAllBusy">
+                <span x-show="_normAllBusy" class="loading loading-spinner loading-xs"></span>
+                <span x-show="!_normAllBusy">Bestehende Library normalisieren</span>
+              </button>
+              <span class="text-xs opacity-60" x-show="_normAllStatus" x-text="_normAllStatus"></span>
+            </div>
+          </div>
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Anzeige-Modus</span></label>
             <select class="select select-bordered" x-model="settings.display_mode" @change="autoSave()">
@@ -1400,6 +1428,8 @@ function funkeykid() {
     _suggestOpen: false,
     _suggestPrompt: '',
     _navBusy: false,
+    _normAllBusy: false,
+    _normAllStatus: '',
     _genWizard: null,
     _blacklist: [],
     genJobs: {},
@@ -1547,6 +1577,16 @@ function funkeykid() {
         this.aiLogEntries.unshift(d);
         if (this.aiLogEntries.length > 50) this.aiLogEntries.pop();
       });
+      es.addEventListener('normalize_progress', (e) => {
+        const d = JSON.parse(e.data);
+        if (d.status === 'complete') {
+          this._normAllBusy = false;
+          this._normAllStatus = '';
+          this.showToast(`Normalisiert: ${d.done} · übersprungen: ${d.skipped} · Fehler: ${d.failed}`, d.failed > 0 ? 'error' : 'success');
+        } else if (d.total) {
+          this._normAllStatus = `${d.index + 1} / ${d.total} — ${d.file || ''}`;
+        }
+      });
       es.addEventListener('favorites', (e) => {
         this.favorites = JSON.parse(e.data).favorites || [];
       });
@@ -1578,6 +1618,9 @@ function funkeykid() {
           sound: 'Clear, distinct {word} sound effect, high quality, recognizable for children',
           image: 'Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children\'s animation style.',
         };
+        // Audio normalization defaults (FKID-1)
+        if (s.audio_normalize === undefined) s.audio_normalize = true;
+        if (s.audio_normalize_lufs === undefined) s.audio_normalize_lufs = -16;
         this.settings = s;
         this.sets = sets;
         this.activeSetId = s.active_set || Object.keys(sets)[0] || '';
@@ -2038,6 +2081,26 @@ function funkeykid() {
       this.stopPreview();
       await fetch('/api/test/SPACE', { method: 'POST' });
       this.showToast('Wiedergabe gestoppt');
+    },
+
+    async normalizeAllSounds() {
+      if (this._normAllBusy) return;
+      if (!confirm('Alle vorhandenen Sounds normalisieren? Originale werden in /data/ai-generated/sounds/*_original.mp3 gesichert.')) return;
+      this._normAllBusy = true;
+      this._normAllStatus = 'startet…';
+      try {
+        const r = await fetch('/api/sounds/normalize-all', { method: 'POST' }).then(r => r.json());
+        if (r.error) {
+          this.showToast(r.error, 'error');
+          this._normAllBusy = false;
+          this._normAllStatus = '';
+        }
+        // SSE normalize_progress updates _normAllStatus in real time
+      } catch (e) {
+        this.showToast(e.message, 'error');
+        this._normAllBusy = false;
+        this._normAllStatus = '';
+      }
     },
 
     _defaultSuggestPrompt() {

@@ -1,5 +1,5 @@
 """funkeykid version info."""
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 BUILD = __import__("os").environ.get("FUNKEYKID_BUILD", "dev")
 REPO = "https://github.com/markus-barta/funkeykid"
 

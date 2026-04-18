@@ -2,11 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# System deps for evdev build + audio + BT diagnostics
+# System deps for evdev build + audio + BT diagnostics + ffmpeg (loudnorm for FKID-1)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pulseaudio-utils \
     bluez \
     dbus \
+    ffmpeg \
     gcc \
     linux-libc-dev \
     python3-dev \

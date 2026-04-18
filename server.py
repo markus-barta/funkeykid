@@ -1147,19 +1147,93 @@ async def api_get_sounds(request):
     return web.json_response(files)
 
 
+async def api_normalize_all_sounds(request):
+    """Batch-normalize every mp3 in /data/sounds (FKID-1).
+
+    Run this once after enabling normalization on an existing library. Each
+    file is backed up into /data/ai-generated/sounds/<name>_original.mp3 the
+    first time it's processed (idempotent — detects the backup to avoid
+    re-processing).
+
+    Progress is streamed via SSE `normalize_progress` events; also returned
+    as a summary when complete.
+    """
+    if not _normalize_enabled():
+        return web.json_response({"error": "audio_normalize ist deaktiviert"}, status=400)
+    try:
+        proc = subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+        if proc.returncode != 0:
+            return web.json_response({"error": "ffmpeg nicht verfügbar"}, status=500)
+    except FileNotFoundError:
+        return web.json_response({"error": "ffmpeg nicht installiert"}, status=500)
+
+    def _run():
+        import shutil as _sh
+        os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
+        files = sorted(f for f in os.listdir(SOUNDS_DIR) if f.lower().endswith(".mp3"))
+        total = len(files)
+        done = 0
+        skipped = 0
+        failed = 0
+        for i, fname in enumerate(files):
+            sse_broadcast("normalize_progress", {"file": fname, "index": i, "total": total, "status": "start"})
+            src = os.path.join(SOUNDS_DIR, fname)
+            backup = os.path.join(AI_SOUNDS_DIR, fname.rsplit(".", 1)[0] + "_original.mp3")
+            marker = os.path.join(AI_SOUNDS_DIR, fname.rsplit(".", 1)[0] + "_normalized.marker")
+            if os.path.exists(marker):
+                skipped += 1
+                sse_broadcast("normalize_progress", {"file": fname, "index": i, "total": total, "status": "skipped"})
+                continue
+            # One-time backup of the pre-normalization original
+            if not os.path.exists(backup):
+                try: _sh.copy2(src, backup)
+                except Exception: pass
+            tmp = src + ".norm.mp3"
+            ok = normalize_mp3(src, tmp)
+            if ok and os.path.exists(tmp):
+                try:
+                    os.replace(tmp, src)
+                    # leave a marker so we don't re-normalize a normalized file
+                    with open(marker, "w") as m: m.write(str(int(time.time())))
+                    done += 1
+                    sse_broadcast("normalize_progress", {"file": fname, "index": i, "total": total, "status": "done"})
+                except Exception as e:
+                    failed += 1
+                    sse_broadcast("normalize_progress", {"file": fname, "index": i, "total": total, "status": "error", "error": str(e)})
+            else:
+                try:
+                    if os.path.exists(tmp): os.remove(tmp)
+                except Exception: pass
+                failed += 1
+                sse_broadcast("normalize_progress", {"file": fname, "index": i, "total": total, "status": "error"})
+        summary = {"total": total, "done": done, "skipped": skipped, "failed": failed}
+        sse_broadcast("normalize_progress", {"status": "complete", **summary})
+        print(f"[norm] batch complete: {summary}", flush=True)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return web.json_response({"ok": True, "message": "Normalisierung läuft — siehe SSE normalize_progress."})
+
+
 async def api_upload_sound(request):
+    """Upload a sound file. Normalizes the result (FKID-1) unless disabled.
+
+    Flow: write raw upload → ai-generated/sounds (or tmp if dir missing)
+    → normalize_mp3 into /data/sounds. Keeps the original for reference.
+    """
     os.makedirs(SOUNDS_DIR, exist_ok=True)
+    os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
     reader = await request.multipart()
     field = await reader.next()
     filename = field.filename
-    path = os.path.join(SOUNDS_DIR, filename)
-    with open(path, "wb") as f:
+    raw_path = os.path.join(AI_SOUNDS_DIR, filename)
+    with open(raw_path, "wb") as f:
         while True:
             chunk = await field.read_chunk()
             if not chunk:
                 break
             f.write(chunk)
-    return web.json_response({"ok": True, "file": filename})
+    normed = normalize_mp3(raw_path, os.path.join(SOUNDS_DIR, filename))
+    return web.json_response({"ok": True, "file": filename, "normalized": normed})
 
 
 async def api_get_images(request):
@@ -1229,6 +1303,76 @@ AI_SOUNDS_DIR = os.path.join(AI_DIR, "sounds")
 AI_IMAGES_ORIG_DIR = os.path.join(AI_DIR, "images-original")
 AI_IMAGES_RESIZED_DIR = os.path.join(AI_DIR, "images-resized")
 
+
+# ── Loudness normalization (FKID-1) ─────────────────────────────────────────
+# EBU R128 loudnorm applied to every sound that lands in /data/sounds, so FX,
+# TTS and parent recordings all sit at the same perceived loudness.
+# Pipeline: raw clip → ffmpeg loudnorm → /data/sounds/<name>.mp3
+# The untouched AI original stays in /data/ai-generated/sounds so re-generation
+# and A/B comparison remain possible.
+
+def _normalize_enabled():
+    return bool(settings.get("audio_normalize", True))
+
+
+def _normalize_target_lufs():
+    try:
+        return float(settings.get("audio_normalize_lufs", -16.0))
+    except (TypeError, ValueError):
+        return -16.0
+
+
+def normalize_mp3(in_path, out_path):
+    """Apply EBU R128 loudnorm with ffmpeg. Returns True on success.
+
+    Falls back to `shutil.copy2` if ffmpeg is absent, normalization is
+    disabled, or the encode fails — the caller always gets a usable file.
+    """
+    import shutil
+    if not _normalize_enabled():
+        shutil.copy2(in_path, out_path)
+        return False
+    target = _normalize_target_lufs()
+    try:
+        # Two-pass would be more accurate but slow. Single-pass with loudnorm
+        # is sufficient for kid-toy fidelity and finishes in ~1s per clip.
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(in_path),
+                "-af", f"loudnorm=I={target}:LRA=11:TP=-1.5",
+                "-ar", "44100",  # keep sample rate consistent
+                "-b:a", "128k",
+                "-loglevel", "error",
+                str(out_path),
+            ],
+            capture_output=True, timeout=60,
+        )
+        if proc.returncode != 0:
+            err = proc.stderr.decode("utf-8", errors="replace")[:300]
+            print(f"[norm] ffmpeg failed on {in_path}: {err}", flush=True)
+            shutil.copy2(in_path, out_path)
+            return False
+        return True
+    except FileNotFoundError:
+        print("[norm] ffmpeg not installed — copying raw", flush=True)
+        shutil.copy2(in_path, out_path)
+        return False
+    except subprocess.TimeoutExpired:
+        print(f"[norm] ffmpeg timeout on {in_path}", flush=True)
+        try:
+            shutil.copy2(in_path, out_path)
+        except Exception:
+            pass
+        return False
+    except Exception as e:
+        print(f"[norm] unexpected error on {in_path}: {e}", flush=True)
+        try:
+            shutil.copy2(in_path, out_path)
+        except Exception:
+            pass
+        return False
+
 FALLBACK_SOUND_PROMPT = "Clear, distinct {word} sound effect, high quality, recognizable for children"
 FALLBACK_IMAGE_PROMPT = "Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children's animation style."
 FALLBACK_SUGGEST_PROMPT = """Schlage EIN deutsches Wort vor, das mit dem Buchstaben {letter} beginnt.
@@ -1293,9 +1437,11 @@ def _gen_sound_worker(job_id, word, prompt, duration, filename):
         outpath = os.path.join(AI_SOUNDS_DIR, filename)
         with open(outpath, "wb") as f:
             f.write(audio_data)
-        shutil.copy2(outpath, os.path.join(SOUNDS_DIR, filename))
-        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}"})
-        _ai_log_entry("sound", "elevenlabs/sfx", prompt, f"OK: {len(audio_data)} bytes → {filename}", "ok")
+        normed = normalize_mp3(outpath, os.path.join(SOUNDS_DIR, filename))
+        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}", "normalized": normed})
+        _ai_log_entry("sound", "elevenlabs/sfx", prompt,
+                      f"OK: {len(audio_data)} bytes → {filename}" + (" (normalized)" if normed else ""),
+                      "ok")
     except Exception as e:
         gen_jobs[job_id].update({"status": "error", "error": str(e)})
         _ai_log_entry("sound", "elevenlabs/sfx", prompt, str(e), "error")
@@ -1414,9 +1560,11 @@ def _gen_tts_worker(job_id, text, voice_id, filename):
         outpath = os.path.join(AI_SOUNDS_DIR, filename)
         with open(outpath, "wb") as f:
             f.write(audio_data)
-        shutil.copy2(outpath, os.path.join(SOUNDS_DIR, filename))
-        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}"})
-        _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text, f"OK: {len(audio_data)}b → {filename}", "ok")
+        normed = normalize_mp3(outpath, os.path.join(SOUNDS_DIR, filename))
+        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}", "normalized": normed})
+        _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text,
+                      f"OK: {len(audio_data)}b → {filename}" + (" (normalized)" if normed else ""),
+                      "ok")
     except Exception as e:
         gen_jobs[job_id].update({"status": "error", "error": str(e)})
         _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text, str(e), "error")
@@ -1777,6 +1925,7 @@ def create_app():
     # Files
     app.router.add_get("/api/sounds", api_get_sounds)
     app.router.add_post("/api/sounds/upload", api_upload_sound)
+    app.router.add_post("/api/sounds/normalize-all", api_normalize_all_sounds)
     app.router.add_get("/api/images", api_get_images)
     app.router.add_post("/api/images/upload", api_upload_image)
     # Test

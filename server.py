@@ -1148,7 +1148,7 @@ async def api_get_sounds(request):
 
 
 async def api_normalize_all_sounds(request):
-    """Batch-normalize every mp3 in /data/sounds (FKID-1).
+    """Batch-normalize every mp3 in /data/sounds (FUNK-1).
 
     Run this once after enabling normalization on an existing library. Each
     file is backed up into /data/ai-generated/sounds/<name>_original.mp3 the
@@ -1215,7 +1215,7 @@ async def api_normalize_all_sounds(request):
 
 
 async def api_upload_sound(request):
-    """Upload a sound file. Normalizes the result (FKID-1) unless disabled.
+    """Upload a sound file. Normalizes the result (FUNK-1) unless disabled.
 
     Flow: write raw upload → ai-generated/sounds (or tmp if dir missing)
     → normalize_mp3 into /data/sounds. Keeps the original for reference.
@@ -1304,7 +1304,7 @@ AI_IMAGES_ORIG_DIR = os.path.join(AI_DIR, "images-original")
 AI_IMAGES_RESIZED_DIR = os.path.join(AI_DIR, "images-resized")
 
 
-# ── Loudness normalization (FKID-1) ─────────────────────────────────────────
+# ── Loudness normalization (FUNK-1) ─────────────────────────────────────────
 # EBU R128 loudnorm applied to every sound that lands in /data/sounds, so FX,
 # TTS and parent recordings all sit at the same perceived loudness.
 # Pipeline: raw clip → ffmpeg loudnorm → /data/sounds/<name>.mp3

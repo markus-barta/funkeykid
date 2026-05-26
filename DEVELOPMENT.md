@@ -1,9 +1,10 @@
 # funkeykid — Development Guide
 
-**Version**: 3.1.0
+**Version**: 3.1.1
 **Repo**: https://github.com/markus-barta/funkeykid
 **Host**: hsb1 (Home Server Barta 1)
 **Image**: ghcr.io/markus-barta/funkeykid:latest
+**Task tracking**: [PPM](https://pm.barta.cm) — project `FUNK` (id 5). Issue keys like `FUNK-1` / `FUNK-2` referenced below resolve there. No `+pm/backlog/` in this repo.
 **Related repo**: [pixdicon](https://github.com/markus-barta/pixdcon) — Pixoo scene renderer (separate codebase, funkeykid publishes MQTT into its funkeykid scene).
 
 ---
@@ -669,7 +670,7 @@ Each entry carries a `tracks` dict keyed by kind. Kinds are defined in
 
 ---
 
-## Loudness normalization (v3.1.0, FKID-1)
+## Loudness normalization (v3.1.0, FUNK-1)
 
 Every sound landing in `/data/sounds` now passes through `ffmpeg loudnorm` so FX, TTS and parent recordings match in perceived loudness.
 
@@ -704,7 +705,7 @@ Single-pass (not two-pass): accuracy is fine for toy-fidelity, finishes in ~1 s 
 
 ---
 
-## Pixoo integration — volume VU-meter overlay (v3.0.0, FKID-2)
+## Pixoo integration — volume VU-meter overlay (v3.0.0, FUNK-2)
 
 `display.publish_volume(volume)` now publishes an enriched payload:
 

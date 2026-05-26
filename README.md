@@ -2,7 +2,7 @@
 
 Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a learning device that plays per-letter sounds, shows the letter + illustration on a Pixoo 64 display, and lets a parent author content via a web UI including AI generation.
 
-**Host**: hsb1 · **Image**: `ghcr.io/markus-barta/funkeykid:latest` · **UI**: http://hsb1.lan:8081 · **Version**: 3.1.0
+**Host**: hsb1 · **Image**: `ghcr.io/markus-barta/funkeykid:latest` · **UI**: http://hsb1.lan:8081 · **Version**: 3.1.1
 
 ## Features
 
@@ -17,7 +17,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **Per-track volume** (0–200 %) trims quiet clips up and loud clips down independently of the global volume.
 - Tracks are played back-to-back with a short gap. Any new keypress aborts the running sequence instantly.
 
-### Loudness normalization (v3.1.0, FKID-1)
+### Loudness normalization (v3.1.0, FUNK-1)
 - `ffmpeg` loudnorm (EBU R128, default **–16 LUFS**) runs automatically on every generated or uploaded sound, so FX / TTS / parent recordings all sit at the same perceived loudness.
 - Toggle + target LUFS slider in the Settings tab; "Bestehende Library normalisieren" batch-processes existing files with live progress (SSE) and backs up originals into `ai-generated/sounds`.
 
@@ -41,7 +41,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 
 ### Pixoo 64 display (via pixdicon, separate repo)
 - `display.publish_letter(letter, word, image)` → scene draws the bg image + letter + word.
-- `display.publish_volume(volume)` → scene renders a **vertical VU-meter** overlay (FKID-2): 10 tapered segments from narrow-green at the bottom to wide-red at the top, with "VOLUME" label and `NN%` in neutral gray. TTL 1.5 s; any letter press cancels the overlay.
+- `display.publish_volume(volume)` → scene renders a **vertical VU-meter** overlay (FUNK-2): 10 tapered segments from narrow-green at the bottom to wide-red at the top, with "VOLUME" label and `NN%` in neutral gray. TTL 1.5 s; any letter press cancels the overlay.
 - `display.publish_keyboard_status(status)` → retained heartbeat for the home scene's status dots.
 
 ### Ops / platform
@@ -105,6 +105,10 @@ See **[DEPLOY.md](DEPLOY.md)** for the full ops guide, volume mounts, NixOS modu
 - **[DEVELOPMENT.md](DEVELOPMENT.md)** — Architecture, data model (multi-track), APIs, AI integrations, audio pipeline.
 - **[DEPLOY.md](DEPLOY.md)** — Docker, NixOS module, hardware isolation, audio routing via kiosk PipeWire.
 - **[FAQ.md](FAQ.md)** — Troubleshooting (no sound, keyboard issues, volume).
+
+## Tasks / backlog
+
+All task tracking — backlog, in-flight work, epics, bug reports — lives in **PPM** (pm.barta.cm) under project **`FUNK`** (id 5). There is no `+pm/backlog/` directory in this repo; funkeykid skipped that legacy phase. Issue keys referenced in code and docs (e.g. `FUNK-1` for loudness normalization, `FUNK-2` for the VU-meter overlay) link back to PPM.
 
 ## License
 

@@ -504,7 +504,7 @@
                               </button>
                               <button class="btn btn-xs btn-primary gap-1 flex-1"
                                       @click="generateTrack(entry, idx, cfg.kind, editingLetter.toLowerCase())"
-                                      :disabled="!entry.word || entry.tracks[cfg.kind]._generating">
+                                      :disabled="!entry.word">
                                 <span x-show="entry.tracks[cfg.kind]._generating" class="loading loading-spinner loading-xs"></span>
                                 <svg x-show="!entry.tracks[cfg.kind]._generating" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
                                 <span x-text="entry.tracks[cfg.kind].file ? 'Neu' : 'Generieren'"></span>
@@ -777,7 +777,7 @@
                         </button>
                         <button class="btn btn-xs btn-primary gap-1 flex-1"
                                 @click="generateTrack(editNumberData, null, cfg.kind, String(editingNumber))"
-                                :disabled="!editNumberData.word || editNumberData.tracks[cfg.kind]._generating">
+                                :disabled="!editNumberData.word">
                           <span x-show="editNumberData.tracks[cfg.kind]._generating" class="loading loading-spinner loading-xs"></span>
                           <svg x-show="!editNumberData.tracks[cfg.kind]._generating" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
                           <span x-text="editNumberData.tracks[cfg.kind].file ? 'Neu' : 'Generieren'"></span>
@@ -994,7 +994,7 @@
             </label>
           </div>
 
-          <!-- Audio normalization (FKID-1) -->
+          <!-- Audio normalization (FUNK-1) -->
           <div class="form-control mb-3">
             <label class="label cursor-pointer">
               <span class="label-text">Lautheits-Normalisierung (EBU R128)</span>
@@ -1618,7 +1618,7 @@ function funkeykid() {
           sound: 'Clear, distinct {word} sound effect, high quality, recognizable for children',
           image: 'Pixar-style 3D cartoon of {description}. Vibrant saturated colors, soft lighting, rounded friendly shapes, big expressive eyes. Simple composition, recognizable at 64x64 pixels. Studio quality children\'s animation style.',
         };
-        // Audio normalization defaults (FKID-1)
+        // Audio normalization defaults (FUNK-1)
         if (s.audio_normalize === undefined) s.audio_normalize = true;
         if (s.audio_normalize_lufs === undefined) s.audio_normalize_lufs = -16;
         this.settings = s;

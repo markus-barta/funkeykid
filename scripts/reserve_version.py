@@ -56,7 +56,11 @@ def main():
                          "version.json: no new coordinate, no ledger change")
     args = ap.parse_args()
 
-    subprocess.run(["git", "-C", ROOT, "fetch", "--tags", "--quiet"], check=True)
+    fetched = subprocess.run(["git", "-C", ROOT, "fetch", "--tags", "--quiet"], capture_output=True, text=True)
+    if fetched.returncode != 0:
+        # e.g. a local claim conflicting with the forge ("would clobber existing tag"):
+        # carry on; the forge check below / the atomic claim push decides.
+        print(f"warning: git fetch --tags: {fetched.stderr.strip()}", file=sys.stderr)
     with open(LOCK, "w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -116,11 +120,15 @@ def main():
 
         versioning.check_history(record, released)
         if args.recover:
-            # the ledger already holds exactly this claim; just restore version.json
+            # the local ledger holds this claim; the forge must hold exactly it too
             versioning.check_reservation(record, ledger)
+            try:
+                how = release_ledger.ensure_remote_claim(record["release_sequence"])
+            except release_ledger.LedgerError as e:
+                sys.exit(f"{e} — version.json unchanged")
             write_atomic(record)
-            print(f"recovered reservation {record['version']} (#{record['release_sequence']}) into version.json "
-                  f"→ release tag {versioning.release_tag(record['version'])}")
+            print(f"recovered reservation {record['version']} (#{record['release_sequence']}, forge claim {how}) "
+                  f"into version.json → release tag {versioning.release_tag(record['version'])}")
             return
         if record["release_sequence"] in ledger:
             sys.exit(f"sequence {record['release_sequence']} is already reserved for "

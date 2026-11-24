@@ -56,6 +56,32 @@ def require_completed(records):
                               "failed publication): rerun its release job before releasing a successor")
 
 
+def ensure_remote_claim(sequence, channel="stable"):
+    """Make sure the forge holds exactly our local claim for sequence N.
+
+    'confirmed' if the forge already has the identical tag object; 'pushed' if
+    it had none and our unchanged local claim was published now. Raises if the
+    forge holds a different claim (another preparer) or cannot be reached."""
+    name = f"reservation/{channel}/{sequence}"
+    local = _git("rev-parse", "--verify", "-q", f"refs/tags/{name}", check=False).stdout.strip()
+    if not local:
+        raise LedgerError(f"no local claim {name} to recover")
+    remote = _git("ls-remote", "--tags", "origin", f"refs/tags/{name}", check=False)
+    if remote.returncode != 0:
+        raise LedgerError(f"cannot read the forge to verify {name}: {remote.stderr.strip()}")
+    held = [line.split()[0] for line in remote.stdout.splitlines() if line.split()[-1] == f"refs/tags/{name}"]
+    if held:
+        if held[0] != local:
+            raise LedgerError(f"the forge holds a different claim for {name} (another preparer). "
+                              f"Drop your local one (git tag -d {name}), fetch tags and reserve again")
+        return "confirmed"
+    pushed = _git("push", "origin", f"refs/tags/{name}", check=False)
+    if pushed.returncode != 0:
+        raise LedgerError(f"could not publish your local claim {name}: "
+                          f"{pushed.stderr.strip().splitlines()[-1] if pushed.stderr.strip() else 'push rejected'}")
+    return "pushed"
+
+
 def claim_reservation(sequence, version, channel="stable"):
     """Atomically claim sequence N for version on the forge (first wins)."""
     name = f"reservation/{channel}/{sequence}"

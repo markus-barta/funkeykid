@@ -590,3 +590,37 @@ def test_reserve_fails_instead_of_waiting_for_a_future_floor():
     # a same-second / just-ahead floor still waits for the next second
     ticks = iter([now, now + dt.timedelta(seconds=3)])
     assert v.reserve(previous="261124200002.0.0", clock=lambda: next(ticks), sleep=lambda s: None) == "261124200003.0.0"
+
+
+def _local_claim(repo, seq, version):
+    _git(repo, "tag", "-a", f"reservation/stable/{seq}", "-m",
+         json.dumps({"version": version, "release_sequence": seq}))
+
+
+def test_recover_publishes_an_unpushed_local_claim(tmp_path):
+    """Round-4 finding: interrupted after `git tag -a`, before the push."""
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    _local_claim(repo, 2, "261124200000.0.0")                 # never reached the forge
+    env = _env_with_fake_gh(tmp_path)
+    assert "--recover" in (_run(repo, env, "reserve_version.py").stderr)
+    rec = _run(repo, env, "reserve_version.py", "--recover")
+    assert rec.returncode == 0 and "forge claim pushed" in rec.stdout, rec.stderr + rec.stdout
+    remote = subprocess.run(["git", "ls-remote", "--tags", str(origin), "reservation/stable/2"],
+                            capture_output=True, text=True).stdout
+    assert "reservation/stable/2" in remote
+    fresh = _clone(origin, tmp_path / "fresh")                # a clean checkout (like CI) agrees
+    shutil.copy(repo / "version.json", fresh / "version.json")
+    assert _run(fresh, env, "check_release_history.py").returncode == 0
+
+
+def test_recover_refuses_when_the_forge_holds_another_claim(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    a, b = _clone(origin, tmp_path / "a"), _clone(origin, tmp_path / "b")
+    env = _env_with_fake_gh(tmp_path)
+    _local_claim(a, 2, "261124200000.0.0")                    # a's claim never got out …
+    assert _run(b, env, "reserve_version.py").returncode == 0  # … b claimed #2 on the forge
+    before = (a / "version.json").read_text()
+    rec = _run(a, env, "reserve_version.py", "--recover")
+    assert rec.returncode != 0 and "different claim" in (rec.stderr + rec.stdout)
+    assert (a / "version.json").read_text() == before

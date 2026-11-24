@@ -14,7 +14,7 @@ from aiohttp import web
 
 from keyboard import KeyboardListener, is_battery_low
 from display import Display, HEARTBEAT_SECONDS
-from version import VERSION, BUILD, REPO
+from version import VERSION, VERSION_SCHEME, RELEASE_CHANNEL, RELEASE_SEQUENCE, BUILD, REPO
 
 # SSE: connected clients
 sse_clients = weakref.WeakSet()
@@ -1328,7 +1328,16 @@ async def serve_index(request):
 
 async def api_version(request):
     from version import build_time
-    return web.json_response({"version": VERSION, "build": BUILD, "repo": REPO, "build_time": build_time()})
+    # Machine-facing: canonical version + explicit scheme (never inferred from shape).
+    return web.json_response({
+        "version": VERSION,
+        "version_scheme": VERSION_SCHEME,
+        "release_channel": RELEASE_CHANNEL,
+        "release_sequence": RELEASE_SEQUENCE,
+        "build": BUILD,
+        "repo": REPO,
+        "build_time": build_time(),
+    })
 
 
 # ── AI Generation ───────────────────────────────────────────────────────────

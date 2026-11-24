@@ -1,20 +1,50 @@
 name: Build and Push Docker Image
 
+# INSPR Calendar Versioning (inspr-calver-3, FUNK-60):
+# - every PR and push runs the tests and verifies the vendored versioning bundle
+#   and the authoritative version.json;
+# - main pushes build and publish only :<commit-sha> (validation artifact);
+# - a release tag v<version> (must equal version.json) publishes the immutable
+#   :<version> image and :latest FROM THE SAME BUILD, plus a release-set manifest
+#   on the GitHub release. :latest therefore only ever moves to a released version,
+#   which is what hsb1 runs. A published :<version> is never overwritten.
+
 on:
   push:
     branches: [main]
+    tags: ['v*']
+  pull_request:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: pip install pytest paho-mqtt
+      - name: Verify versioning bundle and version record
+        run: |
+          python3 versioning_bundle.py
+          python3 -c "import versioning; r = versioning.load_record(); print(r['version'], r['version_scheme'], r['release_channel'], r['release_sequence'])"
+      - name: Tests
+        run: python3 -m pytest -q tests
+
+  build-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v4
 
@@ -28,17 +58,138 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      - name: Build and push (commit tag only; :latest moves with releases)
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           build-args: |
             BUILD_SHA=${{ github.sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Release tag must equal version.json
+        id: v
+        run: |
+          python3 - <<'EOF'
+          import os, subprocess, versioning
+          r = versioning.load_record()
+          tag = os.environ["GITHUB_REF_NAME"]
+          if not versioning.tag_matches(tag, r["version"]):
+              raise SystemExit(f"release tag {tag} must equal v{r['version']} from version.json")
+          commit_time = subprocess.check_output(["git", "log", "-1", "--format=%cI"], text=True).strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"version={r['version']}\n")
+              f.write(f"commit_time={commit_time}\n")
+          EOF
+
+      - name: Log in to Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Refuse to overwrite a published version (immutability)
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.v.outputs.version }}
+        run: |
+          # Fail closed: only an explicit "not found" lets the release proceed;
+          # an existing tag or any other registry/auth error stops it.
+          if out=$(docker buildx imagetools inspect "$IMAGE" 2>&1); then
+            echo "::error::$IMAGE already exists — reserve a new coordinate (scripts/reserve_version.py)"
+            exit 1
+          fi
+          if ! grep -qiE 'not found|manifest unknown' <<<"$out"; then
+            echo "::error::cannot confirm that $IMAGE is unpublished: $out"
+            exit 1
+          fi
+          echo "$IMAGE is unpublished — OK to release"
+
+      - name: Build and push release image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.v.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            at.inspr.version-scheme=inspr-calver-3
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_TIME=${{ steps.v.outputs.commit_time }}
+          cache-from: type=gha
+
+      - name: Release-set manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          INDEX_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE@$INDEX_DIGEST" --format '{{json .Manifest}}' > index.json
+          python3 - <<'EOF'
+          import json, os, versioning, versioning_bundle
+          r = versioning.load_record()
+          index = json.load(open("index.json"))
+          platforms = [
+              {"platform": f"{m['platform']['os']}/{m['platform']['architecture']}", "digest": m["digest"]}
+              for m in index.get("manifests", [])
+              if m.get("platform", {}).get("os") not in (None, "unknown")
+          ]
+          manifest = {
+              "schema": "funkeykid.release-set.v1",
+              "version_scheme": r["version_scheme"],
+              "version": r["version"],
+              "release_channel": r["release_channel"],
+              "release_sequence": r["release_sequence"],
+              "migration": r["migration"],
+              "source": {"repository": os.environ["GITHUB_REPOSITORY"], "commit": os.environ["GITHUB_SHA"],
+                         "tag": os.environ["GITHUB_REF_NAME"]},
+              "artifacts": [{
+                  "coordinate": f"{os.environ['IMAGE']}:{r['version']}",
+                  "type": "oci-image-index",
+                  "digest": os.environ["INDEX_DIGEST"],
+                  "platforms": platforms,
+              }],
+              "presentation_bundle": {k: versioning_bundle.PIN[k] for k in ("repository", "revision", "config_sha256", "manifest_sha256")},
+          }
+          with open("release-manifest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+              f.write("\n")
+          print(json.dumps(manifest, indent=2))
+          EOF
+
+      - name: GitHub release with manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-manifest.json \
+            --verify-tag --title "funkeykid $VERSION" \
+            --notes "INSPR-CalVer3 release $VERSION (inspr-calver-3). Image: ghcr.io/${GITHUB_REPOSITORY}:$VERSION — digest and platforms in release-manifest.json."

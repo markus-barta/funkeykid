@@ -407,7 +407,13 @@ Volume changes from the physical keyboard (+/- keys) are also persisted to setti
 
 ### Footer
 
-Shows version, build SHA (first 7 chars), and GitHub repo link.
+Shows the version, build SHA (first 7 chars) and GitHub repo link.
+
+- **Version display:** INSPR-CalVer3 (FUNK-60). One thin ES-module adapter at the end of `index.html` calls the shared `renderVersion` and `attachVersionInteraction` from `static/vendor/inspr-versioning/`. Pretty is the default, with SemVer selectable. The brand colour is resolved from the theme's primary colour.
+- **Interaction:** the tooltip and accessible name carry the exact canonical version and the UTC time. A click or tap copies the canonical version (no `v`, `.0.0` kept).
+- **Legacy and unknown schemes** render plain.
+- **No runtime fetch:** the bundle is never fetched from inspr.at at runtime. Its bytes are pinned in `versioning_bundle.py` and verified by pytest and the Docker build.
+- **`/api/version`** returns `version`, `version_scheme`, `release_channel`, `release_sequence`, `build`, `repo` and `build_time`.
 
 ---
 

@@ -54,7 +54,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **Docker** image on hsb1 with `host` networking, privileged, volume-mounted `/data`.
 - **GitHub Actions CI → GHCR** on push to `main` (build + BUILD_SHA + BUILD_TIME baked in). `docker compose pull && up -d` on hsb1 to roll forward.
 - **SSE live updates** for keypresses, gen jobs, AI log, normalize progress, volume, favorites, keyboard connection.
-- **Versioning**: every deploy bumps `version.py` at minimum by patch. UI footer shows version linked to the exact commit.
+- **Versioning**: INSPR Calendar Versioning 3 (`inspr-calver-3`, `YYMMDDhhmmss.0.0`, UTC), authoritative in `version.json`. It was migrated from legacy 3.2.0 in FUNK-60. A release = `scripts/reserve_version.py` → PR → tag `v<version>` → CI publishes the immutable `:<version>` and `:latest` plus a release-set manifest. The footer renders the version through the shared INSPR Pretty/SemVer renderer, vendored and pinned. See DEPLOY.md § Versioning.
 - **Cache-Control: no-cache** on `index.html` so clients pick up new builds immediately.
 - **AI log** (rolling last 50) + ElevenLabs / OpenRouter credit checks in the "KI & Dienste" tab.
 

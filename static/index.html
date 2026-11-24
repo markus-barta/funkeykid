@@ -1415,7 +1415,15 @@
   <!-- Footer -->
   <footer class="flex items-center justify-center flex-wrap gap-x-3 gap-y-1 text-center py-4 border-t border-base-content/5 mt-8"
           style="font-size:10px; letter-spacing:0.04em; color:oklch(var(--bc) / 0.25)">
-    <span><strong style="letter-spacing:0.08em">funkeykid</strong> <span class="text-primary" x-text="'v' + appVersion"></span></span>
+    <span><strong style="letter-spacing:0.08em">funkeykid</strong>
+      <!-- INSPR CalVer3 version (FUNK-60): rendered by the shared adapter below; Alpine must not touch it -->
+      <span class="text-primary" id="fk-version" x-ignore>…</span>
+      <select id="fk-version-display" aria-label="Versionsanzeige" disabled
+              style="background:transparent; color:inherit; font-size:9px; border:0; padding:0 2px">
+        <option value="pretty">Pretty</option>
+        <option value="reduced">SemVer</option>
+      </select>
+    </span>
     <span style="opacity:0.4">&bull;</span>
     <span x-show="appBuildTime" style="text-transform:uppercase; font-weight:600; font-size:9px; letter-spacing:0.1em">
       Deployed <span style="text-transform:none; font-weight:400" x-text="appBuildTime || ''"></span>
@@ -1431,6 +1439,61 @@
       <span style="font-variant-numeric:tabular-nums" x-text="appBuild && appBuild !== 'dev' ? '#' + appBuild.substring(0, 7) : 'dev'"></span>
     </a>
   </footer>
+  <script type="module">
+    // INSPR CalVer3 version display (FUNK-60). One thin adapter around the shared
+    // renderer + interaction helper from inspr-at/inspr, vendored offline in
+    // /static/vendor/inspr-versioning (pins: versioning_bundle.py). No runtime
+    // config fetch from the site. Web default: Pretty; SemVer is the reduced display.
+    // Tooltip/accessible name carry the exact canonical version + UTC time; click
+    // copies the canonical version. Legacy/unknown schemes render plain.
+    import { renderVersion } from '/static/vendor/inspr-versioning/version.js';
+    import { attachVersionInteraction } from '/static/vendor/inspr-versioning/version-interaction.js';
+    import { validPresentation, calendarSchemes } from '/static/vendor/inspr-versioning/presentation.js';
+    const host = document.getElementById('fk-version');
+    const display = document.getElementById('fk-version-display');
+    // Auto colour from the product's actual branding (theme primary), as #rrggbb.
+    const brandHex = (css) => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = c.height = 1;
+        const x = c.getContext('2d');
+        x.fillStyle = css;
+        x.fillRect(0, 0, 1, 1);
+        const [r, g, b] = x.getImageData(0, 0, 1, 1).data;
+        return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+      } catch { return null; }
+    };
+    let canonical = null;
+    try {
+      const v = await (await fetch('/api/version', { cache: 'no-store' })).json();
+      canonical = v.version;
+      const scheme = v.version_scheme;
+      host.textContent = canonical;
+      host.title = canonical;
+      if (!calendarSchemes.includes(scheme)) throw new Error(`Version scheme ${scheme} renders plain`);
+      const res = await fetch('/static/vendor/inspr-versioning/display.json');
+      if (!res.ok) throw new Error('Version presentation unavailable');
+      const config = await res.json();
+      if (!validPresentation(config)) throw new Error('Invalid version presentation');
+      const brand = brandHex(getComputedStyle(host).color) || '#d69b31';
+      let interaction;
+      const render = () => {
+        interaction?.dispose();
+        renderVersion(host, canonical, scheme, { config, mode: display.value, brand, interactive: false });
+        interaction = attachVersionInteraction(host, canonical, {
+          label: host.getAttribute('title') || canonical,
+          text: { copy: 'Version kopieren', copied: 'Kopiert',
+                  failed: 'Kopieren nicht möglich. Version markieren und manuell kopieren.' },
+        });
+      };
+      render();
+      display.disabled = false;
+      display.addEventListener('change', render);
+    } catch (error) {
+      if (canonical) { host.textContent = canonical; host.title = canonical; }
+      console.error(error.message);
+    }
+  </script>
 
   <!-- Toast -->
   <div class="toast" x-show="toast" x-transition x-cloak>

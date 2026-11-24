@@ -12,8 +12,8 @@ from pathlib import Path
 
 from aiohttp import web
 
-from keyboard import KeyboardListener
-from display import Display
+from keyboard import KeyboardListener, is_battery_low
+from display import Display, HEARTBEAT_SECONDS
 from version import VERSION, BUILD, REPO
 
 # SSE: connected clients
@@ -35,6 +35,43 @@ active_processes = []
 current_volume = 100
 startup_time = time.time()
 STARTUP_GRACE_SECONDS = 3  # Ignore keypresses for 3s after start (prevents stale BT events)
+DEFAULT_KEYBOARD = "ACME BK03"
+DEFAULT_BATTERY_LOW_THRESHOLD = 20
+
+
+def _keyboard_env():
+    """FUNKEYKID_KEYBOARD: the host pins the keyboard (its udev isolation must match)."""
+    return (os.environ.get("FUNKEYKID_KEYBOARD") or "").strip()
+
+
+def _keyboard_device_name():
+    """Configured keyboard: env (host-pinned) > settings.keyboard_device > default."""
+    return _keyboard_env() or (settings.get("keyboard_device") or "").strip() or DEFAULT_KEYBOARD
+
+
+def _battery_low_threshold():
+    """settings.battery_low_threshold in percent, 0 = warning off (FUNK-58).
+    Rechargeable NiMH cells report low levels early, hence configurable."""
+    try:
+        return max(0, min(100, int(settings.get("battery_low_threshold", DEFAULT_BATTERY_LOW_THRESHOLD))))
+    except (TypeError, ValueError):
+        return DEFAULT_BATTERY_LOW_THRESHOLD
+
+
+def _keyboard_status():
+    """Keyboard status enriched with derived fields, for UI, SSE and MQTT."""
+    status = keyboard.get_status() if keyboard else {
+        "connected": False, "exclusive": False, "battery_level": None,
+        "device_name": _keyboard_device_name()}
+    status["battery_low_threshold"] = _battery_low_threshold()
+    status["battery_low"] = is_battery_low(status.get("battery_level"), status["battery_low_threshold"])
+    status["keyboard_env_pinned"] = bool(_keyboard_env())
+    return status
+
+
+def _publish_keyboard_status():
+    if display:
+        display.publish_keyboard_status(_keyboard_status())
 # Per-letter cycling state: {letter: index} — persists across letter switches
 cycle_index = {}
 last_letter = None
@@ -837,7 +874,7 @@ async def api_sse(request):
     sse_clients.add(q)
 
     # Send initial status immediately
-    status = keyboard.get_status() if keyboard else {"connected": False}
+    status = _keyboard_status()
     status["volume"] = current_volume
     status["mqtt_connected"] = display._mqtt_connected if display else False
     await resp.write(f"event: status\ndata: {json.dumps(status)}\n\n".encode())
@@ -857,7 +894,7 @@ async def api_sse(request):
 # ── Web API ──────────────────────────────────────────────────────────────────
 
 async def api_get_status(request):
-    status = keyboard.get_status() if keyboard else {"connected": False}
+    status = _keyboard_status()
     status["volume"] = current_volume
     status["mqtt_connected"] = display._mqtt_connected if display else False
     status["active_set"] = settings.get("active_set", "")
@@ -872,11 +909,8 @@ async def api_get_diagnostics(request):
 
 async def api_reconnect_keyboard(request):
     """Restart the keyboard listener thread to pick up newly connected devices."""
-    global keyboard
     if keyboard:
-        keyboard.stop()
-        time.sleep(1)
-        keyboard.start()
+        await asyncio.get_running_loop().run_in_executor(None, keyboard.restart)
         return web.json_response({"ok": True, "message": "Keyboard listener restarted"})
     return web.json_response({"error": "No keyboard listener"}, status=500)
 
@@ -889,9 +923,10 @@ async def api_put_settings(request):
     global settings
     data = await request.json()
     # Only update top-level config keys, not sets (those have own endpoints)
+    # audio_normalize* were missing here since FUNK-1, so the UI toggle never persisted.
     for k in ("keyboard_layout", "keyboard_device", "volume", "random_sounds_enabled",
               "display_mode", "pixoo_ip", "debounce_seconds", "active_set", "mqtt", "ai_prompts",
-              "numbers_tts"):
+              "numbers_tts", "battery_low_threshold", "audio_normalize", "audio_normalize_lufs"):
         if k in data:
             settings[k] = data[k]
     save_settings()
@@ -1893,8 +1928,17 @@ def _reload_runtime():
         from keyboard import LAYOUTS
         keyboard.layout = LAYOUTS.get(settings.get("keyboard_layout", "de"), {})
         keyboard.debounce_seconds = settings.get("debounce_seconds", 0.8)
+        wanted = _keyboard_device_name()
+        if wanted != keyboard.device_name:
+            # Switch devices without a container restart; restart() joins the old
+            # thread so its grabs are released before the new device is grabbed.
+            print(f"[funkeykid] Keyboard device changed: {keyboard.device_name} → {wanted}", flush=True)
+            threading.Thread(target=keyboard.restart, args=(wanted,), daemon=True).start()
     if display:
         display.reload_settings(settings)
+    # battery_low may change with the threshold: tell the UI and MQTT now
+    sse_broadcast("status", _keyboard_status())
+    _publish_keyboard_status()
 
 
 def create_app():
@@ -1969,23 +2013,47 @@ def main():
     active = settings.get("active_set", "?")
     print(f"[funkeykid] Settings loaded: {set_count} set(s), active={active}, {len(favorites)} favorites", flush=True)
 
-    # Display
+    # Display (MQTT). Every (re)connect re-publishes keyboard-info, which also
+    # clears a retained last-will "offline" message.
     display = Display(settings)
+    display.on_connected = _publish_keyboard_status
     display.connect()
 
-    # Keyboard
-    device_name = settings.get("keyboard_device", "ACME BK03")
+    # Keyboard — exclusive grab of every node of the configured device (FUNK-59)
+    device_name = _keyboard_device_name()
     layout = settings.get("keyboard_layout", "de")
     debounce = settings.get("debounce_seconds", 0.8)
     keyboard = KeyboardListener(device_name, layout=layout, debounce_seconds=debounce)
     keyboard.on_key(handle_key)
+
     def _on_keyboard_connection(connected, status):
+        status = _keyboard_status()
         sse_broadcast("connection", status)
         if display:
             display.publish_keyboard_status(status)
+
+    def _on_keyboard_status(status):
+        status = _keyboard_status()
+        sse_broadcast("status", status)
+        if display:
+            display.publish_keyboard_status(status)
+
     keyboard.on_connection_change(_on_keyboard_connection)
+    keyboard.on_status_change(_on_keyboard_status)
     keyboard.start()
-    print(f"[funkeykid] Keyboard: {device_name} (layout={layout})", flush=True)
+    source = "env FUNKEYKID_KEYBOARD" if _keyboard_env() else "settings"
+    print(f"[funkeykid] Keyboard: {device_name} (from {source}, layout={layout}, exclusive grab)", flush=True)
+
+    # Heartbeat: re-publish keyboard-info so subscribers can detect a hung process
+    def _keyboard_heartbeat():
+        while True:
+            time.sleep(HEARTBEAT_SECONDS)
+            try:
+                _publish_keyboard_status()
+            except Exception as e:
+                print(f"[funkeykid] keyboard-info heartbeat failed: {e}", flush=True)
+
+    threading.Thread(target=_keyboard_heartbeat, daemon=True, name="kb-heartbeat").start()
 
     # Web server
     app = create_app()

@@ -154,7 +154,42 @@ babycam volume is controlled via VLC's internal telnet interface, not the sink.
 
 ---
 
-## Keyboard (ACME BK03 Bluetooth)
+## Keyboard (configurable, default ACME BK03 Bluetooth)
+
+### Exclusive grab (v3.2.0, FUNK-59)
+
+funkeykid owns the kids' keyboard **exclusively**: it opens every evdev node
+of the configured device and takes an `EVIOCGRAB` on each one. A Bluetooth
+keyboard usually registers several nodes for one device, e.g. `ACME BK03`,
+`ACME BK03 Consumer Control` and `ACME BK03 System Control`, and the last one
+carries the sleep/power keys. While grabbed, no key event reaches anything
+else on the host: not X11/libinput (the kiosk session, VLC babycam hotkeys),
+not logind (sleep/power), not the in-kernel console or SysRq.
+
+- Nodes match by name: exactly the configured name, or that name plus a space
+  and a suffix. Nodes of the same physical device (same Bluetooth address, or
+  same USB parent) are included whatever their name.
+- Always on, by design; there is no setting to turn it off. For emergency host
+  input, plug in a USB keyboard (hsb1 has one attached).
+- A (re)connected keyboard is picked up and grabbed within about 1 s (the old
+  code polled every 5 s).
+- If a grab fails (another process holds the node), the listener keeps
+  working, logs a WARNING, reports `exclusive: false` (UI: red "Nicht
+  exklusiv!" badge; Pixoo: warning state) and retries every 5 s.
+- The host-side udev isolation in nixcfg (`modules/funkeykid.nix`) stays as
+  the second layer for the time funkeykid is not running. It must name the
+  same device.
+
+### Choosing the keyboard
+
+Precedence: env `FUNKEYKID_KEYBOARD` > `settings.keyboard_device` > `"ACME BK03"`.
+
+- When the host sets `FUNKEYKID_KEYBOARD`, the Settings field is locked ("vom
+  Host festgelegt"): the device and its host isolation are changed together
+  in nixcfg.
+- Otherwise the Settings field offers the connected input devices (from the
+  diagnostics scan). A change hot-swaps the listener, and the old device's
+  grabs are released first. No container restart is needed.
 
 ### QWERTZ Layout
 
@@ -175,10 +210,10 @@ LAYOUTS = {
 
 1. NixOS `acme-bk03-reconnect.service` → 5× connect on boot
 2. Keyboard → `/dev/input/eventN` when connected
-3. Container needs `/dev/input` bind mount
-4. **Hot-plug issue**: New devices after container start not visible → use "Neu verbinden" button or restart container
-5. MAC address: `20:73:00:04:21:4F`
-6. Battery read from sysfs (if available)
+3. Container needs the `/dev/input` **bind mount**, which makes nodes created after container start visible. The listener rescans every second; "Neu verbinden" restarts it.
+4. The Bluetooth address is never hardcoded: diagnostics take it from the connected device (evdev `uniq`) or from `bluetoothctl devices` by name. MAC addresses belong only in encrypted `.age` files.
+5. Battery: the kernel HID battery (`/sys/class/power_supply/hid-<addr>-battery`) first, then BlueZ `Battery Percentage` from `bluetoothctl info`. It is refreshed on connect and every 60 s. `null` when the keyboard reports nothing.
+6. Low-battery warning: `settings.battery_low_threshold` (percent, default 20, 0 = off), set in the Settings tab. Rechargeable NiMH cells (1.2 V) report low levels early, so lower the threshold for them. Drives the UI badge and `battery_low` on MQTT.
 
 ### Startup Grace Period
 
@@ -339,9 +374,13 @@ The UI uses Server-Sent Events (`/api/events`) for instant updates:
 |-------|------|---------|
 | `rawkey` | `{key, raw, timestamp}` | Every keypress (even unmapped) |
 | `keypress` | `{letter, word, sound, image}` | Mapped letter press |
-| `connection` | `{connected, device_path, battery}` | Keyboard connect/disconnect |
+| `connection` | Full keyboard status (see `/api/status`) | Keyboard connect/disconnect (toast) |
 | `volume` | `{volume}` | Volume change via +/- keys |
-| `status` | Full status object | Initial connection |
+| `status` | Full status object | Initial connection; exclusive/grab or battery changes |
+
+`/api/status` keyboard fields: `connected`, `exclusive`, `grabbed`, `nodes[{path,name,grabbed}]`,
+`device_name`, `device_path`, `battery_level`, `battery_low`, `battery_low_threshold`,
+`keyboard_env_pinned`, `searching`, `last_key*`.
 
 Fallback: 10s polling for robustness.
 
@@ -509,19 +548,25 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 | Topic | Direction | Retained | Payload |
 |-------|-----------|----------|---------|
 | `…/display` | publish | no | `{letter, word, image, color, timestamp}` |
-| `…/keyboard-info` | publish | **yes** | `{connected, battery_level, device_name, timestamp}` |
+| `…/keyboard-info` | publish | **yes** (qos 1) | `{online, connected, exclusive, battery_level, battery_low, device_name, heartbeat_s, timestamp}` |
 | `…/debug` | publish | no | `{timestamp, level, message}` |
 
 **Consumers:**
 - `…/display` → pixdcon `funkeykid.js` scene (Pixoo64 letter rendering)
-- `…/keyboard-info` → pixdcon `home.js` scene (keyboard status dots in header)
+- `…/keyboard-info` → pixdcon `home.js` scene (keyboard status dots in header) and the planned funkeykid start screen (FUNK-58)
+
+**keyboard-info contract (v3.2.0)**, also in the `display.py` docstring:
+- Re-published on every change and as a **heartbeat every 10 s** (`heartbeat_s`). Treat 3 missed beats as offline.
+- **MQTT last-will**: if funkeykid dies or loses the network, the broker replaces the retained message with `online: false` and everything else false/null. A clean stop publishes the same. The next (re)connect publishes `online: true` again.
+- `exclusive: false` while `connected: true` means a grab failed and keys can reach the host: show it as a warning.
+- `battery_low` is computed by funkeykid from `settings.battery_low_threshold`, so consumers don't need a threshold of their own.
 
 ---
 
 ## Known Gotchas
 
 1. **Audio null sink**: mba (uid 1000) PipeWire has null sink. ALWAYS use kiosk (uid 1001)
-2. **Docker /dev/input**: BT devices connecting after container start need restart or "Neu verbinden"
+2. **Docker /dev/input**: keep it a bind mount (`/dev/input:/dev/input`), which makes BT devices connecting after container start visible within ~1 s. "Neu verbinden" restarts the listener.
 3. **pixdcon image cache**: `loadPixooImage` caches forever — restart pixdcon for new images
 4. **Umlaut filenames**: NEVER use ä/ö/ü in filenames → use ae/oe/ue
 5. **Hotfix volatility**: `docker cp` changes lost on image pull — always commit+push

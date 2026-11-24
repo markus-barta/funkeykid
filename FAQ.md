@@ -62,13 +62,15 @@ The +/- keys change `paplay --volume` (per-stream, 0-65536). At 100% this is 0dB
 
 1. **Check Bluetooth connection**:
    ```bash
-   ssh mba@hsb1.lan "bluetoothctl info 20:73:00:04:21:4F"
+   ssh mba@hsb1.lan "bluetoothctl devices"          # find the keyboard's address
+   ssh mba@hsb1.lan "bluetoothctl info <BK03_MAC>"
    # Look for "Connected: yes"
    ```
 2. **Manually reconnect**:
    ```bash
-   ssh mba@hsb1.lan "bluetoothctl connect 20:73:00:04:21:4F"
+   ssh mba@hsb1.lan "bluetoothctl connect <BK03_MAC>"
    ```
+   Never commit the real address; MAC addresses belong only in encrypted `.age` files.
 3. **Check evdev visibility inside container**:
    ```bash
    docker exec funkeykid python3 -c "import evdev; [print(evdev.InputDevice(p).name, p) for p in evdev.list_devices()]"

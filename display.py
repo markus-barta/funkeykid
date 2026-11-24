@@ -1,4 +1,23 @@
-"""Display output — MQTT publish and optional direct Pixoo HTTP."""
+"""Display output — MQTT publish and optional direct Pixoo HTTP.
+
+MQTT contract for `<prefix>/keyboard-info` (retained, qos 1; prefix defaults
+to `home/hsb1/funkeykid`). Consumers: pixdcon's funkeykid start screen and the
+home scene's keyboard dot.
+
+    {
+      "online": true,            # false = funkeykid is gone (MQTT last-will)
+      "connected": true,         # the configured keyboard has open evdev nodes
+      "exclusive": true,         # every node is EVIOCGRAB-bed; false = keys can reach the host
+      "battery_level": 80,       # percent, null when the keyboard reports none
+      "battery_low": false,      # battery_level <= settings.battery_low_threshold (0 = off)
+      "device_name": "ACME BK03",
+      "heartbeat_s": 10,         # re-published this often; treat 3 missed beats as offline
+      "timestamp": 1764000000.0
+    }
+
+The last-will publishes the same shape with online=false and everything else
+false/null, so a crash or network loss flips the retained message by itself.
+"""
 import json
 import os
 import time
@@ -19,6 +38,36 @@ COLORS = [
     "#00CCCC", "#FFCC00", "#FF3399", "#6633FF", "#33CC33",
 ]
 
+HEARTBEAT_SECONDS = 10
+
+
+def offline_keyboard_payload():
+    """keyboard-info payload published as MQTT last-will (funkeykid gone)."""
+    return {
+        "online": False,
+        "connected": False,
+        "exclusive": False,
+        "battery_level": None,
+        "battery_low": False,
+        "device_name": None,
+        "heartbeat_s": HEARTBEAT_SECONDS,
+        "timestamp": None,
+    }
+
+
+def keyboard_info_payload(status):
+    """keyboard-info payload for a live funkeykid (see module docstring)."""
+    return {
+        "online": True,
+        "connected": bool(status.get("connected", False)),
+        "exclusive": bool(status.get("exclusive", False)),
+        "battery_level": status.get("battery_level"),
+        "battery_low": bool(status.get("battery_low", False)),
+        "device_name": status.get("device_name"),
+        "heartbeat_s": HEARTBEAT_SECONDS,
+        "timestamp": time.time(),
+    }
+
 
 class Display:
     """Manages MQTT publishing and optional direct Pixoo control."""
@@ -27,6 +76,7 @@ class Display:
         self.settings = settings
         self._mqtt_client = None
         self._mqtt_connected = False
+        self.on_connected = None  # called (from the MQTT thread) after every (re)connect
 
     def connect(self):
         """Connect MQTT if available."""
@@ -47,6 +97,14 @@ class Display:
                 self._mqtt_client.username_pw_set(user, password)
             else:
                 print("[display] WARNING: No MQTT password!", flush=True)
+            # Last-will: the broker flips the retained keyboard-info to offline
+            # when funkeykid dies or loses the network (FUNK-59/FUNK-58).
+            self._mqtt_client.will_set(
+                self._topic("keyboard-info"),
+                json.dumps(offline_keyboard_payload()),
+                qos=1,
+                retain=True,
+            )
             self._mqtt_client.on_connect = self._on_connect
             self._mqtt_client.on_disconnect = lambda c, u, f, rc, p=None: (
                 setattr(self, '_mqtt_connected', False),
@@ -61,6 +119,11 @@ class Display:
     def _on_connect(self, client, userdata, flags, rc, properties=None):
         self._mqtt_connected = True
         print("[display] MQTT connected", flush=True)
+        if self.on_connected:
+            try:
+                self.on_connected()
+            except Exception as e:
+                print(f"[display] on_connected hook failed: {e}", flush=True)
 
     def reload_settings(self, settings):
         self.settings = settings
@@ -103,19 +166,14 @@ class Display:
             })
 
     def publish_keyboard_status(self, status):
-        """Publish keyboard connection status to MQTT (retained)."""
-        payload = {
-            "connected": status.get("connected", False),
-            "battery_level": status.get("battery_level"),
-            "device_name": status.get("device_name"),
-            "timestamp": time.time(),
-        }
+        """Publish keyboard status to MQTT (retained); also the heartbeat."""
+        payload = keyboard_info_payload(status)
         if self._mqtt_client and self._mqtt_connected:
             try:
                 self._mqtt_client.publish(
                     self._topic("keyboard-info"),
                     json.dumps(payload),
-                    qos=0,
+                    qos=1,
                     retain=True,
                 )
             except Exception as e:
@@ -160,5 +218,17 @@ class Display:
 
     def disconnect(self):
         if self._mqtt_client:
+            # A clean disconnect suppresses the last-will, so say goodbye ourselves.
+            if self._mqtt_connected:
+                try:
+                    info = self._mqtt_client.publish(
+                        self._topic("keyboard-info"),
+                        json.dumps(offline_keyboard_payload()),
+                        qos=1,
+                        retain=True,
+                    )
+                    info.wait_for_publish(timeout=2)
+                except Exception as e:
+                    print(f"[display] MQTT offline publish failed: {e}", flush=True)
             self._mqtt_client.loop_stop()
             self._mqtt_client.disconnect()

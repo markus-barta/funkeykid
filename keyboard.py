@@ -1,10 +1,28 @@
-"""Keyboard listener — evdev event loop with layout mapping."""
-import evdev
+"""Keyboard listener — exclusive evdev grab of the configured keyboard (FUNK-59).
+
+The configured keyboard is identified by its evdev name. One physical
+Bluetooth keyboard usually registers several input nodes, e.g.
+"ACME BK03", "ACME BK03 Consumer Control" and "ACME BK03 System Control";
+the last one carries the sleep/power keys. The listener opens and EVIOCGRABs
+every node of that device, so no key event reaches anything else on the host:
+not X11/libinput, not logind (sleep/power), not the in-kernel console or SysRq.
+
+Exclusive mode is always on, by design: the host must never act on the kids'
+keyboard. Host-side udev isolation (nixcfg) stays as the second layer for the
+time funkeykid is not running.
+"""
 import glob
 import os
-import random
-import time
+import re
+import select
+import subprocess
 import threading
+import time
+
+try:
+    import evdev
+except ImportError:  # keeps the pure helpers importable on non-Linux hosts (tests)
+    evdev = None
 
 
 # Keyboard layouts: scancode → letter translation
@@ -20,9 +38,112 @@ LAYOUTS = {
     },
 }
 
+RESCAN_SECONDS = 1.0            # a (re)connected keyboard is grabbed within ~1 s
+IDLE_POLL_SECONDS = 0.5         # scan interval while no node is open
+SELECT_TIMEOUT_SECONDS = 0.25   # keeps stop/restart responsive
+GRAB_RETRY_SECONDS = 5.0        # retry interval for a node another process holds
+BATTERY_REFRESH_SECONDS = 60.0
+
+_MAC_RE = re.compile(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
+
+
+# ── Pure helpers (unit-tested in tests/test_keyboard.py) ─────────────────────
+
+def _read_text(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def scan_input_nodes():
+    """List evdev nodes as dicts {path, name, phys, uniq}, read from sysfs."""
+    nodes = []
+    for path in sorted(glob.glob("/dev/input/event*")):
+        base = f"/sys/class/input/{os.path.basename(path)}/device"
+        node = {
+            "path": path,
+            "name": _read_text(base + "/name"),
+            "phys": _read_text(base + "/phys") or "",
+            "uniq": _read_text(base + "/uniq") or "",
+        }
+        if node["name"] is None and evdev is not None:
+            try:
+                dev = evdev.InputDevice(path)
+                node.update(name=dev.name, phys=dev.phys or "", uniq=dev.uniq or "")
+                dev.close()
+            except OSError:
+                continue
+        if node["name"] is not None:
+            nodes.append(node)
+    return nodes
+
+
+def _device_key(node):
+    """Identity of the physical device a node belongs to, or None."""
+    uniq = (node.get("uniq") or "").strip()
+    if uniq:
+        return "uniq:" + uniq.lower()
+    phys = node.get("phys") or ""
+    # USB phys looks like "usb-0000:00:14.0-1/input0"; the part before the last
+    # "/" names the device. A Bluetooth phys is the host adapter's address and
+    # is shared by every Bluetooth device, so it must never group nodes.
+    if "/" in phys:
+        return "phys:" + phys.rsplit("/", 1)[0]
+    return None
+
+
+def select_keyboard_nodes(nodes, device_name):
+    """Return every node that belongs to the configured keyboard.
+
+    A node matches by name: exactly ``device_name``, or ``device_name`` followed
+    by a space and a suffix ("ACME BK03 System Control"). Nodes of the same
+    physical device as a matching node (same Bluetooth address, or same USB
+    parent) are included whatever their name.
+    """
+    if not device_name:
+        return []
+
+    def name_matches(node):
+        name = node.get("name") or ""
+        return name == device_name or name.startswith(device_name + " ")
+
+    matched = [n for n in nodes if name_matches(n)]
+    keys = {k for k in (_device_key(n) for n in matched) if k}
+    for node in nodes:
+        if node not in matched and _device_key(node) in keys:
+            matched.append(node)
+    return sorted(matched, key=lambda n: n["path"])
+
+
+def primary_node(nodes, device_name):
+    """The node named exactly ``device_name``, else the first one."""
+    for node in nodes:
+        if node.get("name") == device_name:
+            return node
+    return nodes[0] if nodes else None
+
+
+def parse_bt_battery(text):
+    """Battery percentage from `bluetoothctl info` output, or None."""
+    m = re.search(r"Battery Percentage:\s*0x[0-9A-Fa-f]+\s*\((\d+)\)", text or "")
+    return int(m.group(1)) if m else None
+
+
+def is_battery_low(level, threshold):
+    """True when a known battery level is at or below a positive threshold."""
+    try:
+        threshold = int(threshold)
+    except (TypeError, ValueError):
+        threshold = 20
+    return threshold > 0 and level is not None and level <= threshold
+
+
+# ── Listener ─────────────────────────────────────────────────────────────────
 
 class KeyboardListener:
-    """Listens to a dedicated keyboard via evdev, applies layout mapping."""
+    """Exclusively owns the configured keyboard and applies layout mapping."""
 
     def __init__(self, device_name, layout="de", debounce_seconds=0.8):
         self.device_name = device_name
@@ -32,94 +153,87 @@ class KeyboardListener:
         self._last_any_key_time = 0
         self._callback = None
         self._connection_callback = None
+        self._status_callback = None
         self._running = False
         self._thread = None
+        self._gen = 0
+        self._lock = threading.Lock()
+        self._grab_failed_at = {}
+        self._shift_held = {}    # path -> {shift keycodes currently down}, from the event stream
+        self._bt_address = None  # never exposed via status or diagnostics
         # Live status
         self.connected = False
+        self.exclusive = False
+        self.nodes = []          # [{path, name, grabbed}]
         self.device_path = None
         self.last_key = None
         self.last_raw_key = None
         self.last_key_at = 0
         self.battery_level = None
-        self._device = None
+
+    # ── public API ──────────────────────────────────────────────────────────
 
     def on_key(self, callback):
-        """Register callback: callback(key_name: str)"""
+        """Register callback: callback(key_name: str, raw_key: str)"""
         self._callback = callback
 
     def on_connection_change(self, callback):
         """Register callback: callback(connected: bool, status: dict)"""
         self._connection_callback = callback
 
+    def on_status_change(self, callback):
+        """Register callback for non-connection changes: callback(status: dict)
+        (exclusive flag, grabbed nodes, battery level)."""
+        self._status_callback = callback
+
     def start(self):
         """Start listening in a background thread."""
-        self._running = True
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        with self._lock:
+            self._gen += 1
+            gen = self._gen
+            self._running = True
+        self._thread = threading.Thread(target=self._run, args=(gen,), daemon=True,
+                                        name=f"keyboard-{gen}")
         self._thread.start()
 
     def stop(self):
-        self._running = False
+        """Stop the listener; its thread releases every grab on the way out.
 
-    def _find_device(self):
-        """Find input device by name."""
-        for path in evdev.list_devices():
-            try:
-                dev = evdev.InputDevice(path)
-                if dev.name == self.device_name:
-                    return dev
-            except (OSError, FileNotFoundError):
-                continue
-        return None
+        Status is cleared right away: until a new thread has re-grabbed, the
+        listener must never claim to be connected or exclusive.
+        """
+        with self._lock:
+            self._gen += 1
+            self._running = False
+            was_connected = self.connected
+            self.connected = False
+            self.exclusive = False
+            self.nodes = []
+            self.device_path = None
+            self.battery_level = None
+        if was_connected and self._connection_callback:
+            self._connection_callback(False, self.get_status())
 
-    def _translate_key(self, raw_key):
-        """Apply keyboard layout mapping."""
-        return self.layout.get(raw_key, raw_key)
-
-    def _should_process(self, key_name):
-        """Debounce check."""
-        now = time.time()
-        # Volume/space/replay keys bypass debounce
-        if key_name in ('EQUAL', 'MINUS', 'KPPLUS', 'KPMINUS', 'SPACE', 'ENTER',
-                       'RIGHT', 'LEFT', 'UP', 'DOWN'):
-            return True
-        if now - self._last_any_key_time < self.debounce_seconds:
-            return False
-        if key_name in self._last_key_time:
-            if now - self._last_key_time[key_name] < self.debounce_seconds:
-                return False
-        self._last_key_time[key_name] = now
-        self._last_any_key_time = now
-        return True
-
-    def _read_battery(self, device):
-        """Try to read battery level from sysfs for BT HID devices."""
-        try:
-            # Check common sysfs paths for BT device battery
-            import glob
-            patterns = [
-                "/sys/class/power_supply/hid-*",
-                "/sys/class/power_supply/*BK03*",
-            ]
-            for pattern in patterns:
-                for path in glob.glob(pattern):
-                    cap_file = os.path.join(path, "capacity")
-                    if os.path.exists(cap_file):
-                        with open(cap_file) as f:
-                            return int(f.read().strip())
-            # Also try device-specific path
-            if hasattr(device, 'info'):
-                bt_path = f"/sys/class/power_supply/hid-{device.info.bustype:02x}:{device.info.vendor:04x}:{device.info.product:04x}.*/capacity"
-                for cap_file in glob.glob(bt_path):
-                    with open(cap_file) as f:
-                        return int(f.read().strip())
-        except Exception:
-            pass
-        return None
+    def restart(self, device_name=None):
+        """Stop, wait for the old thread to release its grabs, start again."""
+        if device_name:
+            self.device_name = device_name
+        old = self._thread
+        self.stop()
+        if old and old.is_alive():
+            old.join(timeout=2.0)
+        self._bt_address = None
+        self._shift_held = {}
+        self.start()
 
     def get_status(self):
-        """Return current keyboard status for the web UI."""
+        """Return current keyboard status for the web UI and MQTT."""
+        grabbed = sum(1 for n in self.nodes if n["grabbed"])
         return {
             "connected": self.connected,
+            "exclusive": self.exclusive,
+            "grabbed": grabbed,
+            "nodes": [dict(n) for n in self.nodes],
             "device_name": self.device_name,
             "device_path": self.device_path,
             "last_key": self.last_key,
@@ -130,153 +244,289 @@ class KeyboardListener:
         }
 
     def get_diagnostics(self):
-        """Return detailed diagnostics for troubleshooting."""
-        import subprocess
-        diag = {
-            "evdev_devices": [],
-            "bluetooth": {},
-            "logs": [],
-        }
+        """Return detailed diagnostics for troubleshooting (no MAC addresses)."""
+        diag = {"evdev_devices": [], "bluetooth": {}, "logs": []}
 
-        # List all visible input devices
         try:
-            for path in evdev.list_devices():
-                try:
-                    dev = evdev.InputDevice(path)
-                    diag["evdev_devices"].append({
-                        "path": dev.path,
-                        "name": dev.name,
-                        "phys": getattr(dev, "phys", ""),
-                        "uniq": getattr(dev, "uniq", ""),
-                    })
-                except (OSError, FileNotFoundError):
-                    pass
+            nodes = scan_input_nodes()
+            mine = {n["path"] for n in select_keyboard_nodes(nodes, self.device_name)}
+            grabbed = {n["path"] for n in self.nodes if n["grabbed"]}
+            for node in nodes:
+                diag["evdev_devices"].append({
+                    "path": node["path"],
+                    "name": node["name"],
+                    "matched": node["path"] in mine,
+                    "grabbed": node["path"] in grabbed,
+                })
         except Exception as e:
             diag["logs"].append(f"evdev scan error: {e}")
 
-        # Try bluetoothctl info
-        try:
-            import re
-            result = subprocess.run(
-                ["bluetoothctl", "info", "20:73:00:04:21:4F"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0:
-                ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
-                for line in result.stdout.strip().split("\n"):
-                    line = ansi_escape.sub('', line).strip()
-                    # Skip noisy CHG/scan lines and empty lines
-                    if not line or line.startswith("[CHG]") or line.startswith("[NEW]") or line.startswith("[DEL]"):
-                        continue
-                    if "\t" in line:
-                        line = line.replace("\t", "")
-                    if ":" in line:
-                        k, _, v = line.partition(":")
-                        k = k.strip()
-                        v = v.strip()
-                        # Skip UUID spam — keep just the first one
-                        if k == "UUID" and "UUID" in diag["bluetooth"]:
-                            continue
-                        diag["bluetooth"][k] = v
-            else:
-                diag["logs"].append("bluetoothctl: nicht verfuegbar")
-        except FileNotFoundError:
-            diag["logs"].append("bluetoothctl: nicht installiert")
-        except Exception as e:
-            diag["logs"].append(f"bluetoothctl: {e}")
+        address = self._bt_address or self._find_bt_address_by_name()
+        if address:
+            text = self._bluetoothctl("info", address, logs=diag["logs"])
+            for line in (text or "").splitlines():
+                line = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+                if not line or line.startswith(("[CHG]", "[NEW]", "[DEL]", "Device ")):
+                    continue
+                if _MAC_RE.search(line) or ":" not in line:
+                    continue
+                k, _, v = line.replace("\t", "").partition(":")
+                k, v = k.strip(), v.strip()
+                if k == "UUID" and "UUID" in diag["bluetooth"]:
+                    continue
+                diag["bluetooth"][k] = v
+        else:
+            diag["logs"].append(f"bluetoothctl: kein Gerät namens '{self.device_name}' bekannt")
 
-        # Check /dev/input contents vs host
         try:
-            dev_files = sorted(os.listdir("/dev/input"))
-            diag["dev_input_files"] = dev_files
+            diag["dev_input_files"] = sorted(os.listdir("/dev/input"))
         except Exception as e:
             diag["logs"].append(f"/dev/input error: {e}")
 
         diag["logs"].append(f"Thread alive: {self._thread.is_alive() if self._thread else False}")
         diag["logs"].append(f"Running flag: {self._running}")
+        diag["logs"].append(f"Exklusiv: {self.exclusive} "
+                            f"({sum(1 for n in self.nodes if n['grabbed'])}/{len(self.nodes)} Knoten)")
         diag["logs"].append(f"Layout: {self.layout}")
-
         return diag
-
-    def _run(self):
-        """Main event loop — retry on disconnect. Never exits unless stopped."""
-        while self._running:
-            try:
-                device = self._find_device()
-            except Exception as e:
-                print(f"[keyboard] Error scanning devices: {e}", flush=True)
-                device = None
-
-            if not device:
-                was_connected = self.connected
-                self.connected = False
-                self.device_path = None
-                self._device = None
-                if was_connected and self._connection_callback:
-                    self._connection_callback(False, self.get_status())
-                print(f"[keyboard] Waiting for '{self.device_name}'...", flush=True)
-                time.sleep(5)
-                continue
-
-            self._device = device
-            self.connected = True
-            self.device_path = device.path
-            self.battery_level = self._read_battery(device)
-            if self._connection_callback:
-                self._connection_callback(True, self.get_status())
-            print(f"[keyboard] Opened: {device.name} at {device.path} (battery={self.battery_level})", flush=True)
-
-            try:
-                for event in device.read_loop():
-                    if not self._running:
-                        break
-                    if event.type != evdev.ecodes.EV_KEY:
-                        continue
-                    key_event = evdev.categorize(event)
-                    if key_event.keystate != evdev.KeyEvent.key_down:
-                        continue
-
-                    raw = key_event.keycode
-                    if isinstance(raw, list):
-                        raw = raw[0]
-                    if raw.startswith("KEY_"):
-                        raw = raw[4:]
-
-                    # Apply layout
-                    key = self._translate_key(raw)
-
-                    # Shift+digit → SHIFT_<digit> (used for favorites)
-                    if key in ("1","2","3","4","5","6","7","8","9","0"):
-                        try:
-                            active = set(device.active_keys())
-                            if (evdev.ecodes.KEY_LEFTSHIFT in active or
-                                evdev.ecodes.KEY_RIGHTSHIFT in active):
-                                key = "SHIFT_" + key
-                        except Exception:
-                            pass
-
-                    # Track for status
-                    self.last_key = key
-                    self.last_raw_key = raw
-                    self.last_key_at = time.time()
-
-                    # Refresh battery periodically (every ~60 key presses)
-                    if random.random() < 0.02:
-                        self.battery_level = self._read_battery(device)
-
-                    if self._should_process(key) and self._callback:
-                        self._callback(key, raw)
-
-            except (OSError, Exception) as e:
-                print(f"[keyboard] Device error: {e}", flush=True)
-                self.connected = False
-                self.device_path = None
-                self._device = None
-                if self._connection_callback:
-                    self._connection_callback(False, self.get_status())
-                time.sleep(5)
 
     def simulate_key(self, key_name):
         """Simulate a keypress (for web UI test mode)."""
         if self._callback:
             self._callback(key_name, key_name)
+
+    # ── internals ───────────────────────────────────────────────────────────
+
+    def _bluetoothctl(self, *args, logs=None):
+        try:
+            result = subprocess.run(["bluetoothctl", *args], capture_output=True,
+                                    text=True, timeout=5)
+            if result.returncode == 0:
+                return result.stdout
+            if logs is not None:
+                logs.append("bluetoothctl: nicht verfuegbar")
+        except FileNotFoundError:
+            if logs is not None:
+                logs.append("bluetoothctl: nicht installiert")
+        except Exception as e:
+            if logs is not None:
+                logs.append(f"bluetoothctl: {e}")
+        return None
+
+    def _find_bt_address_by_name(self):
+        text = self._bluetoothctl("devices") or ""
+        for line in text.splitlines():
+            parts = line.strip().split(" ", 2)
+            if len(parts) == 3 and parts[0] == "Device" and parts[2] == self.device_name:
+                return parts[1]
+        return None
+
+    def _read_battery(self, node):
+        """Battery level of the keyboard: kernel HID battery, else BlueZ."""
+        uniq = (node or {}).get("uniq", "")
+        candidates = []
+        for u in dict.fromkeys(v for v in (uniq, uniq.lower()) if v):
+            candidates.append(f"/sys/class/power_supply/hid-{u}-battery/capacity")
+        if node:
+            ev = os.path.basename(node["path"])
+            candidates += glob.glob(f"/sys/class/input/{ev}/device/device/power_supply/*/capacity")
+        for path in candidates:
+            value = _read_text(path)
+            if value and value.isdigit():
+                return int(value)
+        if self._bt_address:
+            return parse_bt_battery(self._bluetoothctl("info", self._bt_address))
+        return None
+
+    def _set_status(self, gen, open_devs, grabbed, wanted, battery=None, battery_known=False):
+        """Update live status; fire callbacks only from the current thread."""
+        with self._lock:
+            if gen != self._gen:
+                return
+            prev = (self.connected, self.exclusive,
+                    tuple((n["path"], n["grabbed"]) for n in self.nodes), self.battery_level)
+            self.connected = bool(open_devs)
+            self.exclusive = self.connected and grabbed >= set(open_devs)
+            self.nodes = [{"path": p, "name": (wanted.get(p) or {}).get("name", ""),
+                           "grabbed": p in grabbed} for p in sorted(open_devs)]
+            prim = primary_node(list(wanted.values()), self.device_name)
+            self.device_path = prim["path"] if (prim and prim["path"] in open_devs) else (
+                sorted(open_devs)[0] if open_devs else None)
+            if battery_known:
+                self.battery_level = battery
+            if not self.connected:
+                self.battery_level = None
+            now = (self.connected, self.exclusive,
+                   tuple((n["path"], n["grabbed"]) for n in self.nodes), self.battery_level)
+        if now == prev:
+            return
+        if now[0] != prev[0]:
+            if self._connection_callback:
+                self._connection_callback(self.connected, self.get_status())
+        elif self._status_callback:
+            self._status_callback(self.get_status())
+
+    def _sync_nodes(self, open_devs, grabbed):
+        """Open and grab every node of the keyboard; drop vanished ones."""
+        try:
+            wanted = {n["path"]: n for n in select_keyboard_nodes(scan_input_nodes(), self.device_name)}
+        except Exception as e:
+            print(f"[keyboard] Error scanning devices: {e}", flush=True)
+            wanted = {}
+        for path in list(open_devs):
+            if path not in wanted:
+                self._close(open_devs.pop(path), path in grabbed)
+                grabbed.discard(path)
+                self._shift_held.pop(path, None)
+                print(f"[keyboard] Node gone: {path}", flush=True)
+        now = time.monotonic()
+        for path, node in wanted.items():
+            if path not in open_devs:
+                try:
+                    open_devs[path] = evdev.InputDevice(path)
+                except OSError as e:
+                    print(f"[keyboard] Cannot open {path} ({node['name']}): {e}", flush=True)
+                    continue
+            if path in grabbed:
+                continue
+            failed_at = self._grab_failed_at.get(path)
+            if failed_at is not None and now - failed_at < GRAB_RETRY_SECONDS:
+                continue
+            try:
+                open_devs[path].grab()
+                grabbed.add(path)
+                self._grab_failed_at.pop(path, None)
+                print(f"[keyboard] Grabbed (exclusive): {node['name']} at {path}", flush=True)
+            except OSError as e:
+                self._grab_failed_at[path] = now
+                print(f"[keyboard] WARNING: grab failed for {node['name']} at {path}: {e} "
+                      f"— key presses can reach the host", flush=True)
+        prim = primary_node(list(wanted.values()), self.device_name)
+        uniq = (prim or {}).get("uniq", "")
+        if uniq and _MAC_RE.fullmatch(uniq):
+            self._bt_address = uniq
+        return wanted, prim
+
+    @staticmethod
+    def _close(dev, was_grabbed):
+        try:
+            if was_grabbed:
+                dev.ungrab()
+        except OSError:
+            pass
+        try:
+            dev.close()
+        except OSError:
+            pass
+
+    def _handle_event(self, dev, event):
+        if event.type != evdev.ecodes.EV_KEY:
+            return
+        # Track Shift from the event stream: reading the live key state later
+        # (active_keys) misses a Shift that is already released by then.
+        if event.code in (evdev.ecodes.KEY_LEFTSHIFT, evdev.ecodes.KEY_RIGHTSHIFT):
+            held = self._shift_held.setdefault(dev.path, set())
+            if event.value:
+                held.add(event.code)
+            else:
+                held.discard(event.code)
+        key_event = evdev.categorize(event)
+        if key_event.keystate != evdev.KeyEvent.key_down:
+            return
+        raw = key_event.keycode
+        if isinstance(raw, (list, tuple)):
+            raw = raw[0]
+        raw = str(raw)
+        if raw.startswith("KEY_"):
+            raw = raw[4:]
+        key = self.layout.get(raw, raw)
+
+        # Shift+digit → SHIFT_<digit> (used for favorites)
+        if key in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "0") and self._shift_held.get(dev.path):
+            key = "SHIFT_" + key
+
+        self.last_key = key
+        self.last_raw_key = raw
+        self.last_key_at = time.time()
+        if self._should_process(key) and self._callback:
+            self._callback(key, raw)
+
+    def _should_process(self, key_name):
+        """Debounce check."""
+        now = time.time()
+        # Volume/space/replay keys bypass debounce
+        if key_name in ('EQUAL', 'MINUS', 'KPPLUS', 'KPMINUS', 'SPACE', 'ENTER',
+                        'RIGHT', 'LEFT', 'UP', 'DOWN'):
+            return True
+        if now - self._last_any_key_time < self.debounce_seconds:
+            return False
+        if key_name in self._last_key_time:
+            if now - self._last_key_time[key_name] < self.debounce_seconds:
+                return False
+        self._last_key_time[key_name] = now
+        self._last_any_key_time = now
+        return True
+
+    def _run(self, gen):
+        """Main loop: keep every node of the keyboard open and grabbed."""
+        open_devs = {}   # path -> evdev.InputDevice
+        grabbed = set()
+        wanted, prim = {}, None
+        last_scan = 0.0
+        last_battery = None
+        waiting_logged = False
+        try:
+            while gen == self._gen:
+                now = time.monotonic()
+                if not open_devs or now - last_scan >= RESCAN_SECONDS:
+                    last_scan = now
+                    had = bool(open_devs)
+                    wanted, prim = self._sync_nodes(open_devs, grabbed)
+                    battery, known = None, False
+                    if open_devs and (not had or last_battery is None
+                                      or now - last_battery >= BATTERY_REFRESH_SECONDS):
+                        battery, known = self._read_battery(prim), True
+                        last_battery = now
+                    if not open_devs:
+                        last_battery = None
+                    self._set_status(gen, open_devs, grabbed, wanted, battery, known)
+                    if not open_devs:
+                        if not waiting_logged:
+                            print(f"[keyboard] Waiting for '{self.device_name}'...", flush=True)
+                            waiting_logged = True
+                        time.sleep(IDLE_POLL_SECONDS)
+                        continue
+                    if not had:
+                        waiting_logged = False
+                        print(f"[keyboard] Opened '{self.device_name}': {len(open_devs)} node(s), "
+                              f"exclusive={self.exclusive}, battery={self.battery_level}", flush=True)
+
+                try:
+                    ready = select.select(list(open_devs.values()), [], [], SELECT_TIMEOUT_SECONDS)[0]
+                except (OSError, ValueError):
+                    ready = []
+                    last_scan = 0.0
+                for dev in ready:
+                    try:
+                        for event in dev.read():
+                            if gen != self._gen:
+                                break
+                            try:
+                                self._handle_event(dev, event)
+                            except Exception as e:  # never let one odd event kill the grab
+                                print(f"[keyboard] Event error on {dev.path}: {e}", flush=True)
+                    except BlockingIOError:
+                        continue
+                    except OSError as e:
+                        print(f"[keyboard] Device error on {dev.path}: {e}", flush=True)
+                        path = dev.path
+                        self._close(open_devs.pop(path, dev), path in grabbed)
+                        grabbed.discard(path)
+                        self._shift_held.pop(path, None)
+                        last_scan = 0.0
+        finally:
+            for path, dev in list(open_devs.items()):
+                self._close(dev, path in grabbed)
+            open_devs.clear()
+            grabbed.clear()
+            self._set_status(gen, open_devs, grabbed, {})

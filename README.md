@@ -21,6 +21,12 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - `ffmpeg` loudnorm (EBU R128, default **–16 LUFS**) runs automatically on every generated or uploaded sound, so FX / TTS / parent recordings all sit at the same perceived loudness.
 - Toggle + target LUFS slider in the Settings tab; "Bestehende Library normalisieren" batch-processes existing files with live progress (SSE) and backs up originals into `ai-generated/sounds`.
 
+### Exclusive kids' keyboard (v3.2.0, FUNK-59)
+- funkeykid **exclusively grabs every input node** of the configured keyboard (incl. its "System Control" node with sleep/power keys). No keypress reaches the host: not the kiosk session, not logind, not the console. This is always on.
+- Picked up within ~1 s after a Bluetooth reconnect. A failed grab shows up as a red **"Nicht exklusiv!"** badge and `exclusive: false` on MQTT.
+- Keyboard identity: env `FUNKEYKID_KEYBOARD` (host-pinned, locks the Settings field) > Settings picker > `ACME BK03`. Switching hot-swaps without a restart.
+- **Akku-Warnung ab** (battery-low threshold, default 20 %, 0 = off) in Settings, because rechargeable NiMH cells report low levels early.
+
 ### AI content generation
 - **ElevenLabs** for FX (`sound-generation`) and TTS (`text-to-speech` with `eleven_multilingual_v2`, separate voices per language).
 - **OpenRouter** for images (default `google/gemini-3-pro-image-preview`, Pixar-style prompt baked in, Pillow-resized to 64×64) and for word suggestion.
@@ -42,7 +48,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 ### Pixoo 64 display (via pixdicon, separate repo)
 - `display.publish_letter(letter, word, image)` → scene draws the bg image + letter + word.
 - `display.publish_volume(volume)` → scene renders a **vertical VU-meter** overlay (FUNK-2): 10 tapered segments from narrow-green at the bottom to wide-red at the top, with "VOLUME" label and `NN%` in neutral gray. TTL 1.5 s; any letter press cancels the overlay.
-- `display.publish_keyboard_status(status)` → retained heartbeat for the home scene's status dots.
+- `display.publish_keyboard_status(status)` → retained `keyboard-info` (`online`, `connected`, `exclusive`, `battery_level`, `battery_low`, …), re-published every 10 s, with an MQTT last-will that flips it to `online: false` if funkeykid dies. It feeds the home scene's status dots and the planned start screen. Contract: `display.py` docstring / DEVELOPMENT.md § MQTT Topics.
 
 ### Ops / platform
 - **Docker** image on hsb1 with `host` networking, privileged, volume-mounted `/data`.

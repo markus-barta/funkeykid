@@ -86,7 +86,7 @@ def test_last_will_follows_topic_prefix_change():
 
         settings["mqtt"]["topic_prefix"] = "new/funkeykid"   # in place, like api_put_settings
         d.reload_settings(settings)
-        assert wait_for(lambda: len(clients) == 2)
+        assert wait_for(lambda: len(clients) == 2 and clients[1].will is not None)
 
         assert clients[0].published[-1] == ("old/funkeykid/keyboard-info", display.offline_keyboard_payload(), True)
         assert clients[1].will[0] == "new/funkeykid/keyboard-info"
@@ -127,7 +127,7 @@ def test_no_publish_lands_on_retired_connection_after_offline():
         clients[0].on_publish_hook = race
         settings["mqtt"]["topic_prefix"] = "new/funkeykid"
         d.reload_settings(settings)
-        assert wait_for(lambda: len(clients) == 2)
+        assert wait_for(lambda: len(clients) == 2 and clients[1].will is not None)
         for t in racers:
             t.join(2)
         old_retained = [p for (tp, p, r) in clients[0].published if r]
@@ -157,7 +157,9 @@ def test_settings_change_during_reconnect_is_not_lost():
         d._mqtt_connected = True
         settings["mqtt"]["topic_prefix"] = "b/funkeykid"
         d.reload_settings(settings)
-        assert wait_for(lambda: clients and clients[-1].will[0] == "c/funkeykid/keyboard-info", timeout=4)
+        # a client may be mid-construction (appended, will not yet set) while we poll
+        assert wait_for(lambda: clients and clients[-1].will is not None
+                        and clients[-1].will[0] == "c/funkeykid/keyboard-info", timeout=4)
         time.sleep(0.2)
         assert d._conn_identity[4] == "c/funkeykid"
 
@@ -172,7 +174,7 @@ def test_empty_prefix_is_retired_on_its_own_topic():
         assert clients[0].will[0] == "/keyboard-info"
         settings["mqtt"]["topic_prefix"] = "new"
         d.reload_settings(settings)
-        assert wait_for(lambda: len(clients) == 2)
+        assert wait_for(lambda: len(clients) == 2 and clients[1].will is not None)
         assert clients[0].published[-1] == ("/keyboard-info", display.offline_keyboard_payload(), True)
         assert clients[1].will[0] == "new/keyboard-info"
 

@@ -157,19 +157,27 @@ class Display:
         # retire the old retained status (offline on the old topic) and
         # reconnect with a last-will on the new topic. Runs off the caller's
         # thread: this is called from the asyncio loop, and teardown may wait.
-        if self._mqtt_client is not None and self._mqtt_identity() != self._conn_identity:
+        # Compare with the live connection's identity, not with whether a client
+        # exists: a change arriving mid-reconnect must still be honoured.
+        if self._conn_identity is not None and self._mqtt_identity() != self._conn_identity:
             threading.Thread(target=self._reconnect, daemon=True, name="mqtt-reconnect").start()
 
     def _reconnect(self):
+        """Serialized: reconnect until the live connection matches the latest
+        settings (a change can arrive while connect() is still running)."""
         with self._reconnect_lock:
-            if self._mqtt_client is None or self._mqtt_identity() == self._conn_identity:
-                return
-            print("[display] MQTT settings changed — reconnecting with a new last-will", flush=True)
-            self.disconnect()
-            self.connect()
+            for _ in range(5):
+                if self._conn_identity is None or self._mqtt_identity() == self._conn_identity:
+                    return
+                print("[display] MQTT settings changed — reconnecting with a new last-will", flush=True)
+                self.disconnect()
+                self.connect()
+            print("[display] WARNING: MQTT settings kept changing; giving up after 5 reconnects", flush=True)
 
     def _topic(self, suffix):
-        prefix = self._prefix or self._mqtt_identity()[4]
+        # `is not None`: an empty prefix is a real prefix and must stay the
+        # connection's topic (and last-will) until it is retired.
+        prefix = self._prefix if self._prefix is not None else self._mqtt_identity()[4]
         return f"{prefix}/{suffix}"
 
     def publish_letter(self, letter, word, image=None):

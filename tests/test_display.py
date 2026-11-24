@@ -134,6 +134,49 @@ def test_no_publish_lands_on_retired_connection_after_offline():
         assert old_retained[-1]["online"] is False, old_retained
 
 
+def test_settings_change_during_reconnect_is_not_lost():
+    """Round-3 finding 1: a change (C) arriving while the reconnect to B is
+    still building its client must end connected with C."""
+    settings = {"mqtt": {"host": "broker.invalid", "topic_prefix": "a/funkeykid"}}
+    clients, calls, fake_mqtt = fake_paho()
+    real_factory = fake_mqtt.Client
+    d_holder = {}
+
+    def factory(*args):
+        client = real_factory(*args)
+        if len(clients) == 2:  # building B: C arrives right now
+            settings["mqtt"]["topic_prefix"] = "c/funkeykid"
+            d_holder["d"].reload_settings(settings)
+        return client
+
+    fake_mqtt.Client = factory
+    with patch.object(display, "MQTT_AVAILABLE", True), patch.object(display, "mqtt", fake_mqtt, create=True):
+        d = display.Display(settings)
+        d_holder["d"] = d
+        d.connect()
+        d._mqtt_connected = True
+        settings["mqtt"]["topic_prefix"] = "b/funkeykid"
+        d.reload_settings(settings)
+        assert wait_for(lambda: clients and clients[-1].will[0] == "c/funkeykid/keyboard-info", timeout=4)
+        time.sleep(0.2)
+        assert d._conn_identity[4] == "c/funkeykid"
+
+
+def test_empty_prefix_is_retired_on_its_own_topic():
+    """Round-3 finding 2: an empty prefix is a real prefix; retirement must
+    publish offline on '/keyboard-info', not on the new prefix."""
+    settings = {"mqtt": {"host": "broker.invalid", "topic_prefix": ""}}
+    clients, calls, fake_mqtt = fake_paho()
+    with patch.object(display, "MQTT_AVAILABLE", True), patch.object(display, "mqtt", fake_mqtt, create=True):
+        d = connected_display(settings, fake_mqtt)
+        assert clients[0].will[0] == "/keyboard-info"
+        settings["mqtt"]["topic_prefix"] = "new"
+        d.reload_settings(settings)
+        assert wait_for(lambda: len(clients) == 2)
+        assert clients[0].published[-1] == ("/keyboard-info", display.offline_keyboard_payload(), True)
+        assert clients[1].will[0] == "new/keyboard-info"
+
+
 def test_reconfigure_is_non_blocking_and_disconnects_before_loop_stop():
     """Round-2 finding 3: reload_settings runs on the asyncio loop and must not
     wait for Paho's network thread; disconnect() is requested before loop_stop()."""

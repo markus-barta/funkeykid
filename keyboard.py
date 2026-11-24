@@ -148,6 +148,7 @@ class KeyboardListener:
 
     def __init__(self, device_name, layout="de", debounce_seconds=0.8):
         self.device_name = device_name
+        self._desired_device = device_name  # latest requested device; set_device() converges to it
         self.layout = LAYOUTS.get(layout, {})
         self.debounce_seconds = debounce_seconds
         self._last_key_time = {}
@@ -226,13 +227,35 @@ class KeyboardListener:
             if was_connected and self._connection_callback:
                 self._connection_callback(False, self.get_status())
 
+    def set_device(self, device_name):
+        """Request the listener to own ``device_name``; the latest request wins.
+
+        Non-blocking: a background applier converges to the latest desired
+        device under the lifecycle lock, so a superseded request (e.g. B then A
+        again while a restart is running) never ends on the wrong device.
+        """
+        with self._lock:
+            if device_name == self._desired_device and device_name == self.device_name:
+                return
+            self._desired_device = device_name
+        threading.Thread(target=self._apply_desired_device, daemon=True,
+                         name="keyboard-set-device").start()
+
+    def _apply_desired_device(self):
+        with self._lifecycle:
+            desired = self._desired_device
+            if desired and desired != self.device_name:
+                self.restart(desired)
+
     def restart(self, device_name=None):
         """Stop, wait until the old thread has released its grabs, start again.
 
         The whole sequence is serialized, so concurrent restarts (reconnect
-        button + settings change) cannot interleave.
+        button + settings change) cannot interleave. Without a name it restarts
+        on the latest desired device.
         """
         with self._lifecycle:
+            device_name = device_name or self._desired_device
             if device_name:
                 self.device_name = device_name
             old = self._thread

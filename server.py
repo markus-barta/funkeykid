@@ -1928,12 +1928,13 @@ def _reload_runtime():
         from keyboard import LAYOUTS
         keyboard.layout = LAYOUTS.get(settings.get("keyboard_layout", "de"), {})
         keyboard.debounce_seconds = settings.get("debounce_seconds", 0.8)
+        # Switch devices without a container restart. set_device() is
+        # non-blocking and latest-wins; the restart it triggers releases the
+        # old device's grabs before the new device is grabbed.
         wanted = _keyboard_device_name()
         if wanted != keyboard.device_name:
-            # Switch devices without a container restart; restart() joins the old
-            # thread so its grabs are released before the new device is grabbed.
-            print(f"[funkeykid] Keyboard device changed: {keyboard.device_name} → {wanted}", flush=True)
-            threading.Thread(target=keyboard.restart, args=(wanted,), daemon=True).start()
+            print(f"[funkeykid] Keyboard device requested: {keyboard.device_name} → {wanted}", flush=True)
+        keyboard.set_device(wanted)
     if display:
         display.reload_settings(settings)
     # battery_low may change with the threshold: tell the UI and MQTT now

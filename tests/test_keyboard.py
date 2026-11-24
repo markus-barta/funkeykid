@@ -7,8 +7,11 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import time  # noqa: E402
+
 from display import HEARTBEAT_SECONDS, keyboard_info_payload, offline_keyboard_payload  # noqa: E402
 from keyboard import (  # noqa: E402
+    KeyboardListener,
     is_battery_low,
     parse_bt_battery,
     primary_node,
@@ -122,6 +125,47 @@ def test_keyboard_info_payload_shape():
     assert p["device_name"] == "ACME BK03"
     assert p["heartbeat_s"] == HEARTBEAT_SECONDS and isinstance(p["timestamp"], float)
     assert "nodes" not in p  # payload stays small and stable
+
+
+def _listener_with_recorded_restarts(name):
+    kl = KeyboardListener(name)
+    restarts = []
+
+    def fake_restart(device_name=None):
+        device_name = device_name or kl._desired_device
+        restarts.append(device_name)
+        kl.device_name = device_name
+
+    kl.restart = fake_restart
+    return kl, restarts
+
+
+def _settle(seconds=0.3):
+    time.sleep(seconds)
+
+
+def test_set_device_latest_request_wins_while_restart_in_progress():
+    """Round-2 finding 1: B then A again while a restart holds the lifecycle
+    lock must end on A, not on the superseded B."""
+    kl, restarts = _listener_with_recorded_restarts("ACME BK03")
+    with kl._lifecycle:                 # a reconnect restart is in progress
+        kl.set_device("Other Kid Board")
+        kl.set_device("ACME BK03")
+        _settle(0.1)
+        assert restarts == []           # appliers are waiting for the lock
+    _settle()
+    assert kl.device_name == "ACME BK03"
+    assert restarts == []               # the superseded switch never ran
+
+
+def test_set_device_switches_and_is_idempotent():
+    kl, restarts = _listener_with_recorded_restarts("ACME BK03")
+    kl.set_device("Other Kid Board")
+    _settle()
+    assert restarts == ["Other Kid Board"] and kl.device_name == "Other Kid Board"
+    kl.set_device("Other Kid Board")
+    _settle()
+    assert restarts == ["Other Kid Board"]
 
 
 def test_offline_payload_shape_matches_live_payload():

@@ -22,6 +22,7 @@ import json
 import os
 import time
 import random
+import threading
 import base64
 import struct
 import urllib.request
@@ -78,6 +79,9 @@ class Display:
         self._mqtt_connected = False
         self._conn_identity = None  # (host, port, user, password, prefix) of the live connection
         self._prefix = None         # topic prefix frozen per connection (matches the last-will)
+        self._closing = False       # set while retiring a connection: no publish may follow the offline message
+        self._pub_lock = threading.Lock()        # orders every publish against retire/reconnect
+        self._reconnect_lock = threading.Lock()  # one reconnect at a time
         self.on_connected = None  # called (from the MQTT thread) after every (re)connect
 
     def _mqtt_identity(self):
@@ -98,38 +102,41 @@ class Display:
 
         identity = self._mqtt_identity()
         host, port, user, password, prefix = identity
-        # Everything published on this connection uses the prefix its last-will
-        # was registered with; a settings change reconnects (reload_settings).
-        self._conn_identity = identity
-        self._prefix = prefix
 
         print(f"[display] MQTT config: host={host}, port={port}, user={user}, pass={'***' if password else 'EMPTY!'}, prefix={prefix}", flush=True)
         try:
-            self._mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+            client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
             if password:
-                self._mqtt_client.username_pw_set(user, password)
+                client.username_pw_set(user, password)
             else:
                 print("[display] WARNING: No MQTT password!", flush=True)
             # Last-will: the broker flips the retained keyboard-info to offline
             # when funkeykid dies or loses the network (FUNK-59/FUNK-58).
-            self._mqtt_client.will_set(
-                self._topic("keyboard-info"),
+            client.will_set(
+                f"{prefix}/keyboard-info",
                 json.dumps(offline_keyboard_payload()),
                 qos=1,
                 retain=True,
             )
-            self._mqtt_client.on_connect = self._on_connect
-            self._mqtt_client.on_disconnect = lambda c, u, f, rc, p=None: (
-                setattr(self, '_mqtt_connected', False),
-                print(f"[display] MQTT disconnected: rc={rc}", flush=True),
-            )
-            self._mqtt_client.connect_async(host, port, 60)
-            self._mqtt_client.loop_start()
+            client.on_connect = self._on_connect
+            client.on_disconnect = self._on_disconnect
+            # Everything published on this connection uses the prefix its
+            # last-will was registered with; a settings change reconnects.
+            with self._pub_lock:
+                self._conn_identity = identity
+                self._prefix = prefix
+                self._mqtt_client = client
+                self._mqtt_connected = False
+                self._closing = False
+            client.connect_async(host, port, 60)
+            client.loop_start()
             print(f"[display] MQTT connecting...", flush=True)
         except Exception as e:
             print(f"[display] MQTT failed: {e}", flush=True)
 
     def _on_connect(self, client, userdata, flags, rc, properties=None):
+        if client is not self._mqtt_client:  # late callback from a retired client
+            return
         self._mqtt_connected = True
         print("[display] MQTT connected", flush=True)
         if self.on_connected:
@@ -138,16 +145,27 @@ class Display:
             except Exception as e:
                 print(f"[display] on_connected hook failed: {e}", flush=True)
 
+    def _on_disconnect(self, client, userdata, flags, rc, properties=None):
+        if client is not self._mqtt_client:
+            return
+        self._mqtt_connected = False
+        print(f"[display] MQTT disconnected: rc={rc}", flush=True)
+
     def reload_settings(self, settings):
         self.settings = settings
         # The last-will is fixed per connection. If broker or prefix changed,
         # retire the old retained status (offline on the old topic) and
-        # reconnect, which registers a last-will on the new topic.
+        # reconnect with a last-will on the new topic. Runs off the caller's
+        # thread: this is called from the asyncio loop, and teardown may wait.
         if self._mqtt_client is not None and self._mqtt_identity() != self._conn_identity:
+            threading.Thread(target=self._reconnect, daemon=True, name="mqtt-reconnect").start()
+
+    def _reconnect(self):
+        with self._reconnect_lock:
+            if self._mqtt_client is None or self._mqtt_identity() == self._conn_identity:
+                return
             print("[display] MQTT settings changed — reconnecting with a new last-will", flush=True)
             self.disconnect()
-            self._mqtt_client = None
-            self._mqtt_connected = False
             self.connect()
 
     def _topic(self, suffix):
@@ -176,7 +194,7 @@ class Display:
         if mode in ("mqtt", "both"):
             # Clamp 0-100 for the bar percentage (some volumes can transiently go higher).
             bar_pct = max(0, min(100, int(volume)))
-            self._mqtt_publish(self._topic("display"), {
+            self._mqtt_publish("display", {
                 "letter": f"{volume}%",
                 "word": "lautstaerke",
                 "color": "#FFCC00" if volume > 0 else "#FF0000",
@@ -189,28 +207,19 @@ class Display:
 
     def publish_keyboard_status(self, status):
         """Publish keyboard status to MQTT (retained); also the heartbeat."""
-        payload = keyboard_info_payload(status)
-        if self._mqtt_client and self._mqtt_connected:
-            try:
-                self._mqtt_client.publish(
-                    self._topic("keyboard-info"),
-                    json.dumps(payload),
-                    qos=1,
-                    retain=True,
-                )
-            except Exception as e:
-                print(f"[display] MQTT keyboard-info error: {e}", flush=True)
+        self._mqtt_publish("keyboard-info", keyboard_info_payload(status),
+                           qos=1, retain=True, quiet=True)
 
     def log(self, message, level="info"):
         """Debug log via MQTT."""
-        self._mqtt_publish(self._topic("debug"), {
+        self._mqtt_publish("debug", {
             "timestamp": time.time(),
             "level": level,
             "message": message,
         })
 
     def _mqtt_publish_display(self, letter, word, image, color):
-        self._mqtt_publish(self._topic("display"), {
+        self._mqtt_publish("display", {
             "letter": letter,
             "word": word,
             "image": image,
@@ -218,16 +227,25 @@ class Display:
             "timestamp": time.time(),
         })
 
-    def _mqtt_publish(self, topic, payload):
-        if self._mqtt_client and self._mqtt_connected:
+    def _mqtt_publish(self, suffix, payload, qos=0, retain=False, quiet=False):
+        """The only publish path. Topic and client are resolved under the lock,
+        so nothing is published on a connection being retired (after its
+        offline message) or on a stale prefix."""
+        with self._pub_lock:
+            client = self._mqtt_client
+            if self._closing or client is None or not self._mqtt_connected:
+                if not quiet and not self._closing:
+                    print(f"[display] MQTT not ready: client={client is not None}, connected={self._mqtt_connected}", flush=True)
+                return None
+            topic = self._topic(suffix)
             try:
-                result = self._mqtt_client.publish(topic, json.dumps(payload), qos=0)
+                result = client.publish(topic, json.dumps(payload), qos=qos, retain=retain)
                 if result.rc != 0:
                     print(f"[display] MQTT publish failed: rc={result.rc} topic={topic}", flush=True)
+                return result
             except Exception as e:
-                print(f"[display] MQTT error: {e}", flush=True)
-        else:
-            print(f"[display] MQTT not ready: client={self._mqtt_client is not None}, connected={self._mqtt_connected}", flush=True)
+                print(f"[display] MQTT error on {topic}: {e}", flush=True)
+                return None
 
     def _pixoo_direct(self, letter, word, image, color):
         """Send frame directly to Pixoo HTTP API."""
@@ -239,18 +257,41 @@ class Display:
         print(f"[display] Direct Pixoo: {letter} ({word}) → {pixoo_ip}", flush=True)
 
     def disconnect(self):
-        if self._mqtt_client:
-            # A clean disconnect suppresses the last-will, so say goodbye ourselves.
+        """Retire the connection: final offline status, then disconnect.
+
+        A clean disconnect suppresses the last-will, so say goodbye ourselves.
+        Under the publish lock the offline message is the LAST thing queued on
+        this connection; messages are delivered in order, so the retained
+        status ends offline. Then request the disconnect before joining Paho's
+        network thread (loop_stop), so the join cannot hang.
+        """
+        info = None
+        with self._pub_lock:
+            client = self._mqtt_client
+            if client is None:
+                return
+            self._closing = True
             if self._mqtt_connected:
                 try:
-                    info = self._mqtt_client.publish(
-                        self._topic("keyboard-info"),
-                        json.dumps(offline_keyboard_payload()),
-                        qos=1,
-                        retain=True,
-                    )
-                    info.wait_for_publish(timeout=2)
+                    info = client.publish(self._topic("keyboard-info"),
+                                          json.dumps(offline_keyboard_payload()),
+                                          qos=1, retain=True)
                 except Exception as e:
                     print(f"[display] MQTT offline publish failed: {e}", flush=True)
-            self._mqtt_client.loop_stop()
-            self._mqtt_client.disconnect()
+        if info is not None:
+            try:
+                info.wait_for_publish(timeout=2)
+            except Exception as e:
+                print(f"[display] MQTT offline publish not confirmed: {e}", flush=True)
+        try:
+            client.disconnect()
+        except Exception as e:
+            print(f"[display] MQTT disconnect error: {e}", flush=True)
+        try:
+            client.loop_stop()
+        except Exception as e:
+            print(f"[display] MQTT loop_stop error: {e}", flush=True)
+        with self._pub_lock:
+            if self._mqtt_client is client:
+                self._mqtt_client = None
+                self._mqtt_connected = False

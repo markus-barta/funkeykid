@@ -1,22 +1,120 @@
 name: Build and Push Docker Image
 
+# INSPR Calendar Versioning (inspr-calver-3, FUNK-60):
+# - every PR and push: tests, bundle + version-record verification, release
+#   history check, and the exact-artifact rollback gate (legacy anchor by digest);
+# - main pushes build and publish only :<commit-sha> (validation artifact);
+# - a release tag v<version> (must equal version.json and succeed the released
+#   history) publishes the immutable :<version>, writes the release-set manifest
+#   to the GitHub release, and only THEN promotes that exact artifact to :latest.
+#   Releases are serialized; a rerun recovers without rebuilding; a published
+#   :<version> is never overwritten and :latest never moves backward.
+
 on:
   push:
     branches: [main]
+    tags: ['v*']
+  pull_request:
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # release history comes from the v<version> tags
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: pip install pytest paho-mqtt
+      - name: Verify versioning bundle (pins + git-tracked) and version record
+        run: |
+          python3 versioning_bundle.py
+          python3 -c "import versioning; r = versioning.load_record(); print(r['version'], r['version_scheme'], r['release_channel'], r['release_sequence'])"
+      - name: Release history
+        run: python3 scripts/check_release_history.py
+      - name: Tests
+        run: python3 -m pytest -q tests
+
+  rollback-gate:
+    # Exact-artifact rollback: the migration anchor's last legacy release must
+    # still be restorable by its immutable digest and serve its version.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore the last legacy release by digest
+        run: |
+          ART=$(python3 -c "import json;print(json.load(open('version.json'))['migration']['last_legacy_artifact'])")
+          WANT=$(python3 -c "import json;print(json.load(open('version.json'))['migration']['last_legacy_version'])")
+          docker pull "$ART"
+          docker run -d --name rollback -p 8081:8081 -e FUNKEYKID_DATA=/tmp/d "$ART" \
+            sh -c 'mkdir -p /tmp/d && cp /app/defaults/settings.json /tmp/d/ && exec python3 server.py'
+          for _ in $(seq 1 40); do curl -sf http://localhost:8081/api/version >/dev/null && break; sleep 1; done
+          GOT=$(curl -sf http://localhost:8081/api/version | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error::rollback artifact $ART serves '$GOT', expected '$WANT'"; docker logs rollback; exit 1
+          fi
+          echo "rollback anchor OK: $ART serves $GOT"
+
+  build-check:
+    # PRs: the Dockerfile (pinned base, hash-checked deps, provenance, bundle +
+    # version verification) must build and the image must serve its version.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source manifest (build gate)
+        run: python3 scripts/source_manifest.py
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build (amd64, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          platforms: linux/amd64
+          tags: funkeykid:pr
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+          cache-from: type=gha
+      - name: Image serves its version and carries provenance
+        run: |
+          WANT=$(python3 -c "import json;print(json.load(open('version.json'))['version'])")
+          BASE=$(sed -n 's/^ARG BASE_IMAGE=//p' Dockerfile)
+          docker run -d --name pr -p 8081:8081 -e FUNKEYKID_DATA=/tmp/d funkeykid:pr \
+            sh -c 'mkdir -p /tmp/d && cp /app/defaults/settings.json /tmp/d/ && exec python3 server.py'
+          for _ in $(seq 1 40); do curl -sf http://localhost:8081/api/version >/dev/null && break; sleep 1; done
+          curl -sf http://localhost:8081/api/version | python3 -c "import json,sys; d=json.load(sys.stdin); \
+          assert d['version'] == '$WANT' and d['version_scheme'] == 'inspr-calver-3', d; print('api ok', d['version'])"
+          docker exec pr cat /app/build-provenance.json | python3 -c "import json,sys; p=json.load(sys.stdin); \
+          assert p['base_image'] == '$BASE' and p['pip'] and p['dpkg'], p.keys(); print('provenance ok', p['python'], len(p['pip']), 'pip', len(p['dpkg']), 'dpkg')"
+          curl -sf -o /dev/null http://localhost:8081/static/vendor/inspr-versioning/version.js && echo "bundle served"
+
+  build-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, rollback-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v4
+
+      - name: Source manifest (build gate)
+        run: python3 scripts/source_manifest.py
 
       - name: Log in to Container registry
         uses: docker/login-action@v3
@@ -28,17 +126,272 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      - name: Build and push (commit tag only; :latest moves with releases)
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           build-args: |
             BUILD_SHA=${{ github.sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [test, rollback-gate]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: funkeykid-release      # one publisher at a time, across all tags
+      cancel-in-progress: false     # never cancel an active publisher
+    permissions:
+      contents: write
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Source manifest (build gate)
+        run: python3 scripts/source_manifest.py
+
+      - name: Release tag must equal version.json and succeed the released history
+        id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          import os, subprocess, versioning
+          r = versioning.load_record()
+          tag = os.environ["GITHUB_REF_NAME"]
+          if not versioning.tag_matches(tag, r["version"]):
+              raise SystemExit(f"release tag {tag} must equal v{r['version']} from version.json")
+          commit_time = subprocess.check_output(["git", "log", "-1", "--format=%cI"], text=True).strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"version={r['version']}\ncommit_time={commit_time}\n")
+          EOF
+          # reserved in the ledger, successor of the released history, and every
+          # earlier tag a completed release (published GitHub release + manifest)
+          python3 scripts/check_release_history.py --exclude-tag "$GITHUB_REF_NAME" --require-completed
+
+      - name: Log in to Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Release state (fail closed)
+        id: state
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          # published → recover from a previous run without rebuilding; absent → build;
+          # anything else (registry/auth error) → stop.
+          if out=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' 2>&1); then
+            digest=$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["digest"])' "$out")
+            echo "state=published" >> "$GITHUB_OUTPUT"; echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "$IMAGE:$VERSION already published ($digest): recovering, no rebuild"
+          elif grep -qiE 'not found|manifest unknown' <<<"$out"; then
+            echo "state=absent" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::cannot determine whether $IMAGE:$VERSION is published: $out"; exit 1
+          fi
+
+      - name: Build and push the immutable release image (version tag only)
+        id: build
+        if: steps.state.outputs.state == 'absent'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.v.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            at.inspr.version-scheme=inspr-calver-3
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_TIME=${{ steps.v.outputs.commit_time }}
+          cache-from: type=gha
+
+      - name: Verify the release artifact's identity
+        id: art
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest || steps.state.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}' > index.json
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Image}}' > images.json
+          python3 - <<'EOF'
+          import json, os
+          index, images = json.load(open("index.json")), json.load(open("images.json"))
+          configs = images.values() if isinstance(images, dict) and "config" not in images else [images]
+          for cfg in configs:
+              labels = (cfg.get("config") or {}).get("Labels") or {}
+              if labels.get("org.opencontainers.image.version") != os.environ["VERSION"] \
+                      or labels.get("org.opencontainers.image.revision") != os.environ["GITHUB_SHA"]:
+                  raise SystemExit(f"artifact labels {labels} do not match {os.environ['VERSION']} @ {os.environ['GITHUB_SHA']}")
+          platforms = [f"{m['platform']['os']}/{m['platform']['architecture']}" for m in index["manifests"]
+                       if m.get("platform", {}).get("os") not in (None, "unknown")]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"digest={os.environ['DIGEST']}\nplatforms={' '.join(platforms)}\n")
+          print("artifact identity OK:", os.environ["DIGEST"], platforms)
+          EOF
+
+      - name: Per-platform build provenance
+        env:
+          DIGEST: ${{ steps.art.outputs.digest }}
+          PLATFORMS: ${{ steps.art.outputs.platforms }}
+        run: |
+          for p in $PLATFORMS; do
+            safe=${p//\//-}
+            docker pull --quiet --platform "$p" "$IMAGE@$DIGEST" >/dev/null
+            cid=$(docker create --platform "$p" "$IMAGE@$DIGEST")
+            docker cp "$cid:/app/build-provenance.json" "prov-$safe.json"
+            docker rm "$cid" >/dev/null
+          done
+          ls -la prov-*.json
+
+      - name: Release-set manifest
+        env:
+          DIGEST: ${{ steps.art.outputs.digest }}
+          PLATFORMS: ${{ steps.art.outputs.platforms }}
+        run: |
+          python3 - <<'EOF'
+          import glob, hashlib, json, os, re, versioning, versioning_bundle
+          r = versioning.load_record()
+          index = json.load(open("index.json"))
+          sha = lambda b: hashlib.sha256(b).hexdigest()
+          base = re.search(r"^ARG BASE_IMAGE=(\S+)$", open("Dockerfile").read(), re.M).group(1)
+          provenance = []
+          for p in os.environ["PLATFORMS"].split():
+              raw = open(f"prov-{p.replace('/', '-')}.json", "rb").read()
+              data = json.loads(raw)
+              if data.get("base_image") != base:
+                  raise SystemExit(f"{p}: image built from {data.get('base_image')}, Dockerfile pins {base}")
+              provenance.append({"platform": p, "sha256": sha(raw), "base_image": data["base_image"],
+                                 "python": data["python"], "pip": data["pip"],
+                                 "dpkg_count": len(data["dpkg"]), "dpkg_sha256": sha("\n".join(data["dpkg"]).encode())})
+          manifest = {
+              "schema": "funkeykid.release-set.v2",
+              "version_scheme": r["version_scheme"],
+              "version": r["version"],
+              "release_channel": r["release_channel"],
+              "release_sequence": r["release_sequence"],
+              "migration": r["migration"],
+              "source": {"repository": os.environ["GITHUB_REPOSITORY"], "commit": os.environ["GITHUB_SHA"],
+                         "tag": os.environ["GITHUB_REF_NAME"]},
+              "dependencies": {
+                  "base_image": base,
+                  "python_lock": {"path": "requirements.lock", "sha256": sha(open("requirements.lock", "rb").read())},
+                  "platform_provenance": provenance,
+              },
+              "artifacts": [{
+                  "coordinate": f"{os.environ['IMAGE']}:{r['version']}",
+                  "type": "oci-image-index",
+                  "digest": os.environ["DIGEST"],
+                  "manifests": [{"digest": m["digest"],
+                                 "platform": f"{m.get('platform', {}).get('os')}/{m.get('platform', {}).get('architecture')}"}
+                                for m in index["manifests"]],
+              }],
+              "presentation_bundle": {k: versioning_bundle.PIN[k] for k in ("repository", "revision", "config_sha256", "manifest_sha256")},
+              "source_manifest": json.load(open(".source-manifest.json")),
+              "validation": {"workflow_run": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+                             "jobs": ["test", "rollback-gate", "release"]},
+          }
+          with open("release-manifest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+              f.write("\n")
+          print(json.dumps({k: manifest[k] for k in ("version", "release_sequence", "artifacts")}, indent=2))
+          EOF
+
+      - name: GitHub release with manifest (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+          DIGEST: ${{ steps.art.outputs.digest }}
+        run: |
+          # Recovers every interrupted state of `gh release create` (draft, missing
+          # asset) without ever replacing an existing published asset.
+          if gh release view "$GITHUB_REF_NAME" --json isDraft,assets > rel.json 2>/dev/null; then
+            if python3 -c "import json,sys; a={x['name'] for x in json.load(open('rel.json'))['assets']}; sys.exit(0 if 'release-manifest.json' in a else 1)"; then
+              gh release download "$GITHUB_REF_NAME" -p release-manifest.json -O existing-manifest.json --clobber
+              python3 - <<'EOF'
+          import json, os, sys
+          d = json.load(open("existing-manifest.json"))["artifacts"][0]["digest"]
+          sys.exit(0 if d == os.environ["DIGEST"] else f"existing release records {d}, artifact is {os.environ['DIGEST']}")
+          EOF
+              echo "release $GITHUB_REF_NAME already carries the manifest for $DIGEST"
+            else
+              gh release upload "$GITHUB_REF_NAME" release-manifest.json
+              echo "uploaded the missing manifest to $GITHUB_REF_NAME"
+            fi
+            if python3 -c "import json,sys; sys.exit(0 if json.load(open('rel.json'))['isDraft'] else 1)"; then
+              gh release edit "$GITHUB_REF_NAME" --draft=false
+              echo "published the draft release $GITHUB_REF_NAME"
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" release-manifest.json \
+              --verify-tag --title "funkeykid $VERSION" \
+              --notes "INSPR-CalVer3 release $VERSION (inspr-calver-3). Image: $IMAGE:$VERSION@$DIGEST — platforms, dependencies and provenance in release-manifest.json."
+          fi
+
+      - name: Release evidence is published before promotion
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.art.outputs.digest }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json isDraft,assets > rel.json
+          gh release download "$GITHUB_REF_NAME" -p release-manifest.json -O published-manifest.json --clobber
+          python3 - <<'EOF'
+          import json, os, sys
+          rel = json.load(open("rel.json"))
+          if rel["isDraft"]:
+              sys.exit("the release is still a draft: not promoting")
+          m = json.load(open("published-manifest.json"))
+          if m["artifacts"][0]["digest"] != os.environ["DIGEST"] or "v" + m["version"] != os.environ["GITHUB_REF_NAME"]:
+              sys.exit("the published manifest does not describe this artifact: not promoting")
+          print("published release evidence OK:", m["version"], os.environ["DIGEST"])
+          EOF
+
+      - name: Promote the released artifact to :latest (never backward)
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          DIGEST: ${{ steps.art.outputs.digest }}
+        run: |
+          if ! current=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Image}}' 2>&1); then
+            if grep -qiE 'not found|manifest unknown' <<<"$current"; then current='{}'
+            else echo "::error::cannot read the current :latest: $current"; exit 1; fi
+          fi
+          python3 - "$current" <<'EOF'
+          import json, os, sys, versioning
+          images = json.loads(sys.argv[1] or "{}")
+          configs = images.values() if isinstance(images, dict) and "config" not in images else [images]
+          for cfg in configs:
+              labels = ((cfg or {}).get("config") or {}).get("Labels") or {}
+              cur = labels.get("org.opencontainers.image.version")
+              if cur and labels.get("at.inspr.version-scheme") == "inspr-calver-3" \
+                      and versioning.parse_calendar(cur) > versioning.parse_calendar(os.environ["VERSION"]):
+                  raise SystemExit(f":latest is {cur}, newer than {os.environ['VERSION']}: refusing to move it backward")
+          EOF
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$DIGEST"
+          want=$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}' | python3 -c 'import json,sys;print(sorted(m["digest"] for m in json.load(sys.stdin)["manifests"]))')
+          got=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Manifest}}' | python3 -c 'import json,sys;print(sorted(m["digest"] for m in json.load(sys.stdin)["manifests"]))')
+          if [ "$want" != "$got" ]; then echo "::error:::latest does not point at the released manifests"; exit 1; fi
+          echo ":latest → $VERSION ($DIGEST)"

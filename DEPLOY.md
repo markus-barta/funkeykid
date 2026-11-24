@@ -104,40 +104,71 @@ See `pixdicon/docs/DEPLOY.md` for the full pixdicon deploy guide.
 
 ## Versioning
 
-Version is in `version.py`. Format: `MAJOR.MINOR.PATCH`
+funkeykid uses **INSPR Calendar Versioning 3** (`inspr-calver-3`, label `INSPR-CalVer3`) since FUNK-60. A version is the UTC reservation second, `YYMMDDhhmmss.0.0`, for example `261124195854.0.0`. It is SemVer-syntactic but not SemVer-semantic: a larger number only means "later", and `.0.0` never changes.
 
-**Every deploy bumps at least the patch version.** No exceptions.
+- **Authoritative source:** `version.json` (`version`, `version_scheme`, `release_channel`, `release_sequence`, `migration`). `version.py` loads and validates it, and fails closed on any error. Build nodes never derive a version from their clock.
+- **Migration anchor:** the last legacy (`MAJOR.MINOR.PATCH`) release is **3.2.0**; the first calendar release is **261124195854.0.0**, stable #1. Legacy tags (v2.x) and images stay exactly as published. Order between eras comes only from this anchor (see `versioning.py`).
+- **Every release reserves a new coordinate.** A changed artifact never reuses a published one, and a published `:<version>` image is never overwritten (CI refuses it).
+- **Display:** the footer renders the version through the shared INSPR Pretty/SemVer renderer, vendored offline in `static/vendor/inspr-versioning/`. The pins are in `versioning_bundle.py`, verified in tests and in every Docker build. `/api/version` and logs carry the canonical string plus `version_scheme`.
 
-| Change | Bump | Example |
-|--------|------|---------|
-| Bug fix, hotfix, styling tweak | PATCH | 3.1.0 → 3.1.1 |
-| New feature, UI rework, new API | MINOR | 3.1.0 → 3.2.0 |
-| Breaking change, major rearchitecture | MAJOR | 3.1.0 → 4.0.0 |
+### Release procedure
 
-Current: **3.2.0** (exclusive keyboard grab, configurable keyboard via `FUNKEYKID_KEYBOARD`, battery-low threshold, keyboard-info last-will + heartbeat; FUNK-59). **3.1.1** fixed the per-track Generieren buttons (FUNK-54); **3.1.0** introduced ffmpeg loudnorm; **3.0.0** was the multi-track refactor.
-
-Before pushing:
 ```bash
-# Edit version.py
-VERSION = "X.Y.Z"
-
-# Commit with the version in the message
-git add -A && git commit -m "feat: description (vX.Y.Z)"
+python3 scripts/reserve_version.py        # current UTC second, strictly later; release_sequence + 1
+git add version.json && git commit -m "release: reserve <version> (inspr-calver-3) for FUNK-n"
+# PR → review gate → merge, then tag the merge commit:
+git tag -a v<version> <merge-sha> -m "funkeykid <version>" && git push origin v<version>
+gh run watch                              # release job: tag == version.json → :<version> + :latest (same build) + GitHub release with release-manifest.json
 ```
 
-The CI build bakes `BUILD_SHA` into the Docker image via `--build-arg`. The footer shows version + commit hash linked to GitHub.
+- **Main pushes** build and publish only `:<commit-sha>`. **`:latest` moves only with a release**, so hsb1 (which runs `:latest`) only ever receives released artifacts.
+- **Release job order:**
+  1. Releases are serialized (one publisher at a time, never cancelled).
+  2. The tag must equal `version.json`, and `version.json` must succeed the released history: a strictly later coordinate, `release_sequence` + 1, the same channel and an unchanged anchor (`scripts/check_release_history.py`).
+  3. The immutable `:<version>` is published. An existing one is never overwritten; a rerun verifies its labels and recovers without rebuilding.
+  4. `release-manifest.json` is written to the GitHub release. It records scheme, channel, sequence, anchor, the image index and per-platform manifest digests, base image, `requirements.lock` digest, per-platform pip/dpkg provenance, bundle pins and the validation run.
+  5. **Only then** is that exact artifact promoted to `:latest`, never backward.
+- **Reservations are immutable and claimed on a shared ledger.**
+  - `reserve_version.py` claims the sequence atomically on the forge as the annotated tag `reservation/stable/<N>`. A second preparer's push is rejected, so two clones can never reserve the same sequence.
+  - Only after the claim does it write `version.json`, under a lock and atomically.
+  - It refuses to replace a reserved-but-unreleased coordinate.
+  - It refuses if any earlier `v<version>` tag is not a **completed** release, meaning a published, non-draft GitHub release that carries its manifest.
+  - CI checks that `version.json` is exactly the ledger's coordinate for its sequence.
+  - **Interrupted reservation** (push accepted but response lost, or stopped before `version.json` was written): rerun with `--recover`. It restores exactly the claimed coordinate and sequence, with no new timestamp and no ledger change.
+  - A previous coordinate more than 5 s in the future (clock skew) fails instead of waiting.
+- **Only the `stable` channel** is published, with one immutable migration anchor. Another channel would need its own aliases first.
+- **Interrupted releases are recovered:**
+  - A rerun publishes a draft release, uploads a missing manifest, and never replaces an existing one.
+  - Promotion to `:latest` happens only after the published (non-draft) release verifiably describes the artifact.
+- **Local builds go through the build gate:** `python3 scripts/source_manifest.py && docker build .`. The Docker build requires `.source-manifest.json` and fails without it. It verifies that the vendored bundle equals the git-tracked, committed bytes recorded there, because the build context itself has no `.git`.
+- **Dependencies:**
+  - The base image is pinned by digest (`ARG BASE_IMAGE` in the Dockerfile).
+  - Python packages install from `requirements.lock`, which has hashes and is generated from `requirements.in` with `pip-compile --generate-hashes --allow-unsafe --strip-extras` on Python 3.12.
+  - Refresh either one deliberately, in a release PR.
+- **Presentation pin review** at each release prep: compare `static/vendor/inspr-versioning/manifest.json` with inspr-at/inspr, and re-vendor only if the approved display config or renderer changed (procedure in the `versioning_bundle.py` docstring).
+- **Rollback:** deploy a previous release by exact version and digest. For a calendar release, take them from its `release-manifest.json`. For the legacy 3.2.0, use the anchor's `last_legacy_artifact` in `version.json` (`ghcr.io/markus-barta/funkeykid@sha256:bb7818fa…`); CI's `rollback-gate` restores it by digest on every run and checks that it serves 3.2.0. Steps: `docker pull <image>@sha256:<digest>`, re-tag it as `:latest` on hsb1, then the locked single-service `up` (see Deploy Workflows). Rollback never decrements or reuses a version. The fix is a new, later release.
 
 ---
 
 ## Deploy Workflows
 
-### Normal: Push → CI → Pull
+### Normal: Release → CI → locked roll on hsb1
+
+Release first (see "Release procedure" above), then roll **only** funkeykid on hsb1. Use the closure-pinned compose file under the stack lock, with a dry run first. Never operate compose from `~/docker`; hsb1's RUNBOOK forbids it. hsb1's login shell is fish, so pass scripts via `bash -s`:
 
 ```bash
-git add . && git commit -m "..." && git push
-gh run watch --exit-status
-ssh mba@hsb1.lan "cd ~/docker && docker compose pull funkeykid && docker compose up -d funkeykid"
+ssh mba@hsb1.lan 'bash -s' <<'EOS'
+set -euo pipefail
+C="docker compose -p docker -f /etc/compose/hsb1/docker-compose.yml --project-directory /home/mba/Code/nixcfg/hosts/hsb1/docker"
+docker images --digests ghcr.io/markus-barta/funkeykid          # record the rollback anchor first
+sudo flock -w 120 /run/lock/compose-hsb1.lock $C pull funkeykid
+sudo $C --dry-run up -d --no-deps funkeykid                      # expect only funkeykid Recreate
+sudo flock -w 120 /run/lock/compose-hsb1.lock $C up -d --no-deps funkeykid
+EOS
+curl -s http://hsb1.lan:8081/api/version                         # version + version_scheme must match the release
 ```
+
+Verify that the running image digest equals `release-manifest.json`, and that the container stays `Up` for ≥ 2 min. The weekly `compose-hsb1-update.timer` (Saturdays 05:00) also pulls `:latest`, which only ever points at a release.
 
 ### Hotfix: Direct Docker CP (no CI)
 

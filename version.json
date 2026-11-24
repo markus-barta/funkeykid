@@ -1,0 +1,13 @@
+{
+  "version": "261124195854.0.0",
+  "version_scheme": "inspr-calver-3",
+  "release_channel": "stable",
+  "release_sequence": 1,
+  "migration": {
+    "legacy_scheme": "legacy",
+    "last_legacy_version": "3.2.0",
+    "first_calendar_version": "261124195854.0.0",
+    "first_release_sequence": 1,
+    "last_legacy_artifact": "ghcr.io/markus-barta/funkeykid@sha256:bb7818fa01e49fd784642c46e7aaf8d37bb5131f9a4c23657c1345bac0420875"
+  }
+}

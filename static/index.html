@@ -1446,7 +1446,7 @@
     // config fetch from the site. Web default: Pretty; SemVer is the reduced display.
     // Tooltip/accessible name carry the exact canonical version + UTC time; click
     // copies the canonical version. Legacy/unknown schemes render plain.
-    import { renderVersion } from '/static/vendor/inspr-versioning/version.js';
+    import { renderVersion, parts, utcLabel } from '/static/vendor/inspr-versioning/version.js';
     import { attachVersionInteraction } from '/static/vendor/inspr-versioning/version-interaction.js';
     import { validPresentation, calendarSchemes } from '/static/vendor/inspr-versioning/presentation.js';
     const host = document.getElementById('fk-version');
@@ -1476,12 +1476,16 @@
       const config = await res.json();
       if (!validPresentation(config)) throw new Error('Invalid version presentation');
       const brand = brandHex(getComputedStyle(host).color) || '#d69b31';
+      // Tooltip + accessible name: exact canonical version AND the UTC date/time,
+      // in every display mode (the reduced SemVer render clears the title).
+      const label = `${canonical} · ${utcLabel(parts(canonical, scheme))}`;
       let interaction;
       const render = () => {
         interaction?.dispose();
         renderVersion(host, canonical, scheme, { config, mode: display.value, brand, interactive: false });
+        host.title = label;
         interaction = attachVersionInteraction(host, canonical, {
-          label: host.getAttribute('title') || canonical,
+          label,
           text: { copy: 'Version kopieren', copied: 'Kopiert',
                   failed: 'Kopieren nicht möglich. Version markieren und manuell kopieren.' },
         });

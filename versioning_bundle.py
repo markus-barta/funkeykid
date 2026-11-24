@@ -72,10 +72,40 @@ def verify(path=BUNDLE_DIR, pin=PIN):
     return manifest
 
 
+def verify_tracked(path=BUNDLE_DIR, repo=None):
+    """Inside a git work tree: every bundle file must be tracked and equal to the
+    committed bytes (an untracked or modified payload never reaches a build).
+    Returns None outside git (the Docker build context has no .git; CI builds
+    from a clean checkout of tracked files)."""
+    import subprocess
+    repo = repo or os.path.dirname(os.path.abspath(__file__))
+    try:
+        inside = subprocess.run(["git", "-C", repo, "rev-parse", "--is-inside-work-tree"],
+                                capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return None
+    rel = os.path.relpath(path, repo)
+    tracked = set(subprocess.run(["git", "-C", repo, "ls-files", "--", rel],
+                                 capture_output=True, text=True, check=True).stdout.split())
+    present = {os.path.join(rel, name) for name in os.listdir(path)}
+    if present != tracked:
+        raise BundleError(f"bundle files not tracked by git: untracked={sorted(present - tracked)} "
+                          f"missing={sorted(tracked - present)}")
+    dirty = subprocess.run(["git", "-C", repo, "status", "--porcelain", "--", rel],
+                           capture_output=True, text=True, check=True).stdout.strip()
+    if dirty:
+        raise BundleError(f"bundle differs from the committed bytes: {dirty.splitlines()[:3]}")
+    return True
+
+
 if __name__ == "__main__":
     try:
         verify()
+        tracked = verify_tracked()
     except (BundleError, OSError, ValueError, KeyError) as e:
         print(f"Invalid INSPR versioning bundle: {e}", file=sys.stderr)
         sys.exit(1)
-    print(f"Verified INSPR versioning bundle at {PIN['revision']}")
+    print(f"Verified INSPR versioning bundle at {PIN['revision']}"
+          + (" (git-tracked, committed bytes)" if tracked else " (no git work tree: pins only)"))

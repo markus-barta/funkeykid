@@ -30,3 +30,7 @@ result-*
 
 # OS
 .DS_Store
+
+# reserve_version.py lock / temp
+version.json.lock
+version.json.tmp

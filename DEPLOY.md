@@ -121,9 +121,20 @@ git tag -a v<version> <merge-sha> -m "funkeykid <version>" && git push origin v<
 gh run watch                              # release job: tag == version.json → :<version> + :latest (same build) + GitHub release with release-manifest.json
 ```
 
-- Main pushes build and publish only `:<commit-sha>`. **`:latest` moves only with a release tag**, so hsb1 (which runs `:latest`) only ever receives released artifacts.
+- **Main pushes** build and publish only `:<commit-sha>`. **`:latest` moves only with a release**, so hsb1 (which runs `:latest`) only ever receives released artifacts.
+- **Release job order:**
+  1. Releases are serialized (one publisher at a time, never cancelled).
+  2. The tag must equal `version.json`, and `version.json` must succeed the released history: a strictly later coordinate, `release_sequence` + 1, the same channel and an unchanged anchor (`scripts/check_release_history.py`).
+  3. The immutable `:<version>` is published. An existing one is never overwritten; a rerun verifies its labels and recovers without rebuilding.
+  4. `release-manifest.json` is written to the GitHub release. It records scheme, channel, sequence, anchor, the image index and per-platform manifest digests, base image, `requirements.lock` digest, per-platform pip/dpkg provenance, bundle pins and the validation run.
+  5. **Only then** is that exact artifact promoted to `:latest`, never backward.
+- **Reservations are immutable.** `reserve_version.py` refuses to replace a reserved-but-unreleased coordinate and rejects a stale checkout (it fetches tags, locks, and writes atomically).
+- **Dependencies:**
+  - The base image is pinned by digest (`ARG BASE_IMAGE` in the Dockerfile).
+  - Python packages install from `requirements.lock`, which has hashes and is generated from `requirements.in` with `pip-compile --generate-hashes --allow-unsafe --strip-extras` on Python 3.12.
+  - Refresh either one deliberately, in a release PR.
 - **Presentation pin review** at each release prep: compare `static/vendor/inspr-versioning/manifest.json` with inspr-at/inspr, and re-vendor only if the approved display config or renderer changed (procedure in the `versioning_bundle.py` docstring).
-- **Rollback:** deploy a previous release by exact version and digest, taken from that release's `release-manifest.json`: `docker pull ghcr.io/markus-barta/funkeykid:<version>@sha256:<digest>`, re-tag it as `:latest` on hsb1, then the locked single-service `up` (see Deploy Workflows). Rollback never decrements or reuses a version. The fix is a new, later release.
+- **Rollback:** deploy a previous release by exact version and digest. For a calendar release, take them from its `release-manifest.json`. For the legacy 3.2.0, use the anchor's `last_legacy_artifact` in `version.json` (`ghcr.io/markus-barta/funkeykid@sha256:bb7818fa…`); CI's `rollback-gate` restores it by digest on every run and checks that it serves 3.2.0. Steps: `docker pull <image>@sha256:<digest>`, re-tag it as `:latest` on hsb1, then the locked single-service `up` (see Deploy Workflows). Rollback never decrements or reuses a version. The fix is a new, later release.
 
 ---
 

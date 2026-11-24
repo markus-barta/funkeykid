@@ -1,0 +1,6 @@
+# Direct runtime dependencies (FUNK-60: hashed lock in requirements.lock)
+aiohttp
+evdev
+paho-mqtt
+Pillow
+requests

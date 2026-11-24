@@ -1,4 +1,8 @@
-FROM python:3.12-slim
+# Base pinned by immutable index digest (FUNK-60 release provenance). Refresh
+# deliberately: resolve the new digest, update it here, release.
+ARG BASE_IMAGE=python:3.12-slim@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
+FROM ${BASE_IMAGE}
+ARG BASE_IMAGE
 
 WORKDIR /app
 
@@ -13,9 +17,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Python deps
-COPY pyproject.toml .
-RUN pip install --no-cache-dir evdev paho-mqtt requests aiohttp Pillow
+# Python deps: exact versions + hashes from the lock (pip-compile --generate-hashes
+# from requirements.in); any unlisted or altered distribution fails the build.
+COPY requirements.lock .
+RUN pip install --no-cache-dir --require-hashes --no-deps -r requirements.lock
+
+# Build provenance for the release-set manifest: base image, Python, the exact
+# pip and dpkg package sets of this platform's image.
+RUN python3 -c "import json,os,subprocess,sys; \
+pip=subprocess.check_output([sys.executable,'-m','pip','freeze','--all'],text=True).split(); \
+dpkg=subprocess.check_output(['dpkg-query','-W','-f=\${Package}=\${Version}\n'],text=True).split(); \
+json.dump({'base_image':os.environ.get('BASE_IMAGE'),'python':sys.version.split()[0],'pip':pip,'dpkg':dpkg}, \
+open('/app/build-provenance.json','w'),indent=1)"
 
 # App code
 COPY keyboard.py display.py server.py version.py versioning.py versioning_bundle.py version.json ./

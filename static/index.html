@@ -105,8 +105,11 @@
         <span class="text-xs"
               x-text="hw.connected ? 'Tastatur' : hw.searching ? 'Suche...' : 'Getrennt'"></span>
       </button>
-      <div class="badge badge-sm" x-show="hw.battery_level !== null"
-           :class="hw.battery_level > 20 ? 'badge-success' : hw.battery_level > 5 ? 'badge-warning' : 'badge-error'"
+      <div class="badge badge-sm badge-error" x-show="hw.connected && !hw.exclusive"
+           title="Exklusiver Zugriff fehlgeschlagen — Tastendrücke können den Host erreichen">Nicht exklusiv!</div>
+      <div class="badge badge-sm" x-show="hw.battery_level != null"
+           :class="hw.battery_low ? 'badge-error' : hw.battery_level > 50 ? 'badge-success' : 'badge-warning'"
+           :title="hw.battery_low ? 'Akku schwach (Schwelle ' + hw.battery_low_threshold + ' %)' : 'Akku'"
            x-text="hw.battery_level + '%'"></div>
       <div class="badge badge-sm" :class="hw.mqtt_connected ? 'badge-info' : 'badge-error'"
            x-text="hw.mqtt_connected ? 'MQTT' : 'MQTT ✗'"></div>
@@ -135,6 +138,9 @@
     <span x-show="!hw.last_key && !hw.searching" class="opacity-30 italic">Noch keine Taste gedrückt</span>
     <div class="ml-auto flex items-center gap-2">
       <button class="btn btn-xs btn-error btn-outline gap-1" @click="stopAll()" title="Alles stoppen"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z"/></svg>Stop</button>
+      <span x-show="hw.connected" class="font-mono"
+            :class="hw.exclusive ? 'text-success opacity-70' : 'text-error font-bold'"
+            x-text="hw.exclusive ? ('Exklusiv · ' + (hw.grabbed || 0) + ((hw.grabbed || 0) === 1 ? ' Gerät' : ' Geräte')) : 'NICHT exklusiv'"></span>
       <span class="opacity-30" x-text="hw.device_path || ''"></span>
     </div>
   </div>
@@ -153,8 +159,10 @@
       <div class="bg-base-100 rounded p-2">
         <div class="font-bold mb-1 opacity-60">Eingabegeräte</div>
         <template x-for="d in (diag.evdev_devices||[])" :key="d.path">
-          <div class="py-0.5" :class="d.name === hw.device_name ? 'text-success font-bold' : 'opacity-50'">
+          <div class="py-0.5" :class="d.grabbed ? 'text-success font-bold' : d.matched ? 'text-warning font-bold' : 'opacity-50'">
             <span x-text="d.path"></span>: <span x-text="d.name"></span>
+            <span x-show="d.grabbed" class="opacity-70"> · exklusiv</span>
+            <span x-show="d.matched && !d.grabbed" class="opacity-70"> · NICHT exklusiv</span>
           </div>
         </template>
         <div class="opacity-30 mt-1" x-text="'/dev/input: ' + (diag.dev_input_files?.length || '?') + ' Dateien'"></div>
@@ -1034,13 +1042,47 @@
             <input type="text" class="input input-bordered" x-model="settings.pixoo_ip" @change="autoSave()">
           </div>
           <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Tastatur-Gerät</span></label>
-            <input type="text" class="input input-bordered" x-model="settings.keyboard_device" @change="autoSave()">
+            <label class="label" for="kb-device">
+              <span class="label-text">Tastatur-Gerät</span>
+              <span class="label-text-alt opacity-60" x-show="hw.keyboard_env_pinned">vom Host festgelegt</span>
+            </label>
+            <template x-if="hw.keyboard_env_pinned">
+              <input id="kb-device" type="text" class="input input-bordered" :value="hw.device_name" disabled
+                     title="FUNKEYKID_KEYBOARD ist gesetzt — Änderung nur in nixcfg (Host-Isolation muss passen)">
+            </template>
+            <template x-if="!hw.keyboard_env_pinned">
+              <div class="flex gap-2">
+                <input id="kb-device" type="text" class="input input-bordered flex-1" list="kb-devices"
+                       x-model="settings.keyboard_device" @change="autoSave()" placeholder="ACME BK03">
+                <button type="button" class="btn btn-ghost" @click="loadDiagnostics()"
+                        title="Geräteliste aktualisieren" aria-label="Geräteliste aktualisieren">↻</button>
+              </div>
+            </template>
+            <datalist id="kb-devices">
+              <template x-for="n in keyboardChoices()" :key="n"><option :value="n"></option></template>
+            </datalist>
+            <div class="text-2xs opacity-50 mt-1">
+              funkeykid übernimmt das Gerät exklusiv (alle Eingabeknoten) — der Host sieht keine Tastendrücke.
+              Die Host-Isolation in nixcfg muss zum selben Gerät passen.
+            </div>
           </div>
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Debounce (s)</span></label>
             <input type="number" class="input input-bordered" x-model.number="settings.debounce_seconds" @change="autoSave()"
                    step="0.1" min="0.1" max="3">
+          </div>
+          <div class="form-control mb-3">
+            <label class="label" for="battery-low">
+              <span class="label-text">Akku-Warnung ab</span>
+              <span class="label-text-alt"
+                    x-text="(settings.battery_low_threshold ?? 20) > 0 ? (settings.battery_low_threshold ?? 20) + ' %' : 'aus'"></span>
+            </label>
+            <input id="battery-low" type="range" class="range range-primary range-sm" min="0" max="60" step="5"
+                   x-model.number="settings.battery_low_threshold" @change="autoSave()">
+            <div class="text-2xs opacity-50 mt-1">
+              0 = aus. Akkus (NiMH, 1,2 V) melden früh niedrige Werte — Schwelle bei Bedarf senken.
+              Gilt für die Warnung hier und am Pixoo.
+            </div>
           </div>
           <div class="divider text-xs opacity-40">KI-Generierung</div>
 
@@ -1412,7 +1454,9 @@ function funkeykid() {
     toast: '', toastType: 'success',
     hw: { connected:false, battery_level:null, last_key:null, last_key_at:0,
           last_key_ago:'', last_raw_key:null, device_path:null, device_name:'',
-          mqtt_connected:false, volume:100, searching:false },
+          mqtt_connected:false, volume:100, searching:false,
+          exclusive:false, grabbed:0, nodes:[], battery_low:false,
+          battery_low_threshold:20, keyboard_env_pinned:false },
     showDiag: false,
     diag: {},
     appVersion: '?', appBuild: 'dev', appRepo: '', appBuildTime: null,
@@ -1456,6 +1500,7 @@ function funkeykid() {
       await this.refresh();
       try { this.favorites = await fetch('/api/favorites').then(r => r.json()); } catch {}
       this.connectSSE();
+      this.loadDiagnostics();  // fills the keyboard picker in Settings
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
       setInterval(() => this.pollStatus(), 10000);
       // Update "ago" text every second
@@ -1621,6 +1666,8 @@ function funkeykid() {
         // Audio normalization defaults (FUNK-1)
         if (s.audio_normalize === undefined) s.audio_normalize = true;
         if (s.audio_normalize_lufs === undefined) s.audio_normalize_lufs = -16;
+        // Battery warning threshold (FUNK-58), 0 = off
+        if (s.battery_low_threshold === undefined) s.battery_low_threshold = 20;
         this.settings = s;
         this.sets = sets;
         this.activeSetId = s.active_set || Object.keys(sets)[0] || '';
@@ -1641,6 +1688,11 @@ function funkeykid() {
         this.updateAgo();
         if (this.showDiag && !this._diagLoading) this.loadDiagnostics();
       } catch {}
+    },
+
+    keyboardChoices() {
+      const names = (this.diag.evdev_devices || []).map(d => d.name).filter(Boolean);
+      return [...new Set(names)].sort();
     },
 
     async loadDiagnostics() {

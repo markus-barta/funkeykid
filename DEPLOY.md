@@ -114,7 +114,7 @@ Version is in `version.py`. Format: `MAJOR.MINOR.PATCH`
 | New feature, UI rework, new API | MINOR | 3.1.0 → 3.2.0 |
 | Breaking change, major rearchitecture | MAJOR | 3.1.0 → 4.0.0 |
 
-Current: **3.1.1** (per-track Generieren button regression fix, FUNK-54). **3.1.0** introduced ffmpeg loudnorm; **3.0.0** was the multi-track refactor.
+Current: **3.2.0** (exclusive keyboard grab, configurable keyboard via `FUNKEYKID_KEYBOARD`, battery-low threshold, keyboard-info last-will + heartbeat; FUNK-59). **3.1.1** fixed the per-track Generieren buttons (FUNK-54); **3.1.0** introduced ffmpeg loudnorm; **3.0.0** was the multi-track refactor.
 
 Before pushing:
 ```bash

@@ -139,9 +139,14 @@ def test_same_second_reservation_waits_for_next_second():
 
 
 def test_reservation_never_precedes_previous():
-    ticks = iter([dt.datetime(2026, 11, 24, 19, 0, 0, tzinfo=UTC),       # clock behind the last release
+    # a clock a few seconds behind the last release waits for the next second
+    ticks = iter([dt.datetime(2026, 11, 24, 19, 58, 52, tzinfo=UTC),
                   dt.datetime(2026, 11, 24, 19, 58, 55, tzinfo=UTC)])
     assert v.reserve(previous="261124195854.0.0", clock=lambda: next(ticks), sleep=lambda s: None) == "261124195855.0.0"
+    # a clock far behind (skew / bad record) fails instead of waiting
+    with pytest.raises(v.VersionError):
+        v.reserve(previous="261124195854.0.0",
+                  clock=lambda: dt.datetime(2026, 11, 24, 19, 0, 0, tzinfo=UTC), sleep=lambda s: None)
 
 
 # ── authoritative record + release tag pin ──────────────────────────────────
@@ -549,3 +554,39 @@ def test_repository_source_manifest_script(tmp_path):
     assert res.returncode == 0, res.stderr
     m = json.load(open(os.path.join(REPO, ".source-manifest.json")))
     assert vb.verify_source_manifest(manifest_path=os.path.join(REPO, ".source-manifest.json")) == m
+
+
+def test_interrupted_reservation_is_recoverable(tmp_path):
+    """Round-3 finding: the forge accepted reservation/stable/2 but the response
+    was lost (or the run stopped before writing version.json). A plain retry is
+    refused with a hint; --recover restores exactly the claimed coordinate."""
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"],
+                      reservations=[(1, "261124195854.0.0"), (2, "261201120000.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    env = _env_with_fake_gh(tmp_path)
+    before_tags = subprocess.run(["git", "ls-remote", "--tags", str(origin)], capture_output=True, text=True).stdout
+    retry = _run(repo, env, "reserve_version.py")
+    assert retry.returncode != 0 and "--recover" in (retry.stderr + retry.stdout)
+    rec = _run(repo, env, "reserve_version.py", "--recover")
+    assert rec.returncode == 0, rec.stderr + rec.stdout
+    new = json.loads((repo / "version.json").read_text())
+    assert new["version"] == "261201120000.0.0" and new["release_sequence"] == 2 and new["migration"] == ANCHOR
+    after_tags = subprocess.run(["git", "ls-remote", "--tags", str(origin)], capture_output=True, text=True).stdout
+    assert after_tags == before_tags                       # no new claim, no new timestamp
+    assert _run(repo, env, "check_release_history.py").returncode == 0
+
+
+def test_recover_with_nothing_to_recover(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    res = _run(repo, _env_with_fake_gh(tmp_path), "reserve_version.py", "--recover")
+    assert res.returncode != 0 and "nothing to recover" in (res.stderr + res.stdout)
+
+
+def test_reserve_fails_instead_of_waiting_for_a_future_floor():
+    now = dt.datetime(2026, 11, 24, 20, 0, 0, tzinfo=UTC)
+    with pytest.raises(v.VersionError):
+        v.reserve(previous="261201120000.0.0", clock=lambda: now, sleep=lambda s: None)
+    # a same-second / just-ahead floor still waits for the next second
+    ticks = iter([now, now + dt.timedelta(seconds=3)])
+    assert v.reserve(previous="261124200002.0.0", clock=lambda: next(ticks), sleep=lambda s: None) == "261124200003.0.0"

@@ -134,6 +134,8 @@ gh run watch                              # release job: tag == version.json →
   - It refuses to replace a reserved-but-unreleased coordinate.
   - It refuses if any earlier `v<version>` tag is not a **completed** release, meaning a published, non-draft GitHub release that carries its manifest.
   - CI checks that `version.json` is exactly the ledger's coordinate for its sequence.
+  - **Interrupted reservation** (push accepted but response lost, or stopped before `version.json` was written): rerun with `--recover`. It restores exactly the claimed coordinate and sequence, with no new timestamp and no ledger change.
+  - A previous coordinate more than 5 s in the future (clock skew) fails instead of waiting.
 - **Only the `stable` channel** is published, with one immutable migration anchor. Another channel would need its own aliases first.
 - **Interrupted releases are recovered:**
   - A rerun publishes a draft release, uploads a missing manifest, and never replaces an existing one.

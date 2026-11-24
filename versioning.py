@@ -286,14 +286,26 @@ def released_records(git_dir=None, exclude=()):
     return records
 
 
-def reserve(previous=None, clock=None, sleep=time.sleep):
+MAX_RESERVE_WAIT_SECONDS = 5
+
+
+def reserve(previous=None, clock=None, sleep=time.sleep, max_wait=MAX_RESERVE_WAIT_SECONDS):
     """Reserve a new coordinate: the current UTC second, strictly later than
-    `previous`. A same-second (or earlier) clock waits for the next second;
-    no hidden tie-breaker, no reuse."""
+    `previous`. A same-second clock waits for the next second; no hidden
+    tie-breaker, no reuse. A `previous` more than `max_wait` seconds in the
+    future (clock skew, bad record) fails instead of waiting."""
     clock = clock or (lambda: _dt.datetime.now(_dt.timezone.utc))
     floor = parse_calendar(previous) if previous else None
+    first = True
     while True:
-        candidate = format_calendar(clock().replace(microsecond=0))
+        now = clock()
+        if first and previous:
+            ahead = (calendar_datetime(previous) - now).total_seconds()
+            if ahead > max_wait:
+                raise VersionError(f"previous coordinate {previous} is {int(ahead)} s in the future: "
+                                   "check the clock or the release record")
+        first = False
+        candidate = format_calendar(now.replace(microsecond=0))
         if floor is None or parse_calendar(candidate) > floor:
             return candidate
         sleep(0.2)

@@ -51,6 +51,9 @@ def main():
                     help="create version.json for the migration from this last legacy version")
     ap.add_argument("--legacy-artifact", metavar="IMAGE@sha256:DIGEST",
                     help="immutable reference of the last legacy release artifact (with --first-from)")
+    ap.add_argument("--recover", action="store_true",
+                    help="restore your own interrupted reservation (already claimed in the ledger) into "
+                         "version.json: no new coordinate, no ledger change")
     args = ap.parse_args()
 
     subprocess.run(["git", "-C", ROOT, "fetch", "--tags", "--quiet"], check=True)
@@ -67,10 +70,12 @@ def main():
             sys.exit(str(e))
 
         if args.first_from:
-            if os.path.exists(PATH) or released or ledger:
+            if os.path.exists(PATH) or released or (ledger and not args.recover):
                 sys.exit("already migrated: the migration anchor is immutable")
+            if args.recover and 1 not in ledger:
+                sys.exit("nothing to recover: sequence 1 is not reserved in the ledger")
             versioning.parse(versioning.LEGACY, args.first_from)
-            version = versioning.reserve()
+            version = ledger[1] if args.recover else versioning.reserve()
             record = {
                 "version": version,
                 "version_scheme": versioning.CALVER3,
@@ -91,18 +96,41 @@ def main():
                          "(reservations are immutable)")
             latest = max(released, key=lambda r: versioning.parse_calendar(r["version"]))
             record = dict(latest)
-            floor = max([latest["version"], *ledger.values()], key=versioning.parse_calendar)
-            record["version"] = versioning.reserve(previous=floor)
             record["release_sequence"] = latest["release_sequence"] + 1
+            if args.recover:
+                if record["release_sequence"] not in ledger:
+                    sys.exit(f"nothing to recover: sequence {record['release_sequence']} is not reserved")
+                record["version"] = ledger[record["release_sequence"]]
+            else:
+                # fail fast before taking a timestamp if the sequence is already claimed
+                if record["release_sequence"] in ledger:
+                    sys.exit(f"sequence {record['release_sequence']} is already reserved for "
+                             f"{ledger[record['release_sequence']]}. If that was your own interrupted "
+                             "reservation (push accepted, response lost, or stopped before writing "
+                             "version.json), rerun with --recover; otherwise another preparer holds it.")
+                floor = max([latest["version"], *ledger.values()], key=versioning.parse_calendar)
+                try:
+                    record["version"] = versioning.reserve(previous=floor)
+                except versioning.VersionError as e:
+                    sys.exit(str(e))
 
         versioning.check_history(record, released)
+        if args.recover:
+            # the ledger already holds exactly this claim; just restore version.json
+            versioning.check_reservation(record, ledger)
+            write_atomic(record)
+            print(f"recovered reservation {record['version']} (#{record['release_sequence']}) into version.json "
+                  f"→ release tag {versioning.release_tag(record['version'])}")
+            return
         if record["release_sequence"] in ledger:
             sys.exit(f"sequence {record['release_sequence']} is already reserved for "
-                     f"{ledger[record['release_sequence']]} by another preparer")
+                     f"{ledger[record['release_sequence']]}. If that was your own interrupted reservation "
+                     "(push accepted, response lost, or stopped before writing version.json), rerun with "
+                     "--recover; otherwise another preparer holds it.")
         try:
             tag = release_ledger.claim_reservation(record["release_sequence"], record["version"])
         except release_ledger.LedgerError as e:
-            sys.exit(str(e))
+            sys.exit(f"{e}. If that was your own interrupted reservation, rerun with --recover.")
         write_atomic(record)
     print(f"reserved {record['version']} ({record['version_scheme']}, {record['release_channel']} "
           f"#{record['release_sequence']}; ledger {tag}) → release tag {versioning.release_tag(record['version'])}")

@@ -359,41 +359,140 @@ def test_released_records_rejects_mislabelled_tag(tmp_path):
         v.released_records(str(repo))
 
 
-def _reserve_sandbox(tmp_path, record, tag=None):
-    repo = tmp_path / "rs"
-    (repo / "scripts").mkdir(parents=True)
-    shutil.copy(os.path.join(REPO, "versioning.py"), repo / "versioning.py")
-    shutil.copy(os.path.join(REPO, "scripts", "reserve_version.py"), repo / "scripts" / "reserve_version.py")
-    (repo / "version.json").write_text(json.dumps(record, indent=2) + "\n")
-    _git(repo, "init", "-q")
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-q", "-m", "init")
-    if tag:
-        _git(repo, "tag", tag)
-    return repo
+FAKE_GH = """#!/bin/sh
+# test double for the GitHub CLI: every tag is a published release with its manifest
+case "$1 $2" in
+  "release view") printf '{"isDraft": false, "assets": [{"name": "release-manifest.json"}]}\\n' ;;
+  "release download")
+    tag="$3"; dir="."
+    while [ $# -gt 0 ]; do [ "$1" = "-D" ] && dir="$2"; shift; done
+    printf '{"version": "%s", "artifacts": [{"digest": "sha256:x"}]}\\n' "${tag#v}" > "$dir/release-manifest.json" ;;
+  *) exit 1 ;;
+esac
+"""
 
 
-def _reserve(repo):
-    return subprocess.run([sys.executable, str(repo / "scripts" / "reserve_version.py")],
-                          capture_output=True, text=True)
+def _env_with_fake_gh(tmp_path, gh=True):
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    if gh:
+        (bindir / "gh").write_text(FAKE_GH)
+        (bindir / "gh").chmod(0o755)
+    return {**os.environ, "PATH": f"{bindir}:{os.environ['PATH']}",
+            "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid",
+            "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid"}
+
+
+def _sandbox(tmp_path, record, tags=(), reservations=()):
+    """A bare 'forge' plus one clone holding the versioning code and version.json."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    seed = tmp_path / "seed"
+    (seed / "scripts").mkdir(parents=True)
+    shutil.copy(os.path.join(REPO, "versioning.py"), seed / "versioning.py")
+    for name in ("reserve_version.py", "release_ledger.py", "check_release_history.py"):
+        shutil.copy(os.path.join(REPO, "scripts", name), seed / "scripts" / name)
+    (seed / "version.json").write_text(json.dumps(record, indent=2) + "\n")
+    _git(seed, "init", "-q")
+    _git(seed, "add", ".")
+    _git(seed, "commit", "-q", "-m", "init")
+    for tag in tags:
+        _git(seed, "tag", tag)
+    for seq, version in reservations:
+        _git(seed, "tag", "-a", f"reservation/stable/{seq}", "-m",
+             json.dumps({"version": version, "release_sequence": seq}))
+    _git(seed, "remote", "add", "origin", str(origin))
+    _git(seed, "push", "-q", "origin", "HEAD:refs/heads/main", "--tags")
+    return origin
+
+
+def _clone(origin, path):
+    subprocess.run(["git", "clone", "-q", "-b", "main", str(origin), str(path)], check=True)
+    return path
+
+
+def _run(repo, env, script, *args):
+    return subprocess.run([sys.executable, str(repo / "scripts" / script), *args],
+                          capture_output=True, text=True, env=env)
 
 
 def test_reserve_refuses_to_replace_an_unreleased_reservation(tmp_path):
-    repo = _reserve_sandbox(tmp_path, _record())
+    origin = _sandbox(tmp_path, _record(), reservations=[(1, "261124195854.0.0")])
+    repo = _clone(origin, tmp_path / "a")
     before = (repo / "version.json").read_text()
-    res = _reserve(repo)
+    res = _run(repo, _env_with_fake_gh(tmp_path), "reserve_version.py")
     assert res.returncode != 0 and "not released yet" in (res.stderr + res.stdout)
     assert (repo / "version.json").read_text() == before
 
 
-def test_reserve_next_after_release(tmp_path):
-    repo = _reserve_sandbox(tmp_path, _record(), tag="v261124195854.0.0")
-    res = _reserve(repo)
-    assert res.returncode == 0, res.stderr
+def test_reserve_next_after_release_claims_the_ledger(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    res = _run(repo, _env_with_fake_gh(tmp_path), "reserve_version.py")
+    assert res.returncode == 0, res.stderr + res.stdout
     new = json.loads((repo / "version.json").read_text())
     assert new["release_sequence"] == 2 and v.parse_calendar(new["version"]) > 261124195854
-    assert new["migration"] == ANCHOR
-    assert not (repo / "version.json.tmp").exists()
+    assert new["migration"] == ANCHOR and not (repo / "version.json.tmp").exists()
+    remote = subprocess.run(["git", "ls-remote", "--tags", str(origin), "reservation/stable/2"],
+                            capture_output=True, text=True, check=True).stdout
+    assert "reservation/stable/2" in remote
+
+
+def test_two_clones_cannot_reserve_the_same_sequence(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    a, b = _clone(origin, tmp_path / "a"), _clone(origin, tmp_path / "b")
+    env = _env_with_fake_gh(tmp_path)
+    assert _run(a, env, "reserve_version.py").returncode == 0
+    res = _run(b, env, "reserve_version.py")                  # sees a's claim in the shared ledger
+    assert res.returncode != 0 and "already reserved" in (res.stderr + res.stdout)
+    # and a direct competing push of the same ledger tag is rejected by the forge
+    claim = subprocess.run([sys.executable, "-c",
+                            "import sys; sys.path.insert(0, 'scripts'); import release_ledger as l; "
+                            "l.claim_reservation(2, '270101000000.0.0')"],
+                           cwd=str(b), capture_output=True, text=True, env=env)
+    assert claim.returncode != 0 and "already reserved" in (claim.stderr + claim.stdout)
+
+
+def test_reserve_requires_completed_predecessors(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    bindir = tmp_path / "bin2"
+    bindir.mkdir()
+    (bindir / "gh").write_text('#!/bin/sh\n[ "$1 $2" = "release view" ] && '
+                               'printf \'{"isDraft": true, "assets": []}\\n\' && exit 0\nexit 1\n')
+    (bindir / "gh").chmod(0o755)
+    env = {**_env_with_fake_gh(tmp_path, gh=False), "PATH": f"{bindir}:{os.environ['PATH']}"}
+    res = _run(repo, env, "reserve_version.py")
+    assert res.returncode != 0 and "not a completed release" in (res.stderr + res.stdout)
+
+
+def test_history_check_requires_the_ledger_reservation(tmp_path):
+    origin = _sandbox(tmp_path, _record())                    # no reservation tag
+    repo = _clone(origin, tmp_path / "a")
+    res = _run(repo, _env_with_fake_gh(tmp_path), "check_release_history.py")
+    assert res.returncode != 0 and "not reserved" in (res.stderr + res.stdout)
+    origin2 = _sandbox(tmp_path / "x", _record(), reservations=[(1, "261124195854.0.0")])
+    repo2 = _clone(origin2, tmp_path / "x" / "a")
+    assert _run(repo2, _env_with_fake_gh(tmp_path), "check_release_history.py").returncode == 0
+
+
+def test_ledger_parse_and_check():
+    ledger = {1: "261124195854.0.0"}
+    assert v.check_reservation(_record(), ledger)
+    with pytest.raises(v.VersionError):
+        v.check_reservation(_record(), {})
+    with pytest.raises(v.VersionError):
+        v.check_reservation(_record(), {1: "261124195855.0.0"})
+
+
+def test_only_the_stable_channel_and_one_anchor():
+    with pytest.raises(v.VersionError):
+        v.validate_record(_record(release_channel="beta"))
+    first = _record()
+    with pytest.raises(v.VersionError):                       # a new "anchor" cannot restart the history
+        fresh = released_record("261201120000.0.0", 1)
+        fresh["migration"] = dict(ANCHOR, first_calendar_version="261201120000.0.0")
+        v.check_history(fresh, [first])
 
 
 def test_bundle_tracked_closure(tmp_path):
@@ -415,3 +514,38 @@ def test_bundle_tracked_closure(tmp_path):
     outside = tmp_path / "no-git"
     shutil.copytree(vb.BUNDLE_DIR, outside)
     assert vb.verify_tracked(str(outside), repo=str(outside)) is None   # no work tree: pins only
+
+
+def _source_manifest_for(bundle, files=None):
+    import hashlib
+    files = files if files is not None else {
+        n: hashlib.sha256((bundle / n).read_bytes()).hexdigest() for n in os.listdir(bundle)}
+    return {"schema": "funkeykid.source-manifest.v1", "commit": "0" * 40, "dirty": False,
+            "bundle_dir": "static/vendor/inspr-versioning", "bundle_files": files}
+
+
+def test_source_manifest_build_gate(tmp_path):
+    bundle = tmp_path / "bundle"
+    shutil.copytree(vb.BUNDLE_DIR, bundle)
+    mpath = tmp_path / ".source-manifest.json"
+    with pytest.raises(vb.BundleError):                          # mandatory
+        vb.verify_source_manifest(str(bundle), str(mpath))
+    mpath.write_text(json.dumps(_source_manifest_for(bundle)))
+    assert vb.verify_source_manifest(str(bundle), str(mpath))
+    untracked = _source_manifest_for(bundle)
+    del untracked["bundle_files"]["version.js"]                  # present on disk, not git-tracked
+    mpath.write_text(json.dumps(untracked))
+    with pytest.raises(vb.BundleError):
+        vb.verify_source_manifest(str(bundle), str(mpath))
+    mpath.write_text(json.dumps(_source_manifest_for(bundle)))
+    (bundle / "schemes.json").write_bytes((bundle / "schemes.json").read_bytes() + b" ")
+    with pytest.raises(vb.BundleError):                          # altered vs committed bytes
+        vb.verify_source_manifest(str(bundle), str(mpath))
+
+
+def test_repository_source_manifest_script(tmp_path):
+    res = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "source_manifest.py")],
+                         capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    m = json.load(open(os.path.join(REPO, ".source-manifest.json")))
+    assert vb.verify_source_manifest(manifest_path=os.path.join(REPO, ".source-manifest.json")) == m

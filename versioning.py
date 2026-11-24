@@ -21,6 +21,7 @@ import re
 import time
 from collections import namedtuple
 
+RELEASE_CHANNELS = ("stable",)      # the only channel this pipeline publishes (to :<version> and :latest)
 CALVER3 = "inspr-calver-3"
 CALVER2 = "inspr-calendar-v2"       # deprecated alias, same coordinate
 CALVER1 = "inspr-calendar-v1"
@@ -196,7 +197,15 @@ def check_history(current, released):
     history). Already released → must be identical; otherwise the first
     release must equal the anchor, and every later one must succeed the latest."""
     validate_record(current)
-    same_channel = [r for r in released if r["release_channel"] == current["release_channel"]]
+    for r in released:
+        # One channel, one anchor: a record may not escape sequence/anchor
+        # enforcement by declaring another channel or a fresh anchor.
+        if r["release_channel"] != current["release_channel"]:
+            raise VersionError(f"released {r['version']} is on channel {r['release_channel']}, "
+                               f"not {current['release_channel']}")
+        if r["migration"] != current["migration"]:
+            raise VersionError("the migration anchor differs from the released history (immutable)")
+    same_channel = list(released)
     by_version = {r["version"]: r for r in same_channel}
     if current["version"] in by_version:
         if by_version[current["version"]] != current:
@@ -209,6 +218,51 @@ def check_history(current, released):
         return current
     latest = max(same_channel, key=lambda r: parse_calendar(r["version"]))
     return check_successor(latest, current)
+
+
+RESERVATION_TAG = "reservation/{channel}/{sequence}"
+
+
+def reservation_ledger(git_dir=None, channel="stable"):
+    """The shared reservation ledger: annotated tags reservation/<channel>/<N>
+    whose message is {"version": ..., "release_sequence": N}. Pushing an
+    existing tag is rejected by the forge, so the first preparer wins."""
+    import subprocess
+    git_dir = git_dir or os.path.dirname(os.path.abspath(__file__))
+    prefix = f"reservation/{channel}/"
+    out = subprocess.run(["git", "-C", git_dir, "tag", "--list", prefix + "*",
+                          "--format=%(refname:short)%00%(contents)%00"],
+                         check=True, capture_output=True, text=True).stdout
+    ledger = {}
+    parts = out.split("\0")
+    for name, body in zip(parts[0::2], parts[1::2]):
+        name = name.strip()
+        if not name:
+            continue
+        seq = name[len(prefix):]
+        if not seq.isdigit():
+            raise VersionError(f"malformed reservation tag {name}")
+        try:
+            entry = json.loads(body.strip())
+        except ValueError:
+            raise VersionError(f"reservation tag {name} has no JSON record") from None
+        parse_calendar(entry.get("version"))
+        if entry.get("release_sequence") != int(seq):
+            raise VersionError(f"reservation tag {name} records sequence {entry.get('release_sequence')}")
+        ledger[int(seq)] = entry["version"]
+    return ledger
+
+
+def check_reservation(record, ledger):
+    """The record must be exactly the coordinate reserved for its sequence."""
+    reserved = ledger.get(record["release_sequence"])
+    if reserved is None:
+        raise VersionError(f"sequence {record['release_sequence']} is not reserved in the ledger "
+                           "(use scripts/reserve_version.py)")
+    if reserved != record["version"]:
+        raise VersionError(f"sequence {record['release_sequence']} is reserved for {reserved}, "
+                           f"not {record['version']}")
+    return record
 
 
 def released_records(git_dir=None, exclude=()):
@@ -264,8 +318,9 @@ def validate_record(record):
         raise VersionError(f"version_scheme must be {CALVER3} for new reservations")
     parse_calendar(record.get("version"))
     channel = record.get("release_channel")
-    if not isinstance(channel, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", channel):
-        raise VersionError("release_channel must be a short lowercase identifier")
+    if channel not in RELEASE_CHANNELS:
+        raise VersionError(f"release_channel must be one of {RELEASE_CHANNELS} (this pipeline publishes "
+                           "one channel; another needs its own aliases first)")
     sequence = _positive_int(record.get("release_sequence"), "release_sequence")
     anchor = validate_anchor(record.get("migration"))
     first = anchor["first_calendar_version"]

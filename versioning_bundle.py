@@ -100,12 +100,39 @@ def verify_tracked(path=BUNDLE_DIR, repo=None):
     return True
 
 
+SOURCE_MANIFEST = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".source-manifest.json")
+
+
+def verify_source_manifest(path=BUNDLE_DIR, manifest_path=SOURCE_MANIFEST):
+    """Build gate without .git (Docker): the bundle in the build context must be
+    exactly the git-tracked set recorded by scripts/source_manifest.py."""
+    try:
+        with open(manifest_path) as f:
+            source = json.load(f)
+    except (OSError, ValueError) as e:
+        raise BundleError(f"source manifest missing or unreadable (run scripts/source_manifest.py): {e}") from None
+    tracked = source.get("bundle_files")
+    if source.get("schema") != "funkeykid.source-manifest.v1" or not isinstance(tracked, dict) or not tracked:
+        raise BundleError("invalid source manifest")
+    present = set(os.listdir(path))
+    if present != set(tracked):
+        raise BundleError(f"bundle files differ from the git-tracked set: untracked={sorted(present - set(tracked))} "
+                          f"missing={sorted(set(tracked) - present)}")
+    for name, digest in tracked.items():
+        if _sha256(_regular_file(os.path.join(path, name))) != digest:
+            raise BundleError(f"bundle file differs from the committed bytes: {name}")
+    return source
+
+
 if __name__ == "__main__":
+    require_source = "--require-source-manifest" in sys.argv[1:]
     try:
         verify()
         tracked = verify_tracked()
+        source = verify_source_manifest() if require_source else None
     except (BundleError, OSError, ValueError, KeyError) as e:
         print(f"Invalid INSPR versioning bundle: {e}", file=sys.stderr)
         sys.exit(1)
-    print(f"Verified INSPR versioning bundle at {PIN['revision']}"
-          + (" (git-tracked, committed bytes)" if tracked else " (no git work tree: pins only)"))
+    how = ("git-tracked, committed bytes" if tracked else
+           f"source manifest {source['commit'][:12]}" if source else "pins only")
+    print(f"Verified INSPR versioning bundle at {PIN['revision']} ({how})")

@@ -75,6 +75,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - name: Source manifest (build gate)
+        run: python3 scripts/source_manifest.py
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build (amd64, no push)
@@ -110,6 +112,9 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Source manifest (build gate)
+        run: python3 scripts/source_manifest.py
 
       - name: Log in to Container registry
         uses: docker/login-action@v3
@@ -156,8 +161,13 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Source manifest (build gate)
+        run: python3 scripts/source_manifest.py
+
       - name: Release tag must equal version.json and succeed the released history
         id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 - <<'EOF'
           import os, subprocess, versioning
@@ -169,7 +179,9 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"version={r['version']}\ncommit_time={commit_time}\n")
           EOF
-          python3 scripts/check_release_history.py --exclude-tag "$GITHUB_REF_NAME"
+          # reserved in the ledger, successor of the released history, and every
+          # earlier tag a completed release (published GitHub release + manifest)
+          python3 scripts/check_release_history.py --exclude-tag "$GITHUB_REF_NAME" --require-completed
 
       - name: Log in to Container registry
         uses: docker/login-action@v3
@@ -299,6 +311,7 @@ jobs:
                                 for m in index["manifests"]],
               }],
               "presentation_bundle": {k: versioning_bundle.PIN[k] for k in ("repository", "revision", "config_sha256", "manifest_sha256")},
+              "source_manifest": json.load(open(".source-manifest.json")),
               "validation": {"workflow_run": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
                              "jobs": ["test", "rollback-gate", "release"]},
           }
@@ -314,16 +327,48 @@ jobs:
           VERSION: ${{ steps.v.outputs.version }}
           DIGEST: ${{ steps.art.outputs.digest }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release download "$GITHUB_REF_NAME" -p release-manifest.json -O existing-manifest.json
-            python3 -c "import json,os,sys; d=json.load(open('existing-manifest.json'))['artifacts'][0]['digest']; \
-          sys.exit(0 if d == os.environ['DIGEST'] else f'existing release records {d}, artifact is {os.environ[\"DIGEST\"]}')"
-            echo "release $GITHUB_REF_NAME already recorded for $DIGEST"
+          # Recovers every interrupted state of `gh release create` (draft, missing
+          # asset) without ever replacing an existing published asset.
+          if gh release view "$GITHUB_REF_NAME" --json isDraft,assets > rel.json 2>/dev/null; then
+            if python3 -c "import json,sys; a={x['name'] for x in json.load(open('rel.json'))['assets']}; sys.exit(0 if 'release-manifest.json' in a else 1)"; then
+              gh release download "$GITHUB_REF_NAME" -p release-manifest.json -O existing-manifest.json --clobber
+              python3 - <<'EOF'
+          import json, os, sys
+          d = json.load(open("existing-manifest.json"))["artifacts"][0]["digest"]
+          sys.exit(0 if d == os.environ["DIGEST"] else f"existing release records {d}, artifact is {os.environ['DIGEST']}")
+          EOF
+              echo "release $GITHUB_REF_NAME already carries the manifest for $DIGEST"
+            else
+              gh release upload "$GITHUB_REF_NAME" release-manifest.json
+              echo "uploaded the missing manifest to $GITHUB_REF_NAME"
+            fi
+            if python3 -c "import json,sys; sys.exit(0 if json.load(open('rel.json'))['isDraft'] else 1)"; then
+              gh release edit "$GITHUB_REF_NAME" --draft=false
+              echo "published the draft release $GITHUB_REF_NAME"
+            fi
           else
             gh release create "$GITHUB_REF_NAME" release-manifest.json \
               --verify-tag --title "funkeykid $VERSION" \
               --notes "INSPR-CalVer3 release $VERSION (inspr-calver-3). Image: $IMAGE:$VERSION@$DIGEST — platforms, dependencies and provenance in release-manifest.json."
           fi
+
+      - name: Release evidence is published before promotion
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIGEST: ${{ steps.art.outputs.digest }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --json isDraft,assets > rel.json
+          gh release download "$GITHUB_REF_NAME" -p release-manifest.json -O published-manifest.json --clobber
+          python3 - <<'EOF'
+          import json, os, sys
+          rel = json.load(open("rel.json"))
+          if rel["isDraft"]:
+              sys.exit("the release is still a draft: not promoting")
+          m = json.load(open("published-manifest.json"))
+          if m["artifacts"][0]["digest"] != os.environ["DIGEST"] or "v" + m["version"] != os.environ["GITHUB_REF_NAME"]:
+              sys.exit("the published manifest does not describe this artifact: not promoting")
+          print("published release evidence OK:", m["version"], os.environ["DIGEST"])
+          EOF
 
       - name: Promote the released artifact to :latest (never backward)
         env:

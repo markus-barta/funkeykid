@@ -128,7 +128,17 @@ gh run watch                              # release job: tag == version.json →
   3. The immutable `:<version>` is published. An existing one is never overwritten; a rerun verifies its labels and recovers without rebuilding.
   4. `release-manifest.json` is written to the GitHub release. It records scheme, channel, sequence, anchor, the image index and per-platform manifest digests, base image, `requirements.lock` digest, per-platform pip/dpkg provenance, bundle pins and the validation run.
   5. **Only then** is that exact artifact promoted to `:latest`, never backward.
-- **Reservations are immutable.** `reserve_version.py` refuses to replace a reserved-but-unreleased coordinate and rejects a stale checkout (it fetches tags, locks, and writes atomically).
+- **Reservations are immutable and claimed on a shared ledger.**
+  - `reserve_version.py` claims the sequence atomically on the forge as the annotated tag `reservation/stable/<N>`. A second preparer's push is rejected, so two clones can never reserve the same sequence.
+  - Only after the claim does it write `version.json`, under a lock and atomically.
+  - It refuses to replace a reserved-but-unreleased coordinate.
+  - It refuses if any earlier `v<version>` tag is not a **completed** release, meaning a published, non-draft GitHub release that carries its manifest.
+  - CI checks that `version.json` is exactly the ledger's coordinate for its sequence.
+- **Only the `stable` channel** is published, with one immutable migration anchor. Another channel would need its own aliases first.
+- **Interrupted releases are recovered:**
+  - A rerun publishes a draft release, uploads a missing manifest, and never replaces an existing one.
+  - Promotion to `:latest` happens only after the published (non-draft) release verifiably describes the artifact.
+- **Local builds go through the build gate:** `python3 scripts/source_manifest.py && docker build .`. The Docker build requires `.source-manifest.json` and fails without it. It verifies that the vendored bundle equals the git-tracked, committed bytes recorded there, because the build context itself has no `.git`.
 - **Dependencies:**
   - The base image is pinned by digest (`ARG BASE_IMAGE` in the Dockerfile).
   - Python packages install from `requirements.lock`, which has hashes and is generated from `requirements.in` with `pip-compile --generate-hashes --allow-unsafe --strip-extras` on Python 3.12.

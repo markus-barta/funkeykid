@@ -34,10 +34,14 @@ open('/app/build-provenance.json','w'),indent=1)"
 COPY keyboard.py display.py server.py version.py versioning.py versioning_bundle.py version.json ./
 COPY static/ ./static/
 COPY settings.json /app/defaults/settings.json
+# Source evidence from the build gate (python3 scripts/source_manifest.py). Mandatory:
+# without it the build fails; with it, the bundle must equal the git-tracked set.
+COPY .source-manifest.json ./
 
 # INSPR CalVer3 (FUNK-60): every build verifies the vendored presentation bundle
-# against its pins and the authoritative version record; any mismatch fails the build.
-RUN python3 versioning_bundle.py && python3 -c "import version; print('version', version.VERSION, version.VERSION_SCHEME)"
+# against its pins and the source manifest, and the authoritative version record.
+RUN python3 versioning_bundle.py --require-source-manifest \
+    && python3 -c "import version; print('version', version.VERSION, version.VERSION_SCHEME)"
 
 # Data dirs (overridden by volume mounts)
 RUN mkdir -p /data/sounds /data/images

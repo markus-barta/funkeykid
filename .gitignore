@@ -34,3 +34,6 @@ result-*
 # reserve_version.py lock / temp
 version.json.lock
 version.json.tmp
+# build gate source evidence (scripts/source_manifest.py), generated per build
+.source-manifest.json
+.source-manifest.json.tmp

@@ -9,10 +9,13 @@ Run once at release preparation and commit the result in the release PR:
 
 The coordinate is the current UTC second as YYMMDDhhmmss.0.0, strictly later
 than every released one (a same-second clock waits for the next second); the
-sequence is the latest released sequence + 1. A reservation is immutable: an
-unreleased one is never replaced. The read/reserve/write runs under an
-exclusive lock and the file is replaced atomically. The released history comes
-from the v<version> tags (fetch tags first), so a stale checkout is rejected.
+sequence is the latest released sequence + 1. A reservation is immutable:
+
+- every earlier v<version> tag must be a completed release (published GitHub
+  release with its manifest), otherwise finish that release first;
+- the sequence is claimed atomically on the forge as the annotated tag
+  reservation/stable/<N> (a competing preparer's push is rejected), and only
+  then is version.json written (exclusive local lock, atomic replace).
 """
 import argparse
 import fcntl
@@ -23,7 +26,9 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import release_ledger  # noqa: E402
 import versioning  # noqa: E402
 
 PATH = os.path.join(ROOT, "version.json")
@@ -48,16 +53,21 @@ def main():
                     help="immutable reference of the last legacy release artifact (with --first-from)")
     args = ap.parse_args()
 
-    subprocess.run(["git", "-C", ROOT, "fetch", "--tags", "--quiet"], check=False)
+    subprocess.run(["git", "-C", ROOT, "fetch", "--tags", "--quiet"], check=True)
     with open(LOCK, "w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            sys.exit("another reservation is running")
+            sys.exit("another reservation is running in this checkout")
         released = versioning.released_records(ROOT)
+        ledger = versioning.reservation_ledger(ROOT)
+        try:
+            release_ledger.require_completed(released)
+        except release_ledger.LedgerError as e:
+            sys.exit(str(e))
 
         if args.first_from:
-            if os.path.exists(PATH) or released:
+            if os.path.exists(PATH) or released or ledger:
                 sys.exit("already migrated: the migration anchor is immutable")
             versioning.parse(versioning.LEGACY, args.first_from)
             version = versioning.reserve()
@@ -81,13 +91,21 @@ def main():
                          "(reservations are immutable)")
             latest = max(released, key=lambda r: versioning.parse_calendar(r["version"]))
             record = dict(latest)
-            record["version"] = versioning.reserve(previous=latest["version"])
+            floor = max([latest["version"], *ledger.values()], key=versioning.parse_calendar)
+            record["version"] = versioning.reserve(previous=floor)
             record["release_sequence"] = latest["release_sequence"] + 1
 
         versioning.check_history(record, released)
+        if record["release_sequence"] in ledger:
+            sys.exit(f"sequence {record['release_sequence']} is already reserved for "
+                     f"{ledger[record['release_sequence']]} by another preparer")
+        try:
+            tag = release_ledger.claim_reservation(record["release_sequence"], record["version"])
+        except release_ledger.LedgerError as e:
+            sys.exit(str(e))
         write_atomic(record)
-    print(f"reserved {record['version']} ({record['version_scheme']}, "
-          f"{record['release_channel']} #{record['release_sequence']}) → tag {versioning.release_tag(record['version'])}")
+    print(f"reserved {record['version']} ({record['version_scheme']}, {record['release_channel']} "
+          f"#{record['release_sequence']}; ledger {tag}) → release tag {versioning.release_tag(record['version'])}")
 
 
 if __name__ == "__main__":

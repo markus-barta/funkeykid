@@ -43,6 +43,7 @@ IDLE_POLL_SECONDS = 0.5         # scan interval while no node is open
 SELECT_TIMEOUT_SECONDS = 0.25   # keeps stop/restart responsive
 GRAB_RETRY_SECONDS = 5.0        # retry interval for a node another process holds
 BATTERY_REFRESH_SECONDS = 60.0
+RESTART_JOIN_SECONDS = 10.0     # the grab loop never blocks long; this is a safety cap
 
 _MAC_RE = re.compile(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
 
@@ -157,14 +158,16 @@ class KeyboardListener:
         self._running = False
         self._thread = None
         self._gen = 0
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()         # guards live status + generation
+        self._lifecycle = threading.RLock()   # serializes start/stop/restart
         self._grab_failed_at = {}
         self._shift_held = {}    # path -> {shift keycodes currently down}, from the event stream
         self._bt_address = None  # never exposed via status or diagnostics
+        self._primary = None     # primary open node, read by the battery worker
         # Live status
         self.connected = False
         self.exclusive = False
-        self.nodes = []          # [{path, name, grabbed}]
+        self.nodes = []          # [{path, name, open, grabbed}] for every matched node
         self.device_path = None
         self.last_key = None
         self.last_raw_key = None
@@ -187,14 +190,21 @@ class KeyboardListener:
         self._status_callback = callback
 
     def start(self):
-        """Start listening in a background thread."""
-        with self._lock:
-            self._gen += 1
-            gen = self._gen
-            self._running = True
-        self._thread = threading.Thread(target=self._run, args=(gen,), daemon=True,
+        """Start listening in a background thread (no-op while one is running)."""
+        with self._lifecycle:
+            if self._running and self._thread is not None and self._thread.is_alive():
+                return
+            with self._lock:
+                self._gen += 1
+                gen = self._gen
+                self._running = True
+            listener = threading.Thread(target=self._run, args=(gen,), daemon=True,
                                         name=f"keyboard-{gen}")
-        self._thread.start()
+            battery = threading.Thread(target=self._battery_loop, args=(gen,), daemon=True,
+                                       name=f"keyboard-battery-{gen}")
+            self._thread = listener
+            listener.start()
+            battery.start()
 
     def stop(self):
         """Stop the listener; its thread releases every grab on the way out.
@@ -202,29 +212,42 @@ class KeyboardListener:
         Status is cleared right away: until a new thread has re-grabbed, the
         listener must never claim to be connected or exclusive.
         """
-        with self._lock:
-            self._gen += 1
-            self._running = False
-            was_connected = self.connected
-            self.connected = False
-            self.exclusive = False
-            self.nodes = []
-            self.device_path = None
-            self.battery_level = None
-        if was_connected and self._connection_callback:
-            self._connection_callback(False, self.get_status())
+        with self._lifecycle:
+            with self._lock:
+                self._gen += 1
+                self._running = False
+                was_connected = self.connected
+                self.connected = False
+                self.exclusive = False
+                self.nodes = []
+                self.device_path = None
+                self.battery_level = None
+                self._primary = None
+            if was_connected and self._connection_callback:
+                self._connection_callback(False, self.get_status())
 
     def restart(self, device_name=None):
-        """Stop, wait for the old thread to release its grabs, start again."""
-        if device_name:
-            self.device_name = device_name
-        old = self._thread
-        self.stop()
-        if old and old.is_alive():
-            old.join(timeout=2.0)
-        self._bt_address = None
-        self._shift_held = {}
-        self.start()
+        """Stop, wait until the old thread has released its grabs, start again.
+
+        The whole sequence is serialized, so concurrent restarts (reconnect
+        button + settings change) cannot interleave.
+        """
+        with self._lifecycle:
+            if device_name:
+                self.device_name = device_name
+            old = self._thread
+            self.stop()
+            if old is not None:
+                deadline = time.monotonic() + RESTART_JOIN_SECONDS
+                while old.is_alive() and time.monotonic() < deadline:
+                    old.join(timeout=0.5)
+                if old.is_alive():
+                    print("[keyboard] WARNING: previous listener still running after "
+                          f"{RESTART_JOIN_SECONDS:.0f} s; starting anyway (grabs retry)", flush=True)
+            self._bt_address = None
+            self._shift_held = {}
+            self._grab_failed_at = {}
+            self.start()
 
     def get_status(self):
         """Return current keyboard status for the web UI and MQTT."""
@@ -338,32 +361,63 @@ class KeyboardListener:
             return parse_bt_battery(self._bluetoothctl("info", self._bt_address))
         return None
 
-    def _set_status(self, gen, open_devs, grabbed, wanted, battery=None, battery_known=False):
-        """Update live status; fire callbacks only from the current thread."""
+    def _set_status(self, gen, open_devs, grabbed, wanted):
+        """Update live status; fire callbacks only from the current thread.
+
+        Exclusive means EVERY matched node is open and grabbed: a node we could
+        not open (or grab) still delivers its keys to the host.
+        """
         with self._lock:
             if gen != self._gen:
                 return
             prev = (self.connected, self.exclusive,
-                    tuple((n["path"], n["grabbed"]) for n in self.nodes), self.battery_level)
+                    tuple((n["path"], n["open"], n["grabbed"]) for n in self.nodes))
             self.connected = bool(open_devs)
-            self.exclusive = self.connected and grabbed >= set(open_devs)
-            self.nodes = [{"path": p, "name": (wanted.get(p) or {}).get("name", ""),
-                           "grabbed": p in grabbed} for p in sorted(open_devs)]
-            prim = primary_node(list(wanted.values()), self.device_name)
-            self.device_path = prim["path"] if (prim and prim["path"] in open_devs) else (
-                sorted(open_devs)[0] if open_devs else None)
-            if battery_known:
-                self.battery_level = battery
+            self.exclusive = (self.connected and bool(wanted)
+                              and all(p in open_devs and p in grabbed for p in wanted))
+            self.nodes = [{"path": p, "name": (wanted[p] or {}).get("name", ""),
+                           "open": p in open_devs, "grabbed": p in grabbed}
+                          for p in sorted(wanted)]
+            prim = primary_node([wanted[p] for p in sorted(wanted) if p in open_devs], self.device_name)
+            self._primary = prim
+            self.device_path = prim["path"] if prim else None
             if not self.connected:
                 self.battery_level = None
             now = (self.connected, self.exclusive,
-                   tuple((n["path"], n["grabbed"]) for n in self.nodes), self.battery_level)
+                   tuple((n["path"], n["open"], n["grabbed"]) for n in self.nodes))
         if now == prev:
             return
         if now[0] != prev[0]:
             if self._connection_callback:
                 self._connection_callback(self.connected, self.get_status())
         elif self._status_callback:
+            self._status_callback(self.get_status())
+
+    def _battery_loop(self, gen):
+        """Battery reads can block (bluetoothctl, up to 5 s), so they run apart
+        from the grab loop and never delay grabbing or a restart."""
+        last = None
+        while gen == self._gen:
+            prim = self._primary
+            if self.connected and prim is not None:
+                if last is None or time.monotonic() - last >= BATTERY_REFRESH_SECONDS:
+                    last = time.monotonic()
+                    try:
+                        level = self._read_battery(prim)
+                    except Exception as e:
+                        print(f"[keyboard] Battery read failed: {e}", flush=True)
+                        level = None
+                    self._set_battery(gen, level)
+            else:
+                last = None
+            time.sleep(0.5)
+
+    def _set_battery(self, gen, level):
+        with self._lock:
+            if gen != self._gen or not self.connected or level == self.battery_level:
+                return
+            self.battery_level = level
+        if self._status_callback:
             self._status_callback(self.get_status())
 
     def _sync_nodes(self, open_devs, grabbed):
@@ -405,7 +459,7 @@ class KeyboardListener:
         uniq = (prim or {}).get("uniq", "")
         if uniq and _MAC_RE.fullmatch(uniq):
             self._bt_address = uniq
-        return wanted, prim
+        return wanted
 
     @staticmethod
     def _close(dev, was_grabbed):
@@ -471,9 +525,8 @@ class KeyboardListener:
         """Main loop: keep every node of the keyboard open and grabbed."""
         open_devs = {}   # path -> evdev.InputDevice
         grabbed = set()
-        wanted, prim = {}, None
+        wanted = {}
         last_scan = 0.0
-        last_battery = None
         waiting_logged = False
         try:
             while gen == self._gen:
@@ -481,15 +534,8 @@ class KeyboardListener:
                 if not open_devs or now - last_scan >= RESCAN_SECONDS:
                     last_scan = now
                     had = bool(open_devs)
-                    wanted, prim = self._sync_nodes(open_devs, grabbed)
-                    battery, known = None, False
-                    if open_devs and (not had or last_battery is None
-                                      or now - last_battery >= BATTERY_REFRESH_SECONDS):
-                        battery, known = self._read_battery(prim), True
-                        last_battery = now
-                    if not open_devs:
-                        last_battery = None
-                    self._set_status(gen, open_devs, grabbed, wanted, battery, known)
+                    wanted = self._sync_nodes(open_devs, grabbed)
+                    self._set_status(gen, open_devs, grabbed, wanted)
                     if not open_devs:
                         if not waiting_logged:
                             print(f"[keyboard] Waiting for '{self.device_name}'...", flush=True)
@@ -498,8 +544,8 @@ class KeyboardListener:
                         continue
                     if not had:
                         waiting_logged = False
-                        print(f"[keyboard] Opened '{self.device_name}': {len(open_devs)} node(s), "
-                              f"exclusive={self.exclusive}, battery={self.battery_level}", flush=True)
+                        print(f"[keyboard] Opened '{self.device_name}': {len(open_devs)}/{len(wanted)} "
+                              f"node(s), exclusive={self.exclusive}", flush=True)
 
                 try:
                     ready = select.select(list(open_devs.values()), [], [], SELECT_TIMEOUT_SECONDS)[0]

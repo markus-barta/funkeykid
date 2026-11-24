@@ -76,7 +76,19 @@ class Display:
         self.settings = settings
         self._mqtt_client = None
         self._mqtt_connected = False
+        self._conn_identity = None  # (host, port, user, password, prefix) of the live connection
+        self._prefix = None         # topic prefix frozen per connection (matches the last-will)
         self.on_connected = None  # called (from the MQTT thread) after every (re)connect
+
+    def _mqtt_identity(self):
+        mqtt_cfg = self.settings.get("mqtt", {}) or {}
+        return (
+            mqtt_cfg.get("host") or os.environ.get("MOSQITTO_HOST_HSB1", "localhost"),
+            mqtt_cfg.get("port", 1883),
+            mqtt_cfg.get("user") or os.environ.get("MOSQITTO_USER_HSB1", "smarthome"),
+            mqtt_cfg.get("password") or os.environ.get("MOSQITTO_PASS_HSB1"),
+            mqtt_cfg.get("topic_prefix", "home/hsb1/funkeykid"),
+        )
 
     def connect(self):
         """Connect MQTT if available."""
@@ -84,13 +96,14 @@ class Display:
             print("[display] paho-mqtt not installed, MQTT disabled", flush=True)
             return
 
-        mqtt_cfg = self.settings.get("mqtt", {})
-        host = mqtt_cfg.get("host") or os.environ.get("MOSQITTO_HOST_HSB1", "localhost")
-        port = mqtt_cfg.get("port", 1883)
-        user = mqtt_cfg.get("user") or os.environ.get("MOSQITTO_USER_HSB1", "smarthome")
-        password = mqtt_cfg.get("password") or os.environ.get("MOSQITTO_PASS_HSB1")
+        identity = self._mqtt_identity()
+        host, port, user, password, prefix = identity
+        # Everything published on this connection uses the prefix its last-will
+        # was registered with; a settings change reconnects (reload_settings).
+        self._conn_identity = identity
+        self._prefix = prefix
 
-        print(f"[display] MQTT config: host={host}, port={port}, user={user}, pass={'***' if password else 'EMPTY!'}", flush=True)
+        print(f"[display] MQTT config: host={host}, port={port}, user={user}, pass={'***' if password else 'EMPTY!'}, prefix={prefix}", flush=True)
         try:
             self._mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
             if password:
@@ -127,9 +140,18 @@ class Display:
 
     def reload_settings(self, settings):
         self.settings = settings
+        # The last-will is fixed per connection. If broker or prefix changed,
+        # retire the old retained status (offline on the old topic) and
+        # reconnect, which registers a last-will on the new topic.
+        if self._mqtt_client is not None and self._mqtt_identity() != self._conn_identity:
+            print("[display] MQTT settings changed — reconnecting with a new last-will", flush=True)
+            self.disconnect()
+            self._mqtt_client = None
+            self._mqtt_connected = False
+            self.connect()
 
     def _topic(self, suffix):
-        prefix = self.settings.get("mqtt", {}).get("topic_prefix", "home/hsb1/funkeykid")
+        prefix = self._prefix or self._mqtt_identity()[4]
         return f"{prefix}/{suffix}"
 
     def publish_letter(self, letter, word, image=None):

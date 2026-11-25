@@ -1901,9 +1901,14 @@ function funkeykid() {
     },
     async _loadKeymap() {
       const km = await fetch('/api/keymap').then(r => r.json());
-      // the active profile changed elsewhere: reload drawing and map together
-      if (this.kbProfile && km.profile !== this.kbProfile.id) return this._reload();
+      // profile, language or "Standard" changed elsewhere: reload drawing, list and map together
+      if (this.kbProfile && !this._kmMatches(km)) return this._reload();
       this.km = km;
+    },
+    // a key-map answer belongs to the drawing and profile list on screen (FUNK-64 review)
+    _kmMatches(km) {
+      return !!km && km.profile === this.kbProfile?.id && km.language === this.kb.language
+        && km.default === this.kb.default && km.selected === this.kb.selected;
     },
     // a key-map save or reset, bound to the profile the editor showed (409 = switched meanwhile)
     async _keymapWrite(id, profile, opts) {
@@ -1915,7 +1920,8 @@ function funkeykid() {
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { this.showToast('Nicht gespeichert: ' + (data.error || res.status), 'error'); return null; }
-      if (data.profile === this.kbProfile?.id) this.km = data;
+      if (this._kmMatches(data)) this.km = data;
+      else await this._reload();             // switched elsewhere meanwhile: load everything together
       return data;
     },
     async kmSelect(id) {
@@ -1994,7 +2000,9 @@ function funkeykid() {
         for (let attempt = 0; attempt < 3; attempt++) {
           const [km, kb] = await Promise.all([fetch('/api/keymap').then(r => r.json()), fetch('/api/keyboards').then(r => r.json())]);
           const p = await fetch('/api/keyboards/' + encodeURIComponent(km.profile)).then(r => r.json());
-          if (!p || !p.keys || p.id !== km.profile || kb.active !== km.profile) continue;   // switched between the requests
+          // the three answers must describe the same moment: else something switched between them
+          if (!p || !p.keys || p.id !== km.profile || kb.active !== km.profile || kb.language !== km.language
+              || kb.default !== km.default || kb.selected !== km.selected) continue;
           this.km = km; this.kb = kb; this.kbProfile = p;
           this.kbSelSlot = null; this.kmSel = null;   // nothing selected on the old drawing survives
           return;

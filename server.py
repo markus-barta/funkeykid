@@ -1536,6 +1536,9 @@ def _keymap_payload():
         "seen_unassigned": [{"id": kid, "at": at} for kid, at in seen if kid not in km],
         "seen_codes": list(keyboard_seen),
         "defaults": defaults,
+        # the state these defaults belong to: the UI installs a map only next to the same
+        # language and "Standard" in its profile list (FUNK-64 review)
+        "language": _language(), "default": _default_profile(), "selected": _selected_shown(),
     }
 
 
@@ -1787,9 +1790,9 @@ async def api_put_language(request):
         lang = body.get("language", _language())
         family = body.get("family", profiles.family_of(settings))
         numpad = body.get("numpad", profiles.numpad_of(settings))
-        if lang not in profiles.LANGUAGES:
+        if not isinstance(lang, str) or lang not in profiles.LANGUAGES:
             raise ValueError(f"language must be one of {', '.join(profiles.LANGUAGES)}")
-        if family not in profiles.FAMILIES:
+        if not isinstance(family, str) or family not in profiles.FAMILIES:
             raise ValueError(f"family must be one of {', '.join(profiles.FAMILIES)}")
         if not isinstance(numpad, bool):
             raise ValueError("numpad must be true or false")

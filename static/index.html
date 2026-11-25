@@ -1086,7 +1086,7 @@
                 <div class="flex flex-col gap-1 min-w-0">
                   <h3 class="text-lg font-bold leading-tight" x-text="kbSelKey()?.name || ('Taste ' + (kmSel || ''))"></h3>
                   <div class="text-sm">Sendet <code class="kbd kbd-sm" x-text="kbSelCode()"></code></div>
-                  <span class="badge badge-sm self-start" x-show="kbSelBadge()"
+                  <span class="badge badge-sm self-start py-1 leading-tight text-left" style="height: auto; white-space: normal" x-show="kbSelBadge()"
                         :class="(km.seen_codes || []).includes(kbSelKey()?.code) ? 'badge-success' : 'badge-warning'" x-text="kbSelBadge()"></span>
                   <span class="badge badge-sm badge-ghost self-start" x-show="kmSel && !kbSelSlot">nicht im Bild</span>
                 </div>

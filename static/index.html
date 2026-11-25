@@ -23,6 +23,7 @@
     .kb-wrap { background: #0e1114; border: 1px solid oklch(var(--b3)); border-radius: 1rem; padding: 0.9rem; overflow-x: auto; }
     .kb-scale { container-type: inline-size; min-width: 560px; }
     .kb { position: relative; width: 100%; --u: calc(100cqw / var(--kb-w)); height: calc(var(--u) * var(--kb-h)); }
+    .kb.is-loading { opacity: 0.55; pointer-events: none; }
     .kb-key { position: absolute; box-sizing: border-box; padding: 0; margin: 0; cursor: pointer;
       display: flex; align-items: center; justify-content: center; line-height: 1;
       border-radius: calc(var(--u) * 0.14); background: #2a323c; border: 1px solid #3a4452;
@@ -1019,7 +1020,7 @@
           <div class="flex flex-col gap-3 min-w-0" style="flex: 999 1 640px">
             <div class="kb-wrap">
               <div class="kb-scale">
-                <div class="kb" :style="kbStyle()" role="group"
+                <div class="kb" :class="kbLoading && 'is-loading'" :aria-busy="kbLoading ? 'true' : 'false'" :style="kbStyle()" role="group"
                      :aria-label="'Tastatur ' + (kbProfile?.name || '') + ': Taste antippen zum Auswählen'">
                   <template x-for="k in (kbProfile?.keys || [])" :key="k.slot">
                     <button type="button" class="kb-key" :class="kbKeyClass(k)" :style="kbKeyPos(k)"
@@ -1842,7 +1843,7 @@ function funkeykid() {
 
     // Key map (FUNK-62)
     km: { profile: '', map: {}, describe: {}, functions: {}, letters: [], seen_unassigned: [] },
-    kmLearn: false, kmLast: null, kmSel: null, kmSelDefault: '',
+    kmLearn: false, kmLast: null, kmSel: null, kmSelProfile: '', kmSelDefault: '',
     kmEdit: { action: 'default', letter: 'A', func: 'volup', file: '', image: '', word: '', volume: 100 },
     kmOptions: [
       { id: 'default', label: 'Standard' }, { id: 'letter', label: 'Buchstabe / Ziffer' },
@@ -1869,6 +1870,7 @@ function funkeykid() {
     },
     async kmSelect(id) {
       this.kmSel = id;
+      this.kmSelProfile = this.km.profile;
       const a = (this.km.map || {})[id];
       this.kmEdit = Object.assign(
         { action: 'default', letter: 'A', func: 'volup', file: (this.sounds || [])[0] || '', image: (this.images || [])[0] || '', word: '', volume: 100 },
@@ -1891,7 +1893,7 @@ function funkeykid() {
     },
     async kmSave() {
       const id = this.kmSel;
-      if (!id) return;
+      if (!id || !this.kmSelValid()) return;
       const e = this.kmEdit;
       let res;
       const seq = this._kbSeq;
@@ -1909,22 +1911,39 @@ function funkeykid() {
       if (await this.kmSwitched(res)) return;
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { this.showToast('Nicht gespeichert: ' + (data.error || res.status), 'error'); return; }
-      if (seq === this._kbSeq) this.km = data;
+      this.kmApply(data, seq);
       this.showToast('Taste ' + id + ': ' + (e.action === 'default' ? 'wieder Standard' : (data.describe || {})[id]));
     },
     async kmReset(id) {
       const seq = this._kbSeq;
       const res = await fetch(this.kmUrl(id), { method: 'DELETE' });
       if (await this.kmSwitched(res)) return;
-      if (res.ok && seq === this._kbSeq) { this.km = await res.json(); if (this.kmSel === id) this.kmSelect(id); }
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (data && this.kmApply(data, seq) && this.kmSel === id) this.kmSelect(id);
+    },
+    // a key-map response is used only if no profile reload started since the request
+    // and it belongs to the drawing on screen (checked after the body arrived)
+    kmApply(data, seq) {
+      if (seq !== this._kbSeq || !data || data.profile !== this.kbProfile?.id) return false;
+      this.km = data;
+      return true;
+    },
+    // the selected key belongs to the profile on screen (not to one shown before a switch)
+    kmSelValid() {
+      if (this.kmSel && this.kmSelProfile === this.km.profile && this.km.profile === this.kbProfile?.id) return true;
+      this.showToast('Die Tastatur wurde umgeschaltet: bitte die Taste neu auswählen', 'error');
+      this.kmSel = null; this.kbSelSlot = null;
+      if (this.km.profile !== this.kbProfile?.id) this.kbReload();   // map and drawing disagree: load both again
+      return false;
     },
     async kmTry() {
-      if (this.kmSel) await fetch('/api/press/' + encodeURIComponent(this.kmSel), { method: 'POST' });
+      if (this.kmSel && this.kmSelValid()) await fetch('/api/press/' + encodeURIComponent(this.kmSel), { method: 'POST' });
     },
 
     // Keyboard profiles + drawn keyboard (FUNK-63)
     kb: { active: '', icons: [], profiles: [] },
-    kbProfile: null, kbManage: false, kbSelSlot: null, kbFlashCodes: [], _kbFlashT: null, _kbSeq: 0,
+    kbProfile: null, kbManage: false, kbSelSlot: null, kbFlashCodes: [], _kbFlashT: null, _kbSeq: 0, kbLoading: false,
     kbKeyEdit: { label: '', shift: '', altgr: '', fn: '', name: '', code: '', icon: '', w: 1 },
     kbIconNames: { cut: 'Schere', copy: 'Kopieren', paste: 'Einfügen', globe: 'Weltkugel', search: 'Lupe',
                    prev: 'Zurück', play: 'Abspielen', next: 'Vor', mute: 'Ton aus', vold: 'Leiser', volu: 'Lauter', screen: 'Bildschirm' },
@@ -1933,17 +1952,23 @@ function funkeykid() {
     async kbReload() {
       const seq = ++this._kbSeq;
       this.kbSelSlot = null; this.kmSel = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
+      this.kbLoading = true;                 // the old drawing takes no clicks while the new one loads
+      try {
+        for (let attempt = 0; attempt < 3; attempt++) {
           const [km, kb] = await Promise.all([fetch('/api/keymap').then(r => r.json()), fetch('/api/keyboards').then(r => r.json())]);
           const p = await fetch('/api/keyboards/' + encodeURIComponent(km.profile)).then(r => r.json());
           if (seq !== this._kbSeq) return;
           if (!p || !p.keys || p.id !== km.profile || kb.active !== km.profile) continue;   // switched between the requests
           this.km = km; this.kb = kb; this.kbProfile = p;
+          this.kbSelSlot = null; this.kmSel = null;   // nothing selected on the old drawing survives
           return;
-        } catch { return; }
+        }
+      } catch {
+      } finally {
+        if (seq === this._kbSeq) this.kbLoading = false;
       }
     },
+    kbApplyList(data) { if (data && data.active === this.km.profile) this.kb = data; },
     async kbRefreshList() {
       try { const kb = await fetch('/api/keyboards').then(r => r.json()); if (kb.active === this.km.profile) this.kb = kb; } catch {}
     },
@@ -2027,11 +2052,13 @@ function funkeykid() {
                          name: k.name || '', code: k.code || '', icon: k.icon || '', w: k.w };
     },
     kbPick(k) {
+      if (this.kbLoading) return;
       this.kbSelSlot = k.slot;
       this.kbKeyEditFrom(k);
       if (k.code && !this.kbIsShift(k.code)) this.kmSelect(k.code); else this.kmSel = null;
     },
     kbSelectId(id) {
+      if (this.kbLoading) return;
       const k = this.kbFindKey(id);
       this.kbSelSlot = k ? k.slot : null;
       if (k) this.kbKeyEditFrom(k);
@@ -2087,7 +2114,7 @@ function funkeykid() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { this.showToast('Nicht dupliziert: ' + (data.error || res.status), 'error'); return; }
-      this.kb = data;
+      this.kbApplyList(data);
       if (p.id === this.km.profile) {
         // same keys, same key map: switching changes nothing for the kids, and the copy is editable
         await this.kbActivate(data.id);
@@ -2103,7 +2130,7 @@ function funkeykid() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { this.showToast('Nicht umbenannt: ' + (data.error || res.status), 'error'); return; }
-      this.kb = data;
+      this.kbApplyList(data);
       if (p.id === this.km.profile) await this.kbReload();
     },
     async kbDelete(p) {
@@ -2112,7 +2139,7 @@ function funkeykid() {
       const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { this.showToast('Nicht gelöscht: ' + (data.error || res.status), 'error'); return; }
-      this.kb = data;
+      this.kbApplyList(data);
       if (wasActive) await this.kbReload();
       this.showToast('»' + p.name + '« gelöscht' + (wasActive ? ': wieder ' + (this.kbProfile?.name || 'Standard') + ' aktiv' : ''));
     },

@@ -709,20 +709,29 @@ def _play_number(digit):
         display.publish_letter(digit, word, image)
 
 
-_customs_cache = None   # validated custom profiles; every write goes through _store_custom / delete
+# Validated custom profiles, rebuilt on demand. Key presses read it from the listener
+# thread, so rebuilding and every write of settings["keyboard_profiles"] hold the same
+# lock: a rebuild never sees a half-written dict, and a write always clears whatever a
+# concurrent rebuild produced (FUNK-63 review).
+_customs_lock = threading.Lock()
+_customs_cache = None
 
 
 def _custom_profiles():
     """Valid custom keyboard profiles from settings (FUNK-63): {id: profile}. Read-only: copy to change."""
     global _customs_cache
-    if _customs_cache is None:
-        _customs_cache = profiles.customs(settings.get("keyboard_profiles"))
-    return _customs_cache
+    with _customs_lock:
+        if _customs_cache is None:
+            _customs_cache = profiles.customs(settings.get("keyboard_profiles"))
+        return _customs_cache
 
 
-def _invalidate_customs():
+def _write_customs(change):
+    """Apply change(stored_profiles_dict) under the lock and drop the cache."""
     global _customs_cache
-    _customs_cache = None
+    with _customs_lock:
+        change(settings.setdefault("keyboard_profiles", {}))
+        _customs_cache = None
 
 
 def _keymap_profile():
@@ -1605,8 +1614,7 @@ def _custom_or_error(pid):
 
 
 def _store_custom(prof):
-    settings.setdefault("keyboard_profiles", {})[prof["id"]] = prof
-    _invalidate_customs()
+    _write_customs(lambda stored: stored.__setitem__(prof["id"], prof))
     save_settings()
 
 
@@ -1706,8 +1714,7 @@ async def api_delete_keyboard(request):
     if err:
         return err
     was_active = pid == _keymap_profile()
-    settings.get("keyboard_profiles", {}).pop(pid, None)
-    _invalidate_customs()
+    _write_customs(lambda stored: stored.pop(pid, None))
     (settings.get("keymaps") or {}).pop(pid, None)
     if was_active:
         settings["keyboard_profile"] = keymap.DEFAULT_PROFILE

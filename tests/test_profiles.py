@@ -23,8 +23,10 @@ def _key(profile, slot):
 
 # ── built-in profiles ────────────────────────────────────────────────────────
 
-def test_builtins_are_the_three_approved_keyboards_and_default_is_bk03():
-    assert list(pf.BUILTIN) == ["acme-bk03", "pc-de", "mac-de"]
+def test_builtins_are_the_bk03_and_generic_pc_mac_profiles_and_default_is_bk03():
+    assert list(pf.BUILTIN) == ["acme-bk03",
+                                "pc-de", "pc-de-num", "mac-de", "mac-de-num",
+                                "pc-us", "pc-us-num", "mac-us", "mac-us-num"]
     assert pf.DEFAULT_PROFILE == km.DEFAULT_PROFILE == "acme-bk03"
 
 
@@ -39,21 +41,43 @@ def test_builtin_profiles_validate_as_custom_copies(pid):
         assert key["name"]
 
 
-@pytest.mark.parametrize("pid,width", [("acme-bk03", 14.4), ("pc-de", 18.5), ("mac-de", 15.0)])
-def test_rows_line_up(pid, width):
-    """Every row of the main block ends at the same edge: no key is missing or too wide."""
-    geo = pf.layout(pf.BUILTIN[pid])
-    assert geo["width"] == pytest.approx(width, abs=0.01)
-    for i, row in enumerate(pf.BUILTIN[pid]["rows"]):
-        edge = sum(item.get("gap", item.get("w", 1.0)) for item in row["keys"])
-        if pid == "pc-de" and i == 4:       # PC: right shift, then the ↑ of the arrow cluster
-            edge = sum(item.get("gap", item.get("w", 1.0)) for item in row["keys"][:-2])
-            width_ = 15.0
-        elif pid == "pc-de" and i in (3,):  # PC: the home row has no nav cluster
-            width_ = 15.0
-        else:
-            width_ = width
-        assert edge == pytest.approx(width_, abs=0.01), (pid, i)
+@pytest.mark.parametrize("pid,width", [("acme-bk03", 14.4), ("pc-de", 18.5), ("mac-de", 15.0), ("pc-us", 18.5),
+                                       ("mac-us", 15.0), ("pc-de-num", 23.0), ("mac-de-num", 23.0),
+                                       ("pc-us-num", 23.0), ("mac-us-num", 23.0)])
+def test_profile_widths(pid, width):
+    assert pf.layout(pf.BUILTIN[pid])["width"] == pytest.approx(width, abs=0.01)
+
+
+def test_bk03_rows_line_up():
+    for i, row in enumerate(pf.BUILTIN["acme-bk03"]["rows"]):
+        assert pf._row_width(row["keys"]) == pytest.approx(14.4, abs=0.01), i
+
+
+@pytest.mark.parametrize("lang", ["de", "us"])
+@pytest.mark.parametrize("mac", [False, True])
+def test_main_block_rows_are_15_units(lang, mac):
+    """No letter row misses a key or has one too wide, in any language."""
+    for i, row in enumerate(pf._main_block(lang, mac)):
+        assert pf._row_width(row) == pytest.approx(15.0), (lang, mac, i)
+
+
+@pytest.mark.parametrize("pid", ["pc-de-num", "pc-us-num", "mac-de-num", "mac-us-num"])
+def test_number_pad_is_a_4x5_block_right_of_the_keyboard(pid):
+    keys = {k["slot"]: k for k in pf.layout(pf.BUILTIN[pid])["keys"]}
+    pad = [k for k in keys.values() if k["code"].startswith("KP") or k["code"] == "NUMLOCK"]
+    assert {k["code"] for k in pad} >= {f"KP{d}" for d in "0123456789"} | {"KPENTER", "KPPLUS", "KPMINUS", "KPDOT", "NUMLOCK"}
+    assert min(k["x"] for k in pad) == pytest.approx(19.0) and max(k["x"] + k["w"] for k in pad) == pytest.approx(23.0)
+    assert keys["kp0"]["w"] == 2 and keys["kpenter"]["h"] == 2
+    assert keys["kp7"]["y"] == keys["kp8"]["y"] == keys["kp9"]["y"] < keys["kp4"]["y"] < keys["kp1"]["y"] < keys["kp0"]["y"]
+    if pid.startswith("mac"):
+        assert "kpequal" in keys and keys["clear"]["code"] == "NUMLOCK" and keys["kpplus"]["h"] == 1
+    else:
+        assert keys["kpplus"]["h"] == 2
+    # nothing overlaps
+    boxes = [(k["x"], k["y"], k["x"] + k["w"], k["y"] + k["h"]) for k in keys.values()]
+    for i, a in enumerate(boxes):
+        for b in boxes[i + 1:]:
+            assert a[2] <= b[0] + 1e-3 or b[2] <= a[0] + 1e-3 or a[3] <= b[1] + 1e-3 or b[3] <= a[1] + 1e-3, (pid, a, b)
 
 
 def test_bk03_shows_every_key_from_the_photo():
@@ -100,6 +124,14 @@ def test_layout_and_codes():
     assert by["up"]["x"] == pytest.approx(16.5)
     codes = pf.codes(pf.BUILTIN["pc-de"])
     assert codes.count("ENTER") == 1 and "" not in codes    # ISO enter is drawn as two parts
+
+
+def test_no_builtin_has_overlapping_keys():
+    for pid, prof in pf.BUILTIN.items():
+        boxes = [(k["x"], k["y"], k["x"] + k["w"], k["y"] + k["h"]) for k in pf.layout(prof)["keys"]]
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                assert a[2] <= b[0] + 1e-3 or b[2] <= a[0] + 1e-3 or a[3] <= b[1] + 1e-3 or b[3] <= a[1] + 1e-3, (pid, a, b)
 
 
 def test_render_and_summary():
@@ -218,7 +250,7 @@ def test_customs_skips_invalid_stored_profiles_and_mismatched_ids():
     assert pf.get("custom-m", out)["name"] == "M"
     assert pf.get("acme-bk03", out) is pf.BUILTIN["acme-bk03"]
     assert pf.get("custom-gone", out) is None
-    assert [p["id"] for p in pf.all_profiles(out)] == ["acme-bk03", "pc-de", "mac-de", "custom-m"]
+    assert [p["id"] for p in pf.all_profiles(out)] == list(pf.BUILTIN) + ["custom-m"]
 
 
 def test_validate_strips_unknown_fields():

@@ -25,16 +25,26 @@ except ImportError:  # keeps the pure helpers importable on non-Linux hosts (tes
     evdev = None
 
 
-# Keyboard layouts: scancode → letter translation
+# Number pad (FUNK-64): its digits play numbers like the digit row, its Enter replays.
+# + and − on the pad (KPPLUS, KPMINUS) already change the volume.
+KEYPAD = {f"KP{d}": d for d in "0123456789"}
+KEYPAD["KPENTER"] = "ENTER"
+
+# Keyboard languages: code the keyboard sends → the key funkeykid treats it as
 LAYOUTS = {
-    "us": {},  # Identity — evdev KEY_A = A
+    "us": dict(KEYPAD),  # otherwise identity: KEY_A = A
     "de": {
+        **KEYPAD,
         # QWERTZ: physical Z (next to T) sends KEY_Y, physical Y sends KEY_Z
         "Y": "Z",
         "Z": "Y",
         # Special keys differ on German layout
         "RIGHTBRACE": "EQUAL",   # + key position
         "SLASH": "MINUS",        # - key position
+        # Umlauts are letters (FUNK-64); without set content they behave as before
+        "LEFTBRACE": "Ü",
+        "SEMICOLON": "Ö",
+        "APOSTROPHE": "Ä",
     },
 }
 

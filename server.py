@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import random
+import re
 import threading
 import time
 import uuid
@@ -734,9 +735,26 @@ def _write_customs(change):
         _customs_cache = None
 
 
+def _language():
+    """Keyboard language (FUNK-64): settings["language"], migrated from keyboard_layout."""
+    return profiles.language_of(settings)
+
+
+def _default_profile():
+    """What "Standard" means: the generic profile of language × PC/Mac × number pad."""
+    return profiles.default_id(_language(), profiles.family_of(settings), profiles.numpad_of(settings))
+
+
+def _selected_profile():
+    """The profile choice as stored: a profile id or "default" (FUNK-64)."""
+    return settings.get("keyboard_profile") or keymap.DEFAULT_PROFILE
+
+
 def _keymap_profile():
-    """The active keyboard profile id; an unknown or deleted one falls back to the default."""
-    pid = settings.get("keyboard_profile") or keymap.DEFAULT_PROFILE
+    """The active keyboard profile id; an unknown or deleted one falls back to the BK03."""
+    pid = _selected_profile()
+    if pid == profiles.DEFAULT_ALIAS:
+        pid = _default_profile()
     return pid if profiles.get(pid, _custom_profiles()) else keymap.DEFAULT_PROFILE
 
 
@@ -1094,7 +1112,8 @@ async def api_put_settings(request):
     # active_set changes only via /api/sets/{id}/activate or the key map: a stale
     # browser copy must never switch the set back (FUNK-62 review).
     # audio_normalize* were missing here since FUNK-1, so the UI toggle never persisted.
-    for k in ("keyboard_layout", "keyboard_device", "volume", "random_sounds_enabled",
+    # keyboard_layout follows the language (PUT /api/language, FUNK-64): never written here
+    for k in ("keyboard_device", "volume", "random_sounds_enabled",
               "display_mode", "pixoo_ip", "debounce_seconds", "mqtt", "ai_prompts",
               "numbers_tts", "battery_low_threshold", "audio_normalize", "audio_normalize_lufs"):
         if k in data:
@@ -1470,11 +1489,17 @@ async def api_test_key(request):
 
 
 def _raw_for_key(key_name):
-    """The code a physical key sends for a (layout-translated) key name: inverse layout."""
+    """The code a physical key sends for a (layout-translated) key name: inverse layout.
+
+    A key that sends its own name (A, 1, ENTER …) keeps it, and the main block
+    wins over the number pad: the test key "1" is the digit-row 1, not KP1.
+    """
     from keyboard import LAYOUTS
-    layout = LAYOUTS.get(settings.get("keyboard_layout", "de"), {})
+    layout = LAYOUTS.get(_language(), {})
+    if key_name not in layout and re.fullmatch(r"[A-Z0-9_]+", key_name):
+        return key_name
     for raw, key in layout.items():
-        if key == key_name:
+        if key == key_name and not raw.startswith("KP"):
             return raw
     return key_name
 
@@ -1484,7 +1509,7 @@ def _raw_for_key(key_name):
 def _key_name(raw):
     """The (layout-translated) key name for a code the keyboard sends."""
     from keyboard import LAYOUTS
-    return LAYOUTS.get(settings.get("keyboard_layout", "de"), {}).get(raw, raw)
+    return LAYOUTS.get(_language(), {}).get(raw, raw)
 
 
 def _builtin_for(raw):
@@ -1587,9 +1612,22 @@ async def api_press(request):
 
 # ── Keyboard profiles API (FUNK-63) ──────────────────────────────────────────
 
+def _selected_shown():
+    """The choice to show in the UI: "default", a profile id, or what is really active for an unknown one."""
+    selected = _selected_profile()
+    if selected != profiles.DEFAULT_ALIAS and not profiles.get(selected, _custom_profiles()):
+        return _keymap_profile()
+    return selected
+
+
 def _keyboards_payload():
     custom = _custom_profiles()
-    return {"active": _keymap_profile(), "icons": list(profiles.ICONS),
+    default = _default_profile()
+    return {"active": _keymap_profile(), "selected": _selected_shown(),
+            "default": default, "default_name": profiles.BUILTIN[default]["name"],
+            "language": _language(), "family": profiles.family_of(settings), "numpad": profiles.numpad_of(settings),
+            "languages": profiles.LANGUAGES, "families": profiles.FAMILIES,
+            "icons": list(profiles.ICONS),
             "profiles": [profiles.summary(p) for p in profiles.all_profiles(custom)]}
 
 
@@ -1625,7 +1663,8 @@ def _store_custom(prof):
 
 def _profile_switched():
     pid = _keymap_profile()
-    sse_broadcast("keyboard_profile", {"profile": pid, "name": profiles.get(pid, _custom_profiles())["name"]})
+    sse_broadcast("keyboard_profile", {"profile": pid, "selected": _selected_shown(),
+                                       "language": _language(), "name": profiles.get(pid, _custom_profiles())["name"]})
 
 
 async def api_get_keyboards(request):
@@ -1633,7 +1672,8 @@ async def api_get_keyboards(request):
 
 
 async def api_get_keyboard(request):
-    prof = profiles.get(request.match_info["profile_id"], _custom_profiles())
+    pid = request.match_info["profile_id"]
+    prof = profiles.get(_default_profile() if pid == profiles.DEFAULT_ALIAS else pid, _custom_profiles())
     if not prof:
         return web.json_response({"error": "profile not found"}, status=404)
     return web.json_response(profiles.render(prof))
@@ -1641,9 +1681,9 @@ async def api_get_keyboard(request):
 
 async def api_activate_keyboard(request):
     pid = request.match_info["profile_id"]
-    if not profiles.get(pid, _custom_profiles()):
+    if pid != profiles.DEFAULT_ALIAS and not profiles.get(pid, _custom_profiles()):
         return web.json_response({"error": "profile not found"}, status=404)
-    settings["keyboard_profile"] = pid
+    settings["keyboard_profile"] = pid        # "default" follows language × PC/Mac × number pad
     save_settings()
     print(f"[keyboard] profile → {pid}", flush=True)
     _profile_switched()
@@ -1735,6 +1775,92 @@ async def api_delete_keyboard(request):
     if was_active:
         _profile_switched()
     return web.json_response(_keyboards_payload())
+
+
+# ── Language, export / import (FUNK-64) ──────────────────────────────────────
+
+async def api_get_language(request):
+    return web.json_response(_keyboards_payload())
+
+
+async def api_put_language(request):
+    """Set language, PC/Mac and number pad. Body: any of {"language", "family", "numpad"}."""
+    try:
+        body = await _json_object(request)
+        lang = body.get("language", _language())
+        family = body.get("family", profiles.family_of(settings))
+        numpad = body.get("numpad", profiles.numpad_of(settings))
+        if lang not in profiles.LANGUAGES:
+            raise ValueError(f"language must be one of {', '.join(profiles.LANGUAGES)}")
+        if family not in profiles.FAMILIES:
+            raise ValueError(f"family must be one of {', '.join(profiles.FAMILIES)}")
+        if not isinstance(numpad, bool):
+            raise ValueError("numpad must be true or false")
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    # no await from here on: read, write and announce in one step
+    from keyboard import LAYOUTS
+    settings["language"] = lang
+    settings["keyboard_layout"] = lang        # kept in step: an older image (rollback) reads keyboard_layout
+    settings["keyboard_family"] = family
+    settings["keyboard_numpad"] = numpad
+    if keyboard:
+        keyboard.layout = LAYOUTS.get(lang, {})
+    save_settings()
+    print(f"[keyboard] language {lang}, standard = {_default_profile()}", flush=True)
+    _profile_switched()                       # letters, "Standard" and maybe the active profile changed
+    return web.json_response(_keyboards_payload())
+
+
+async def api_export_keyboard(request):
+    pid = request.match_info["profile_id"]
+    prof = profiles.get(_default_profile() if pid == profiles.DEFAULT_ALIAS else pid, _custom_profiles())
+    if not prof:
+        return web.json_response({"error": "profile not found"}, status=404)
+    bundle = profiles.export_bundle(prof, (settings.get("keymaps") or {}).get(prof["id"], {}))
+    return web.json_response(bundle, headers={
+        "Content-Disposition": f'attachment; filename="funkeykid-{prof["id"]}.json"'})
+
+
+async def api_import_keyboard(request):
+    """Import an exported keyboard as a new custom profile with its key map (never activates it)."""
+    try:
+        body = await _json_object(request)
+        name = body.get("name")
+        if name is not None and not isinstance(name, str):
+            raise ValueError("name must be text")
+        bundle = body.get("bundle")
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    # no await from here on: validate, allocate the id and write in one step
+    if len(settings.get("keyboard_profiles") or {}) >= profiles.MAX_CUSTOM:
+        return web.json_response({"error": f"at most {profiles.MAX_CUSTOM} custom keyboards: delete one first"}, status=400)
+    custom = _custom_profiles()
+    src = bundle.get("profile") if isinstance(bundle, dict) else None
+    src_name = src.get("name") if isinstance(src, dict) else None
+    wanted = (name or (src_name if isinstance(src_name, str) else "")).strip() or "Importierte Tastatur"
+    try:
+        prof, entries = profiles.import_bundle(
+            bundle, profiles.new_id(wanted, set(custom) | set(settings.get("keyboard_profiles") or {})), wanted)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    # sounds and images must exist here; entries pointing elsewhere are skipped, not fatal
+    kept, skipped = {}, []
+    for kid, action in entries.items():
+        missing = False
+        if action["action"] in ("sound", "imgsound"):
+            missing = not os.path.isfile(os.path.join(SOUNDS_DIR, action["file"]))
+        if action["action"] == "imgsound":
+            missing = missing or not os.path.isfile(os.path.join(IMAGES_DIR, action["image"]))
+        if missing:
+            skipped.append(kid)
+        else:
+            kept[kid] = action
+    _store_custom(prof)
+    settings.setdefault("keymaps", {})[prof["id"]] = kept
+    save_settings()
+    print(f"[keyboard] imported {prof['id']} ({len(kept)} key-map entries, {len(skipped)} skipped)", flush=True)
+    return web.json_response(dict(_keyboards_payload(), id=prof["id"], imported=len(kept), skipped=skipped))
 
 
 async def api_get_layout(request):
@@ -2374,7 +2500,7 @@ def _reload_runtime():
     current_volume = settings.get("volume", 100)
     if keyboard:
         from keyboard import LAYOUTS
-        keyboard.layout = LAYOUTS.get(settings.get("keyboard_layout", "de"), {})
+        keyboard.layout = LAYOUTS.get(_language(), {})
         keyboard.debounce_seconds = settings.get("debounce_seconds", 0.8)
         # Switch devices without a container restart. set_device() is
         # non-blocking and latest-wins; the restart it triggers releases the
@@ -2429,12 +2555,16 @@ def create_app():
     app.router.add_delete("/api/keymap/{key_id}", api_delete_keymap)
     app.router.add_post("/api/press/{key_id}", api_press)
     app.router.add_get("/api/keyboards", api_get_keyboards)
+    app.router.add_post("/api/keyboards/import", api_import_keyboard)
+    app.router.add_get("/api/language", api_get_language)
+    app.router.add_put("/api/language", api_put_language)
     app.router.add_get("/api/keyboards/{profile_id}", api_get_keyboard)
     app.router.add_put("/api/keyboards/{profile_id}", api_put_keyboard)
     app.router.add_delete("/api/keyboards/{profile_id}", api_delete_keyboard)
     app.router.add_post("/api/keyboards/{profile_id}/activate", api_activate_keyboard)
     app.router.add_post("/api/keyboards/{profile_id}/duplicate", api_duplicate_keyboard)
     app.router.add_put("/api/keyboards/{profile_id}/keys/{slot}", api_put_keyboard_key)
+    app.router.add_get("/api/keyboards/{profile_id}/export", api_export_keyboard)
     # Version
     app.router.add_get("/api/version", api_version)
     # AI Generation
@@ -2481,7 +2611,7 @@ def main():
 
     # Keyboard — exclusive grab of every node of the configured device (FUNK-59)
     device_name = _keyboard_device_name()
-    layout = settings.get("keyboard_layout", "de")
+    layout = _language()      # FUNK-64: language, migrated from keyboard_layout
     debounce = settings.get("debounce_seconds", 0.8)
     keyboard = KeyboardListener(device_name, layout=layout, debounce_seconds=debounce)
     keyboard.on_key(handle_key)

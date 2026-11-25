@@ -56,7 +56,8 @@ SILENT_MODIFIERS = frozenset(MODIFIER_CODES) | {"LEFTSHIFT", "RIGHTSHIFT", "RIGH
 # stored before FUNK-63 is ignored (it can still be deleted).
 RESERVED = ("LEFTSHIFT", "RIGHTSHIFT")
 
-LETTER_TARGETS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + ("Ä", "Ö", "Ü", "ß") + tuple("0123456789")
+LETTERS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + ("Ä", "Ö", "Ü")      # keys with set content (FUNK-64: umlauts)
+LETTER_TARGETS = LETTERS + ("ß",) + tuple("0123456789")
 
 # Built-in behaviour per (layout-translated) key name, for the UI.
 DEFAULT_LABELS = {
@@ -207,7 +208,7 @@ def default_label(key, has_content=False):
         return f"Favorit {key[6:]} abspielen"
     if len(key) == 1 and key.isdigit():
         return f"Ziffer {key} (Nummern)"
-    if len(key) == 1 and "A" <= key <= "Z":
+    if key in LETTERS:
         return f"Buchstabe {key} (Set-Inhalt)"
     if has_content:
         return f"{key} (Set-Inhalt)"

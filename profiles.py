@@ -180,64 +180,135 @@ def _f_keys(a, b, **kw):
     return [_k(f"f{n}", f"F{n}", f"F{n}", f"F{n}", **kw) for n in range(a, b + 1)]
 
 
-def _pc_de():
-    return {
-        "id": "pc-de", "name": "PC Deutsch", "kind": "builtin", "base": "",
-        "note": "Normale PC-Tastatur ohne Ziffernblock: F1–F12, ISO-Eingabetaste, <>-Taste.",
-        "hint": "",
-        "rows": [
-            {"keys": [_k("esc", "ESC", "esc", "Escape"), {"gap": 1}] + _f_keys(1, 4) + [{"gap": 0.5}]
-             + _f_keys(5, 8) + [{"gap": 0.5}] + _f_keys(9, 12)
-             + [{"gap": 0.5}, _k("print", "SYSRQ", "druck", "Druck"),
-                _k("scroll", "SCROLLLOCK", "rollen", "Rollen"), _k("pause", "PAUSE", "pause", "Pause")]},
-            {"before": 0.25, "keys": _number_row("⌫", 2)
-             + [{"gap": 0.5}, _k("ins", "INSERT", "einfg", "Einfügen (einfg)"),
-                _k("home", "HOME", "pos1", "Pos1"), _k("pgup", "PAGEUP", "bild↑", "Bild hoch")]},
-            {"keys": [_k("tab", "TAB", "tab", "Tab", w=1.5)] + _qwertz() + _ue_plus()
-             + [_k("enter", "ENTER", "↵", "Eingabe", w=1.5), {"gap": 0.5},
-                _k("del", "DELETE", "entf", "Entfernen (entf)"), _k("end", "END", "ende", "Ende"),
-                _k("pgdn", "PAGEDOWN", "bild↓", "Bild runter")]},
-            {"keys": [_k("caps", "CAPSLOCK", "feststell", "Feststelltaste", w=1.75)] + _home_row()
-             + [_hash(), _k("enter2", "ENTER", "", "Eingabe", w=1.25)]},
-            {"keys": [_k("lshift", "LEFTSHIFT", "umsch", "Umschalt links", w=1.25),
-                      _k("lt", "102ND", "<", "Kleiner / Größer", shift=">", altgr="|")]
-             + _bottom_letters()
-             + [_k("rshift", "RIGHTSHIFT", "umsch", "Umschalt rechts", w=2.75), {"gap": 1.5},
-                _k("up", "UP", "↑", "Pfeil hoch")]},
-            {"keys": [_k("lctrl", "LEFTCTRL", "strg", "Steuerung links", w=1.25),
-                      _k("lmeta", "LEFTMETA", "win", "Windows-Taste", w=1.25),
-                      _k("lalt", "LEFTALT", "alt", "alt", w=1.25),
-                      _k("space", "SPACE", "", "Leertaste", w=6.25),
-                      _k("altgr", "RIGHTALT", "alt gr", "Alt Gr", w=1.25),
-                      _k("rmeta", "RIGHTMETA", "win", "Windows-Taste rechts", w=1.25),
-                      _k("menu", "COMPOSE", "menü", "Menü", w=1.25),
-                      _k("rctrl", "RIGHTCTRL", "strg", "Steuerung rechts", w=1.25),
-                      {"gap": 0.5}, _k("left", "LEFT", "←", "Pfeil links"),
-                      _k("down", "DOWN", "↓", "Pfeil runter"), _k("right", "RIGHT", "→", "Pfeil rechts")]},
-        ],
-    }
+# ── languages and generic PC / Mac profiles (FUNK-64) ────────────────────────
+
+LANGUAGES = {"de": "Deutsch (QWERTZ)", "us": "Englisch (US, QWERTY)"}
+_LANG_NAMES = {"de": "Deutsch", "us": "Englisch (US)"}
+FAMILIES = {"pc": "PC-Tastatur", "mac": "Mac-Tastatur"}
+DEFAULT_ALIAS = "default"       # keyboard_profile "default" = the generic profile of language × family × number pad
+
+_US_SHIFTED = dict(zip("1234567890", "!@#$%^&*()"))
 
 
-def _mac_de():
-    return {
-        "id": "mac-de", "name": "Mac Deutsch", "kind": "builtin", "base": "",
-        "note": "Mac-Anordnung (wie das Magic Keyboard) mit fn, control, option und command.",
-        "hint": ("Mac-Tastaturen senden oben je nach fn-Einstellung F1–F12 oder Helligkeit, Lautstärke … "
-                 "Die Codes dort sind vermutet: im Lernmodus drücken bestätigt sie."),
-        "rows": [
+def _us_number_row():
+    return ([_k("grave", "GRAVE", "`", "Gravis", shift="~")]
+            + [_k("d" + d, d, d, f"Ziffer {d}", shift=_US_SHIFTED[d]) for d in "1234567890"]
+            + [_k("minus", "MINUS", "-", "Minus", shift="_"), _k("equal", "EQUAL", "=", "Gleich", shift="+"),
+               _k("bksp", "BACKSPACE", "⌫", "Rücktaste", w=2)])
+
+
+def _main_block(lang, mac):
+    """The four rows from the digits to the bottom letters: 15 units wide."""
+    tab = _k("tab", "TAB", "⇥" if mac else "tab", "Tab", w=1.5)
+    if lang == "de":
+        return [
+            _number_row("⌫", 2),
+            [tab] + _qwertz() + _ue_plus() + [_k("enter", "ENTER", "↵", "Eingabe", w=1.5)],
+            [_k("caps", "CAPSLOCK", "⇪" if mac else "feststell", "Feststelltaste", w=1.75)] + _home_row()
+            + [_hash(), _k("enter2", "ENTER", "", "Eingabe", w=1.25)],
+            [_k("lshift", "LEFTSHIFT", "⇧" if mac else "umsch", "Umschalt links", w=1.25),
+             _k("lt", "102ND", "<", "Kleiner / Größer", shift=">", altgr="|")] + _bottom_letters()
+            + [_k("rshift", "RIGHTSHIFT", "⇧" if mac else "umsch", "Umschalt rechts", w=2.75)],
+        ]
+    return [
+        _us_number_row(),
+        [tab] + [_letter(c) for c in "QWERTYUIOP"]
+        + [_k("lbracket", "LEFTBRACE", "[", "Eckige Klammer auf", shift="{"),
+           _k("rbracket", "RIGHTBRACE", "]", "Eckige Klammer zu", shift="}"),
+           _k("backslash", "BACKSLASH", "\\", "Backslash", shift="|", w=1.5)],
+        [_k("caps", "CAPSLOCK", "⇪" if mac else "caps", "Feststelltaste", w=1.75)] + [_letter(c) for c in "ASDFGHJKL"]
+        + [_k("semicolon", "SEMICOLON", ";", "Semikolon", shift=":"),
+           _k("quote", "APOSTROPHE", "'", "Apostroph", shift='"'),
+           _k("enter", "ENTER", "↵", "Eingabe", w=2.25)],
+        [_k("lshift", "LEFTSHIFT", "⇧" if mac else "shift", "Umschalt links", w=2.25)] + [_letter(c) for c in "ZXCVBNM"]
+        + [_k("comma", "COMMA", ",", "Komma", shift="<"), _k("dot", "DOT", ".", "Punkt", shift=">"),
+           _k("slash", "SLASH", "/", "Schrägstrich", shift="?"),
+           _k("rshift", "RIGHTSHIFT", "⇧" if mac else "shift", "Umschalt rechts", w=2.75)],
+    ]
+
+
+def _row_width(items):
+    return sum(i["gap"] if "gap" in i else i.get("w", 1.0) for i in items)
+
+
+def _with_numpad(rows, x0, mac, lang):
+    """Append the number pad at x0 to the five rows below the F row."""
+    def kp(d):
+        return _k("kp" + d, "KP" + d, d, f"Ziffernblock {d}")
+    minus = _k("kpminus", "KPMINUS", "-", "Ziffernblock Minus")
+    slash = _k("kpslash", "KPSLASH", "/", "Ziffernblock Geteilt")
+    star = _k("kpstar", "KPASTERISK", "*", "Ziffernblock Mal")
+    dot = _k("kpdot", "KPDOT", "," if lang == "de" else ".", "Ziffernblock Komma" if lang == "de" else "Ziffernblock Punkt")
+    if mac:     # clear = Num Lock on Linux; = on the pad; + is one unit high
+        pad = [[_k("clear", "NUMLOCK", "⌧", "clear (Löschen)"), _k("kpequal", "KPEQUAL", "=", "Ziffernblock Gleich"), slash, star],
+               [kp("7"), kp("8"), kp("9"), minus],
+               [kp("4"), kp("5"), kp("6"), _k("kpplus", "KPPLUS", "+", "Ziffernblock Plus")]]
+    else:
+        pad = [[_k("numlock", "NUMLOCK", "num", "Num-Taste"), slash, star, minus],
+               [kp("7"), kp("8"), kp("9"), _k("kpplus", "KPPLUS", "+", "Ziffernblock Plus", h=2)],
+               [kp("4"), kp("5"), kp("6")]]
+    pad += [[kp("1"), kp("2"), kp("3"), _k("kpenter", "KPENTER", "↵", "Ziffernblock Eingabe", h=2)],
+            [_k("kp0", "KP0", "0", "Ziffernblock 0", w=2), dot]]
+    for row, keys in zip(rows[1:], pad):
+        row["keys"] = row["keys"] + [{"gap": round(x0 - _row_width(row["keys"]), 4)}] + keys
+    return rows
+
+
+def _generic_meta(family, lang, numpad):
+    pid = default_id(lang, family, numpad)
+    name = f"{'PC' if family == 'pc' else 'Mac'} {_LANG_NAMES[lang]}" + (" mit Ziffernblock" if numpad else "")
+    return pid, name
+
+
+def _pc(lang, numpad):
+    us = lang == "us"
+    main = _main_block(lang, mac=False)
+    rows = [
+        {"keys": [_k("esc", "ESC", "esc", "Escape"), {"gap": 1}] + _f_keys(1, 4) + [{"gap": 0.5}]
+         + _f_keys(5, 8) + [{"gap": 0.5}] + _f_keys(9, 12)
+         + [{"gap": 0.5}, _k("print", "SYSRQ", "prt sc" if us else "druck", "Druck"),
+            _k("scroll", "SCROLLLOCK", "scroll" if us else "rollen", "Rollen"), _k("pause", "PAUSE", "pause", "Pause")]},
+        {"before": 0.25, "keys": main[0]
+         + [{"gap": 0.5}, _k("ins", "INSERT", "ins" if us else "einfg", "Einfügen (einfg)"),
+            _k("home", "HOME", "home" if us else "pos1", "Pos1"), _k("pgup", "PAGEUP", "pg up" if us else "bild↑", "Bild hoch")]},
+        {"keys": main[1]
+         + [{"gap": 0.5}, _k("del", "DELETE", "del" if us else "entf", "Entfernen (entf)"),
+            _k("end", "END", "end" if us else "ende", "Ende"), _k("pgdn", "PAGEDOWN", "pg dn" if us else "bild↓", "Bild runter")]},
+        {"keys": main[2]},
+        {"keys": main[3] + [{"gap": 1.5}, _k("up", "UP", "↑", "Pfeil hoch")]},
+        {"keys": [_k("lctrl", "LEFTCTRL", "ctrl" if us else "strg", "Steuerung links", w=1.25),
+                  _k("lmeta", "LEFTMETA", "win", "Windows-Taste", w=1.25),
+                  _k("lalt", "LEFTALT", "alt", "alt", w=1.25),
+                  _k("space", "SPACE", "", "Leertaste", w=6.25),
+                  _k("altgr", "RIGHTALT", "alt" if us else "alt gr", "Alt rechts" if us else "Alt Gr", w=1.25),
+                  _k("rmeta", "RIGHTMETA", "win", "Windows-Taste rechts", w=1.25),
+                  _k("menu", "COMPOSE", "menu" if us else "menü", "Menü", w=1.25),
+                  _k("rctrl", "RIGHTCTRL", "ctrl" if us else "strg", "Steuerung rechts", w=1.25),
+                  {"gap": 0.5}, _k("left", "LEFT", "←", "Pfeil links"),
+                  _k("down", "DOWN", "↓", "Pfeil runter"), _k("right", "RIGHT", "→", "Pfeil rechts")]},
+    ]
+    if numpad:
+        _with_numpad(rows, 19.0, mac=False, lang=lang)
+    pid, name = _generic_meta("pc", lang, numpad)
+    note = (f"PC-Tastatur {'mit' if numpad else 'ohne'} Ziffernblock: F1–F12, "
+            + ("ISO-Eingabetaste, <>-Taste." if lang == "de" else "US-Anordnung (ANSI)."))
+    return {"id": pid, "name": name, "kind": "builtin", "base": "", "note": note, "hint": "", "rows": rows}
+
+
+_MAC_HINT = ("Mac-Tastaturen senden oben je nach fn-Einstellung F-Tasten oder Helligkeit, Lautstärke … "
+             "Die Codes dort sind vermutet: im Lernmodus drücken bestätigt sie.")
+
+
+def _mac(lang, numpad):
+    main = _main_block(lang, mac=True)
+    fn = _k("fn", "FN", "fn", "fn (Mac-Tastaturen senden sie)", guess=True)
+    if not numpad:      # compact, like the Magic Keyboard
+        rows = [
             {"h": 0.6, "keys": [_k("esc", "ESC", "esc", "Escape", w=1.5)] + _f_keys(1, 12, guess=True)
              + [_k("eject", "EJECTCD", "⏏", "Auswerfen / Sperren", w=1.5, guess=True)]},
-            {"keys": _number_row("⌫", 2)},
-            {"keys": [_k("tab", "TAB", "⇥", "Tab", w=1.5)] + _qwertz() + _ue_plus()
-             + [_k("enter", "ENTER", "↵", "Zeilenschalter", w=1.5)]},
-            {"keys": [_k("caps", "CAPSLOCK", "⇪", "Feststelltaste", w=1.75)] + _home_row()
-             + [_hash(), _k("enter2", "ENTER", "", "Zeilenschalter", w=1.25)]},
-            {"keys": [_k("lshift", "LEFTSHIFT", "⇧", "Umschalt links", w=1.25),
-                      _k("lt", "102ND", "<", "Kleiner / Größer", shift=">")]
-             + _bottom_letters()
-             + [_k("rshift", "RIGHTSHIFT", "⇧", "Umschalt rechts", w=2.75)]},
+            {"keys": main[0]}, {"keys": main[1]}, {"keys": main[2]}, {"keys": main[3]},
             {"keys": [
-                _k("fn", "FN", "fn", "fn (Mac-Tastaturen senden sie)", guess=True),
+                fn,
                 _k("lctrl", "LEFTCTRL", "ctrl", "control"),
                 _k("lalt", "LEFTALT", "⌥", "option", altgr="option"),
                 _k("lmeta", "LEFTMETA", "⌘", "command", altgr="cmd", w=1.25),
@@ -248,11 +319,59 @@ def _mac_de():
                 {"stack": [_k("up", "UP", "↑", "Pfeil hoch"), _k("down", "DOWN", "↓", "Pfeil runter")], "w": 1},
                 _k("right", "RIGHT", "→", "Pfeil rechts", h=0.5, dy=0.5),
             ]},
-        ],
-    }
+        ]
+    else:               # full size, like the Magic Keyboard with numeric keypad
+        rows = [
+            {"h": 0.6, "keys": [_k("esc", "ESC", "esc", "Escape"), {"gap": 1}] + _f_keys(1, 4, guess=True) + [{"gap": 0.5}]
+             + _f_keys(5, 8, guess=True) + [{"gap": 0.5}] + _f_keys(9, 12, guess=True) + [{"gap": 0.5}]
+             + _f_keys(13, 15, guess=True) + [{"gap": 0.5}] + _f_keys(16, 19, guess=True)},
+            {"before": 0.25, "keys": main[0] + [{"gap": 0.5}, fn, _k("home", "HOME", "↖", "Pos1 (home)"),
+                                                _k("pgup", "PAGEUP", "⇞", "Bild hoch")]},
+            {"keys": main[1] + [{"gap": 0.5}, _k("del", "DELETE", "⌦", "Entfernen"), _k("end", "END", "↘", "Ende (end)"),
+                                _k("pgdn", "PAGEDOWN", "⇟", "Bild runter")]},
+            {"keys": main[2]},
+            {"keys": main[3] + [{"gap": 1.5}, _k("up", "UP", "↑", "Pfeil hoch")]},
+            {"keys": [_k("lctrl", "LEFTCTRL", "ctrl", "control", w=1.5),
+                      _k("lalt", "LEFTALT", "⌥", "option", altgr="option", w=1.25),
+                      _k("lmeta", "LEFTMETA", "⌘", "command", altgr="cmd", w=1.5),
+                      _k("space", "SPACE", "", "Leertaste", w=6.5),
+                      _k("rmeta", "RIGHTMETA", "⌘", "command rechts", altgr="cmd", w=1.5),
+                      _k("ralt", "RIGHTALT", "⌥", "option rechts", altgr="option", w=1.25),
+                      _k("rctrl", "RIGHTCTRL", "ctrl", "control rechts", w=1.5),
+                      {"gap": 0.5}, _k("left", "LEFT", "←", "Pfeil links"),
+                      _k("down", "DOWN", "↓", "Pfeil runter"), _k("right", "RIGHT", "→", "Pfeil rechts")]},
+        ]
+        _with_numpad(rows, 19.0, mac=True, lang=lang)
+    pid, name = _generic_meta("mac", lang, numpad)
+    note = (("Mac-Anordnung mit Ziffernblock (wie das Magic Keyboard mit Ziffernblock): F1–F19, fn, Pos1/Ende."
+             if numpad else "Mac-Anordnung (wie das Magic Keyboard) mit fn, control, option und command.")
+            + (" US-Anordnung (ANSI)." if lang == "us" else ""))
+    return {"id": pid, "name": name, "kind": "builtin", "base": "", "note": note, "hint": _MAC_HINT, "rows": rows}
 
 
-BUILTIN = {p["id"]: p for p in (_acme_bk03(), _pc_de(), _mac_de())}
+def default_id(lang, family, numpad):
+    """The generic built-in profile for a language, PC or Mac, with or without number pad."""
+    return f"{family}-{lang}" + ("-num" if numpad else "")
+
+
+def language_of(settings):
+    """The keyboard language (FUNK-64): settings["language"], else the older keyboard_layout, else de."""
+    for value in (settings.get("language"), settings.get("keyboard_layout")):
+        if value in LANGUAGES:
+            return value
+    return "de"
+
+
+def family_of(settings):
+    return settings.get("keyboard_family") if settings.get("keyboard_family") in FAMILIES else "pc"
+
+
+def numpad_of(settings):
+    return settings.get("keyboard_numpad") is True
+
+
+BUILTIN = {p["id"]: p for p in [_acme_bk03()] + [
+    build(lang, numpad) for lang in LANGUAGES for build in (_pc, _mac) for numpad in (False, True)]}
 
 
 # ── geometry ─────────────────────────────────────────────────────────────────
@@ -531,3 +650,46 @@ def edit_key(profile, slot, patch):
         else:
             key[f] = value
     return validate(out)
+
+
+# ── export / import as JSON (FUNK-64) ────────────────────────────────────────
+
+EXPORT_FORMAT = "funkeykid.keyboard.v1"
+MAX_IMPORT_KEYMAP = 500
+
+
+def export_bundle(profile, entries):
+    """A profile (built-in or custom) and its key map, as one JSON-ready file."""
+    prof = {f: copy.deepcopy(profile[f]) for f in ("id", "name", "kind", "base", "note", "hint", "rows") if f in profile}
+    return {"format": EXPORT_FORMAT, "profile": prof, "keymap": copy.deepcopy(entries or {})}
+
+
+def import_bundle(bundle, pid, name=None):
+    """(custom profile, key map) from an exported file, under a new id. Raises ProfileError.
+
+    Everything is validated like an edit in the UI: the profile as a custom
+    profile, every key-map entry as a canonical key id with a valid action.
+    Whether sound and image files exist is the server's check.
+    """
+    if not isinstance(bundle, dict) or bundle.get("format") != EXPORT_FORMAT:
+        raise ProfileError(f"not a funkeykid keyboard file (format {EXPORT_FORMAT} expected)")
+    src = bundle.get("profile")
+    if not isinstance(src, dict):
+        raise ProfileError("the file has no keyboard profile")
+    prof = copy.deepcopy(src)
+    base = src.get("base") or src.get("id") or ""
+    prof.update(id=pid, kind="custom", rev=0, base=base if isinstance(base, str) else "")
+    if name is not None:
+        prof["name"] = name
+    prof = validate(prof)
+    entries = bundle.get("keymap") or {}
+    if not isinstance(entries, dict) or len(entries) > MAX_IMPORT_KEYMAP:
+        raise ProfileError(f"the key map must be an object with at most {MAX_IMPORT_KEYMAP} entries")
+    out = {}
+    for kid, action in entries.items():
+        try:
+            keymap.parse_key_id(kid)
+            out[kid] = keymap.validate(action)
+        except keymap.KeymapError as e:
+            raise ProfileError(f"invalid key map entry {kid!r}: {e}") from None
+    return prof, out

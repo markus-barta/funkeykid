@@ -1614,6 +1614,7 @@ function funkeykid() {
     settings: { ai_prompts: { suggest_model: '', suggest: '', sound: '', image: '' } },
     sets: {},
     activeSetId: '',
+    editSetId: '',      // set an open letter/number editor belongs to (a set switch elsewhere must not redirect its save)
     activeSet: null,
     sounds: [],
     images: [],
@@ -1785,7 +1786,10 @@ function funkeykid() {
         const d = JSON.parse(e.data);
         if (d.active_set === this.activeSetId) return;
         await this.refresh();
-        this.showToast(`Set "${d.name}" aktiv`);
+        const editing = (this.editingLetter || this.editingNumber) && this.editSetId && this.editSetId !== d.active_set;
+        this.showToast(editing
+          ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[this.editSetId]?.name || this.editSetId}".`
+          : `Set "${d.name}" aktiv`);
       });
       es.addEventListener('gen_update', (e) => {
         const d = JSON.parse(e.data);
@@ -2047,6 +2051,7 @@ function funkeykid() {
       this._ensureTracks(data);
       this.editNumberData = data;
       await this.$nextTick();
+      this.editSetId = this.activeSetId;
       this.editingNumber = digit;
     },
     async saveNumber() {
@@ -2058,7 +2063,7 @@ function funkeykid() {
         backgrounds: this.editNumberData.backgrounds,
         tracks,
       };
-      await fetch(`/api/sets/${this.activeSetId}/numbers/${digit}`, {
+      await fetch(`/api/sets/${this.editSetId || this.activeSetId}/numbers/${digit}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
@@ -2251,6 +2256,7 @@ function funkeykid() {
         : [this._blankEntry()];
       this._suggestOpen = false;
       await this.$nextTick();
+      this.editSetId = this.activeSetId;
       this.editingLetter = letter;
     },
     async saveLetter() {
@@ -2265,7 +2271,7 @@ function funkeykid() {
         if (e._imageDesc) c._imageDesc = e._imageDesc;
         return c;
       });
-      await fetch(`/api/sets/${this.activeSetId}/letters/${letter}`, {
+      await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${letter}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ entries: cleanEntries }),
@@ -2479,7 +2485,7 @@ function funkeykid() {
           if (e._imageDesc) c._imageDesc = e._imageDesc;
           return c;
         });
-        await fetch(`/api/sets/${this.activeSetId}/letters/${letter}`, {
+        await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${letter}`, {
           method: 'PUT',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ entries: cleanEntries }),
@@ -2490,7 +2496,7 @@ function funkeykid() {
           fetch('/api/blacklist/' + target).then(r => r.json()),
         ]);
         this._blacklist = bl || [];
-        const updated = await fetch(`/api/sets/${this.activeSetId}/letters/${target}`).then(r => r.json());
+        const updated = await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${target}`).then(r => r.json());
         const entries = updated.entries || [];
         this.editEntries = entries.length
           ? JSON.parse(JSON.stringify(entries)).map(e => {

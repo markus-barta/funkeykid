@@ -854,6 +854,7 @@ def _toggle_mute():
     global _muted_from
     if current_volume > 0:
         _muted_from = current_volume
+        stop_all_sounds()          # a running paplay keeps its own volume: silence it now
         change_volume(-current_volume)
     else:
         change_volume((_muted_from or 50) - current_volume)

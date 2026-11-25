@@ -2155,21 +2155,24 @@ function funkeykid() {
       if (code !== (k.code || '')) patch.code = code;
       if (!k.stacked && Number(e.w) !== k.w) patch.w = Number(e.w);
       if (!Object.keys(patch).length) { this.showToast('Nichts geändert'); return; }
-      const pid = this.kbProfile.id, seq = this._kbSeq;
-      const res = await fetch('/api/keyboards/' + encodeURIComponent(pid) + '/keys/' + encodeURIComponent(k.slot), {
+      const pid = this.kbProfile.id, seq = this._kbSeq, slot = k.slot;
+      const res = await fetch('/api/keyboards/' + encodeURIComponent(pid) + '/keys/' + encodeURIComponent(slot), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { this.showToast('Taste nicht gespeichert: ' + (data.error || res.status), 'error'); return; }
-      if (seq !== this._kbSeq || this.kbProfile?.id !== pid) return;   // switched meanwhile: the late drawing is stale
+      this.showToast('Taste »' + (k.name || slot) + '« gespeichert');
+      // Install only a newer snapshot of the profile still on screen: an older response
+      // (or one from before a switch) never replaces newer state (FUNK-63 review).
+      if (seq !== this._kbSeq || this.kbProfile?.id !== pid || data.id !== pid || !((data.rev || 0) > (this.kbProfile.rev || 0))) return;
       this.kbProfile = data;
+      // follow the saved key only if it is still the selected one; done now, not after more awaits
       const nk = this.kbSelKey();
-      if (nk) this.kbKeyEditFrom(nk);
-      await this.loadKeymap();
-      await this.kbRefreshList();
-      // switched while refreshing: the key belongs to the old drawing, select nothing (FUNK-63 review)
-      if (seq !== this._kbSeq || this.kbProfile?.id !== pid || this.km.profile !== pid) return;
-      if (nk && nk.code && !this.kbIsShift(nk.code)) this.kmSelect(nk.code); else this.kmSel = null;
-      this.showToast('Taste »' + (nk?.name || k.slot) + '« gespeichert');
+      if (this.kbSelSlot === slot && nk) {
+        this.kbKeyEditFrom(nk);
+        if (nk.code && !this.kbIsShift(nk.code)) this.kmSelect(nk.code); else this.kmSel = null;
+      }
+      this.loadKeymap();          // built-in labels for a new code (guarded itself)
+      this.kbRefreshList();       // silhouette in the profile list (guarded itself)
     },
     kbTakeCode() { if (this.kmLast?.id) this.kbSaveKey({ code: this.kmLast.id }); },
 

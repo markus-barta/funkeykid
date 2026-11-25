@@ -305,6 +305,7 @@ def layout(profile):
 def render(profile):
     """A profile for the UI: its metadata plus its layout."""
     out = {f: profile.get(f, "") for f in ("id", "name", "kind", "base", "note", "hint")}
+    out["rev"] = profile.get("rev", 0)        # grows with every edit: the UI never installs an older snapshot
     out.update(layout(profile))
     return out
 
@@ -434,7 +435,9 @@ def validate(profile):
     if not slots or len(slots) > MAX_KEYS:
         raise ProfileError(f"a profile needs 1..{MAX_KEYS} keys")
     base = profile.get("base", "")
+    rev = profile.get("rev", 0)
     return {"id": pid, "name": name, "kind": "custom",
+            "rev": rev if isinstance(rev, int) and not isinstance(rev, bool) and rev >= 0 else 0,
             "base": base if isinstance(base, str) and len(base) <= 60 else "",
             "note": _text(profile.get("note"), NOTE_MAX, "note"),
             "hint": _text(profile.get("hint"), NOTE_MAX, "hint"),
@@ -484,12 +487,18 @@ def duplicate(source, pid, name):
     if not name:
         raise ProfileError("a profile needs a name")
     copy_ = copy.deepcopy(source)
-    copy_.update(id=pid, name=name, kind="custom", base=source.get("base") or source["id"])
+    copy_.update(id=pid, name=name, kind="custom", base=source.get("base") or source["id"], rev=0)
     return validate(copy_)
 
 
-def rename(profile, name=None, note=None):
+def _next_rev(profile):
     out = copy.deepcopy(profile)
+    out["rev"] = profile.get("rev", 0) + 1
+    return out
+
+
+def rename(profile, name=None, note=None):
+    out = _next_rev(profile)
     if name is not None:
         out["name"] = name
     if note is not None:
@@ -504,7 +513,7 @@ def edit_key(profile, slot, patch):
     unknown = set(patch) - set(EDITABLE)
     if unknown:
         raise ProfileError(f"cannot edit {', '.join(sorted(unknown))}")
-    out = copy.deepcopy(profile)
+    out = _next_rev(profile)
     for key in iter_keys(out):
         if key["slot"] == slot:
             break

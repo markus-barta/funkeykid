@@ -169,6 +169,17 @@ def test_old_shift_entries_are_ignored_but_can_be_deleted():
         km.parse_key_id("SHIFT_1", allow_reserved=True)    # never storable, so never deletable
 
 
+def test_revision_grows_with_every_edit():
+    """Review round 4: the UI installs a profile snapshot only if its rev is newer."""
+    c = pf.duplicate(pf.BUILTIN["acme-bk03"], "custom-k", "K")
+    assert c["rev"] == 0 and pf.render(c)["rev"] == 0 and pf.render(pf.BUILTIN["pc-de"])["rev"] == 0
+    c1 = pf.edit_key(c, "cut", {"label": "a"})
+    c2 = pf.rename(c1, name="K2")
+    assert (c1["rev"], c2["rev"]) == (1, 2)
+    assert pf.duplicate(c2, "custom-k2", "K3")["rev"] == 0
+    assert pf.validate(dict(c2, rev=True))["rev"] == 0 and pf.validate(dict(c2, rev=-1))["rev"] == 0
+
+
 def test_custom_profile_cap_is_small():
     assert 1 <= pf.MAX_CUSTOM <= 50
 

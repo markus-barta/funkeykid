@@ -71,7 +71,7 @@ Keyboard connect/disconnect:
 
 ### Container and host configuration (nixcfg)
 
-hsb1 runs the container from the nixcfg compose spec. That spec is the source of truth:
+hsb1 runs the container from the nixcfg compose spec, `hosts/hsb1/docker/compose-spec.nix` (service `funkeykid`), plus the `spec` overlay in `hosts/hsb1/configuration.nix`. Together they are the source of truth:
 - the `funkeykid` service: image, env, agenix env files, mounts;
 - the configuration.nix overlay: the `FUNKEYKID_KEYBOARD` pin and the CA bundle.
 

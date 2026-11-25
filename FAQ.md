@@ -26,8 +26,8 @@ docker logs funkeykid 2>&1 | grep -i 'pactl\|sink\|sound'
 1. **Check volume in settings**: http://hsb1.lan:8081 → Einstellungen → Volume must be >0
 2. **Check paplay target**: Container must use kiosk's PipeWire (uid 1001), not mba's (uid 1000)
    ```bash
-   docker inspect funkeykid --format '{{json .Config.Env}}' | grep PULSE
-   # Must show: PULSE_SERVER=unix:/run/user/1001/pulse/native
+   ssh mba@hsb1.lan "docker exec funkeykid printenv PULSE_SERVER"   # only this variable: the env also holds credentials
+   # Must show: unix:/run/user/1001/pulse/native
    ```
 3. **Check kiosk PipeWire is running**:
    ```bash

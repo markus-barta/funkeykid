@@ -709,9 +709,20 @@ def _play_number(digit):
         display.publish_letter(digit, word, image)
 
 
+_customs_cache = None   # validated custom profiles; every write goes through _store_custom / delete
+
+
 def _custom_profiles():
-    """Valid custom keyboard profiles from settings (FUNK-63): {id: profile}."""
-    return profiles.customs(settings.get("keyboard_profiles"))
+    """Valid custom keyboard profiles from settings (FUNK-63): {id: profile}. Read-only: copy to change."""
+    global _customs_cache
+    if _customs_cache is None:
+        _customs_cache = profiles.customs(settings.get("keyboard_profiles"))
+    return _customs_cache
+
+
+def _invalidate_customs():
+    global _customs_cache
+    _customs_cache = None
 
 
 def _keymap_profile():
@@ -728,7 +739,7 @@ def _active_keymap():
 def _resolve_press(key_name, raw_key, mods=()):
     """(key_id, matched_id, action) for a press. Shift+digit stays the favourite shortcut."""
     kid = keymap.key_id(raw_key, mods)
-    if key_name.startswith("SHIFT_"):
+    if key_name.startswith("SHIFT_"):      # Shift alone is ignored by keymap.resolve (RESERVED)
         return kid, None, None
     matched, action = keymap.resolve(_active_keymap(), raw_key, mods)
     return kid, matched, action
@@ -1496,6 +1507,15 @@ async def api_get_keymap(request):
     return web.json_response(_keymap_payload())
 
 
+def _profile_mismatch(request):
+    """409 if the request names a profile that is no longer the active one (it was switched meanwhile)."""
+    wanted = request.query.get("profile")
+    if wanted and wanted != _keymap_profile():
+        return web.json_response({"error": "the keyboard profile was switched: reload", "profile": _keymap_profile()},
+                                 status=409)
+    return None
+
+
 async def api_put_keymap(request):
     kid = request.match_info["key_id"]
     try:
@@ -1503,6 +1523,10 @@ async def api_put_keymap(request):
         action = keymap.validate(await request.json())
     except (keymap.KeymapError, ValueError) as e:
         return web.json_response({"error": str(e)}, status=400)
+    # checked after the body is read: no await between here and the write
+    mismatch = _profile_mismatch(request)
+    if mismatch:
+        return mismatch
     if action["action"] in ("sound", "imgsound") and not os.path.isfile(os.path.join(SOUNDS_DIR, action["file"])):
         return web.json_response({"error": f"sound not found: {action['file']}"}, status=400)
     if action["action"] == "imgsound" and not os.path.isfile(os.path.join(IMAGES_DIR, action["image"])):
@@ -1517,9 +1541,12 @@ async def api_put_keymap(request):
 async def api_delete_keymap(request):
     kid = request.match_info["key_id"]
     try:
-        keymap.parse_key_id(kid)
+        keymap.parse_key_id(kid, allow_reserved=True)   # an old Shift entry can still be removed
     except keymap.KeymapError as e:
         return web.json_response({"error": str(e)}, status=400)
+    mismatch = _profile_mismatch(request)
+    if mismatch:
+        return mismatch
     removed = (settings.get("keymaps") or {}).get(_keymap_profile(), {}).pop(kid, None)
     if removed is not None:
         save_settings()
@@ -1579,6 +1606,7 @@ def _custom_or_error(pid):
 
 def _store_custom(prof):
     settings.setdefault("keyboard_profiles", {})[prof["id"]] = prof
+    _invalidate_customs()
     save_settings()
 
 
@@ -1610,15 +1638,22 @@ async def api_activate_keyboard(request):
 
 
 async def api_duplicate_keyboard(request):
+    try:
+        body = await _json_object(request, optional=True)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    # from here on no await: read, allocate the id and write in one step (FUNK-63 review)
     custom = _custom_profiles()
     source = profiles.get(request.match_info["profile_id"], custom)
     if not source:
         return web.json_response({"error": "profile not found"}, status=404)
+    if len(settings.get("keyboard_profiles") or {}) >= profiles.MAX_CUSTOM:
+        return web.json_response({"error": f"at most {profiles.MAX_CUSTOM} custom keyboards: delete one first"}, status=400)
     try:
-        name = (await _json_object(request, optional=True)).get("name") or f"{source['name']} (Kopie)"
+        name = body.get("name") or f"{source['name']} (Kopie)"
         if not isinstance(name, str):
             raise ValueError("name must be text")
-        prof = profiles.duplicate(source, profiles.new_id(name, custom), name)
+        prof = profiles.duplicate(source, profiles.new_id(name, set(custom) | set(settings.get("keyboard_profiles") or {})), name)
     except ValueError as e:      # ProfileError is a ValueError
         return web.json_response({"error": str(e)}, status=400)
     _store_custom(prof)
@@ -1631,11 +1666,14 @@ async def api_duplicate_keyboard(request):
 
 
 async def api_put_keyboard(request):
-    prof, err = _custom_or_error(request.match_info["profile_id"])
+    try:
+        body = await _json_object(request)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    prof, err = _custom_or_error(request.match_info["profile_id"])   # current state, after the await
     if err:
         return err
     try:
-        body = await _json_object(request)
         prof = profiles.rename(prof, name=body.get("name"), note=body.get("note"))
     except ValueError as e:
         return web.json_response({"error": str(e)}, status=400)
@@ -1646,11 +1684,15 @@ async def api_put_keyboard(request):
 
 
 async def api_put_keyboard_key(request):
-    prof, err = _custom_or_error(request.match_info["profile_id"])
+    try:
+        patch = await _json_object(request)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    prof, err = _custom_or_error(request.match_info["profile_id"])   # current state, after the await
     if err:
         return err
     try:
-        prof = profiles.edit_key(prof, request.match_info["slot"], await _json_object(request))
+        prof = profiles.edit_key(prof, request.match_info["slot"], patch)
     except ValueError as e:
         return web.json_response({"error": str(e)}, status=400)
     _store_custom(prof)
@@ -1665,6 +1707,7 @@ async def api_delete_keyboard(request):
         return err
     was_active = pid == _keymap_profile()
     settings.get("keyboard_profiles", {}).pop(pid, None)
+    _invalidate_customs()
     (settings.get("keymaps") or {}).pop(pid, None)
     if was_active:
         settings["keyboard_profile"] = keymap.DEFAULT_PROFILE

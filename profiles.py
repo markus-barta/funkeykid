@@ -46,6 +46,7 @@ DY_RANGE = (0.0, 2.0)
 GAP_RANGE = (0.05, 12.0)
 MAX_ROWS = 12
 MAX_KEYS = 200
+MAX_CUSTOM = 20           # custom profiles (settings.json stays small)
 SHIFT_CODES = ("LEFTSHIFT", "RIGHTSHIFT")
 SUGGEST_ACTIONS = ("func", "letter", "none")
 _SLOT = re.compile(r"[a-z0-9_-]{1,24}")

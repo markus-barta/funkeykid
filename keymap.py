@@ -52,6 +52,10 @@ MODIFIER_ORDER = ("CTRL", "ALT", "META")
 # keys that only modify others: never listed as "pressed without effect"
 SILENT_MODIFIERS = frozenset(MODIFIER_CODES) | {"LEFTSHIFT", "RIGHTSHIFT", "RIGHTALT", "CAPSLOCK", "FN"}
 
+# Shift is reserved: Shift + digit plays a favourite. Never mapped, and an entry
+# stored before FUNK-63 is ignored (it can still be deleted).
+RESERVED = ("LEFTSHIFT", "RIGHTSHIFT")
+
 LETTER_TARGETS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + ("Ä", "Ö", "Ü", "ß") + tuple("0123456789")
 
 # Built-in behaviour per (layout-translated) key name, for the UI.
@@ -91,15 +95,18 @@ def key_id(raw, mods=()):
     return "+".join(held + (raw,))
 
 
-def parse_key_id(kid):
-    """Validate an id; return (raw, mods). Raises KeymapError."""
+def parse_key_id(kid, allow_reserved=False):
+    """Validate an id; return (raw, mods). Raises KeymapError.
+
+    ``allow_reserved`` accepts the Shift keys, only for deleting an old entry.
+    """
     if not isinstance(kid, str) or not _KEY_ID.fullmatch(kid):
         raise KeymapError(f"invalid key id: {kid!r}")
     parts = kid.split("+")
     raw, mods = parts[-1], tuple(parts[:-1])
     if len(set(mods)) != len(mods) or canonical_mods(mods) != mods:
         raise KeymapError(f"modifiers must be unique and in the order {'+'.join(MODIFIER_ORDER)}: {kid!r}")
-    if raw.startswith("SHIFT_") or raw in ("LEFTSHIFT", "RIGHTSHIFT"):
+    if raw.startswith("SHIFT_") or (raw in RESERVED and not allow_reserved):
         raise KeymapError("Shift (Shift+digit is the favourite shortcut) cannot be mapped")
     if key_id(raw, mods) != kid:
         # e.g. KEY_CUT (→ CUT) or CTRL+LEFTCTRL (→ LEFTCTRL): an id a press can never produce
@@ -116,6 +123,8 @@ def lookup_chain(raw, mods=()):
 
 def resolve(keymap, raw, mods=()):
     """Return (matched_id, action) for a press, or (None, None) for the built-in behaviour."""
+    if key_id(raw) in RESERVED:
+        return None, None
     for kid in lookup_chain(raw, mods):
         action = (keymap or {}).get(kid)
         if action is not None:

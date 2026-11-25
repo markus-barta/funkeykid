@@ -159,6 +159,20 @@ def test_shift_keys_keep_their_code_but_shift_cannot_be_mapped():
             km.parse_key_id(kid)
 
 
+def test_old_shift_entries_are_ignored_but_can_be_deleted():
+    """Review round 1: a LEFTSHIFT entry saved under FUNK-62 must not fire and must stay removable."""
+    old = {"LEFTSHIFT": {"action": "func", "func": "volup"}, "CTRL+LEFTSHIFT": {"action": "none"}}
+    assert km.resolve(old, "LEFTSHIFT") == (None, None)
+    assert km.resolve(old, "LEFTSHIFT", ("LEFTCTRL",)) == (None, None)
+    assert km.parse_key_id("LEFTSHIFT", allow_reserved=True) == ("LEFTSHIFT", ())
+    with pytest.raises(km.KeymapError):
+        km.parse_key_id("SHIFT_1", allow_reserved=True)    # never storable, so never deletable
+
+
+def test_custom_profile_cap_is_small():
+    assert 1 <= pf.MAX_CUSTOM <= 50
+
+
 def test_rename():
     c = pf.duplicate(pf.BUILTIN["pc-de"], "custom-p", "P")
     assert pf.rename(c, name="Papa", note="am Schreibtisch")["name"] == "Papa"

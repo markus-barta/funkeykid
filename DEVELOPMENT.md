@@ -167,17 +167,21 @@ Precedence: env `FUNKEYKID_KEYBOARD` > `settings.keyboard_device` > `"ACME BK03"
   diagnostics scan). A change hot-swaps the listener, and the old device's
   grabs are released first. No container restart is needed.
 
-### QWERTZ Layout
+### Keyboard language (FUNK-64)
 
-evdev reports **US QWERTY scancodes**. keyboard.py applies layout map:
+evdev reports **US QWERTY scancodes**. The keyboard language (`settings.language`: `de` or `us`) picks the map in `keyboard.py` from the code a key sends to the key funkeykid treats it as:
 
 ```python
+KEYPAD = {"KP0": "0", …, "KP9": "9", "KPENTER": "ENTER"}   # both languages: pad digits play numbers
 LAYOUTS = {
+    "us": dict(KEYPAD),
     "de": {
+        **KEYPAD,
         "Y": "Z",  # evdev KEY_Y (US top-row) = German Z (next to T)
         "Z": "Y",  # evdev KEY_Z (US bottom-row) = German Y
         "RIGHTBRACE": "EQUAL",  # + key
         "SLASH": "MINUS",       # - key
+        "LEFTBRACE": "Ü", "SEMICOLON": "Ö", "APOSTROPHE": "Ä",   # umlauts are letters
     },
 }
 ```
@@ -222,7 +226,15 @@ A profile describes what a keyboard looks like and what each key sends. The UI d
 - **Custom:** a duplicate of any profile, stored validated in `settings["keyboard_profiles"][custom-<slug>]`; it starts with a copy of the source's key map. Its keys' legends, code, icon and width can be edited, including "take the code of the last pressed key" for a key the drawing gets wrong. Deleting a custom profile deletes its key map; if it was active, `acme-bk03` becomes active again.
 - **Active profile:** `settings["keyboard_profile"]`, switched with `POST /api/keyboards/{id}/activate` (SSE `keyboard_profile`). An unknown or deleted id falls back to `acme-bk03`. The active profile's key map is what the real keyboard uses.
 - **UI:** Tastatur tab. The drawing marks each key by what it does (letter content, sound, image + sound, function, nothing, or reserved), a press on the real keyboard lights its key up, and learn mode selects it. `/api/keymap` adds `defaults` (built-in label and kind per code of the active profile) and `seen_codes` (ids pressed since start, which confirm guessed codes).
-- **Not yet:** the language setting that decides letters (so Ü/Ö/Ä act as letters) and profile import/export are FUNK-64; a phone/tablet keyboard is FUNK-65.
+- **"Standard"** (FUNK-64): `keyboard_profile = "default"` follows the language × PC/Mac (`keyboard_family`) × number pad (`keyboard_numpad`) and resolves to one of the generic built-ins `pc-de`, `pc-de-num`, `mac-de`, `mac-de-num`, `pc-us`, `pc-us-num`, `mac-us` or `mac-us-num`. Its key map is that profile's map. Changing the language can therefore switch the active profile, and the server announces that (SSE `keyboard_profile`).
+- **Export / import** (FUNK-64): `GET /api/keyboards/{id}/export` downloads `{"format": "funkeykid.keyboard.v1", "profile", "keymap"}`, for built-ins too. `POST /api/keyboards/import` with `{"bundle", "name"?}` creates a new custom profile with that key map and never activates it. Everything is validated like a UI edit. Entries whose sound or image is missing on this machine are skipped and listed in `skipped`.
+- **Not yet:** a phone or tablet keyboard (FUNK-65).
+
+### Language migration (FUNK-64)
+
+`settings.language` replaces `settings.keyboard_layout`. A missing `language` is taken from `keyboard_layout` (`profiles.language_of`), so an existing `de` or `us` setup keeps its letter mapping. Every key that had a role before keeps it. Only keys that had no built-in role gain one: the umlaut keys (and only if the set has content for them), the pad digits and pad Enter. `PUT /api/language` writes `keyboard_layout` in step, so a rollback to an older image still finds the same layout. `PUT /api/settings` never writes `keyboard_layout` any more.
+
+Letters: for `de` the Letters tab also offers Ä, Ö and Ü.
 
 ---
 
@@ -368,7 +380,7 @@ GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
 | Buchstaben | 26 letter cards, click to edit entries |
 | Sets | Create, duplicate, rename, delete, activate sets |
 | Tastatur | Virtual QWERTZ keyboard for testing |
-| Einstellungen | Layout, volume, display mode, random sounds |
+| Einstellungen | Keyboard language, volume, display mode, random sounds |
 | Dateien | Upload/preview sounds and images |
 
 ### Real-Time Updates (SSE)
@@ -609,6 +621,9 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 | POST | `/api/keyboards/{id}/duplicate` | Custom copy of a profile and its key map (`{"name"}` optional; `"activate_if_active": true` makes the copy active if the source still is) |
 | PUT/DELETE | `/api/keyboards/{id}` | Rename / delete a custom profile |
 | PUT | `/api/keyboards/{id}/keys/{slot}` | Edit a custom key: `label`, `name`, `shift`, `altgr`, `fn`, `icon`, `code`, `w` |
+| GET | `/api/keyboards/{id}/export` | Profile + key map as a JSON file (FUNK-64) |
+| POST | `/api/keyboards/import` | `{"bundle", "name"?}`: new custom profile from an export, never activated |
+| GET/PUT | `/api/language` | Language (`de`, `us`), `family` (`pc`, `mac`), `numpad`; what "Standard" means |
 | POST | `/api/suggest-word` | AI word suggestion |
 | POST | `/api/generate/sound` | Generate sound (ElevenLabs) |
 | POST | `/api/generate/image` | Generate image (Gemini) |
@@ -630,7 +645,11 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 
 ```json
 {
+  "language": "de",
   "keyboard_layout": "de",
+  "keyboard_family": "pc",
+  "keyboard_numpad": false,
+  "keyboard_profile": "acme-bk03",
   "keyboard_device": "ACME BK03",
   "volume": 100,
   "random_sounds_enabled": false,

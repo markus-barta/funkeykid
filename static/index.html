@@ -266,7 +266,7 @@
     <!-- ═══ LETTERS TAB ═══ -->
     <div x-show="tab === 'letters'" x-cloak>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-        <template x-for="letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')" :key="letter">
+        <template x-for="letter in letterAlphabet()" :key="letter">
           <div class="card bg-base-100 shadow letter-card" @click="editLetter(letter)">
             <div class="card-body p-3">
               <div class="flex items-start gap-2">
@@ -312,7 +312,7 @@
                       :value="editingLetter"
                       @change="navLetterTo($event.target.value)"
                       :disabled="_navBusy">
-                <template x-for="l in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')" :key="l">
+                <template x-for="l in letterAlphabet()" :key="l">
                   <option :value="l" x-text="l"></option>
                 </template>
               </select>
@@ -962,9 +962,17 @@
               <div class="flex items-center gap-2">
                 <label for="kb-profile" class="text-sm font-semibold">Tastatur</label>
                 <select id="kb-profile" class="select select-bordered select-sm" @change="kbActivate($event.target.value)">
-                  <template x-for="p in kb.profiles" :key="p.id">
-                    <option :value="p.id" :selected="p.id === km.profile" x-text="p.name + (p.kind === 'custom' ? ' (eigene)' : '')"></option>
-                  </template>
+                  <option value="default" :selected="kb.selected === 'default'" x-text="'Standard: ' + (kb.default_name || '')"></option>
+                  <optgroup label="Eingebaut">
+                    <template x-for="p in kb.profiles.filter(p => p.kind !== 'custom')" :key="p.id">
+                      <option :value="p.id" :selected="p.id === kb.selected" x-text="p.name"></option>
+                    </template>
+                  </optgroup>
+                  <optgroup label="Eigene" x-show="kb.profiles.some(p => p.kind === 'custom')">
+                    <template x-for="p in kb.profiles.filter(p => p.kind === 'custom')" :key="p.id">
+                      <option :value="p.id" :selected="p.id === kb.selected" x-text="p.name"></option>
+                    </template>
+                  </optgroup>
                 </select>
               </div>
               <span class="badge" :class="hw.connected ? 'badge-success badge-outline' : 'badge-ghost'"
@@ -986,7 +994,31 @@
         <!-- Keyboard profiles: use, duplicate, rename, delete -->
         <div class="card bg-base-100 shadow" x-show="kbManage" x-cloak>
           <div class="card-body p-4 gap-3">
-            <h3 class="font-semibold">Tastaturen</h3>
+            <h3 class="font-semibold">Sprache und Standard-Tastatur</h3>
+            <div class="flex flex-wrap items-end gap-4 rounded-box bg-base-200 p-3">
+              <label class="form-control">
+                <span class="label-text text-sm">Sprache der Tastatur</span>
+                <select id="kb-language" class="select select-bordered select-sm" @change="kbSetLanguage({ language: $event.target.value })">
+                  <template x-for="(label, id) in kb.languages" :key="id"><option :value="id" :selected="id === kb.language" x-text="label"></option></template>
+                </select>
+              </label>
+              <label class="form-control">
+                <span class="label-text text-sm">»Standard« ist eine</span>
+                <select id="kb-family" class="select select-bordered select-sm" @change="kbSetLanguage({ family: $event.target.value })">
+                  <template x-for="(label, id) in kb.families" :key="id"><option :value="id" :selected="id === kb.family" x-text="label"></option></template>
+                </select>
+              </label>
+              <label class="label cursor-pointer gap-2">
+                <input id="kb-numpad" type="checkbox" class="toggle toggle-sm toggle-primary" :checked="kb.numpad" @change="kbSetLanguage({ numpad: $event.target.checked })">
+                <span class="label-text">mit Ziffernblock</span>
+              </label>
+              <p class="text-sm" style="flex: 1 1 260px">Die Sprache legt fest, welcher Buchstabe zu einer Taste gehört (Deutsch: Z und Y getauscht, Ü Ö Ä sind Buchstaben). »Standard« ist jetzt <strong x-text="kb.default_name"></strong>. Ziffern auf dem Ziffernblock spielen die Nummern.</p>
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="font-semibold">Tastaturen</h3>
+              <button type="button" class="btn btn-sm btn-outline" @click="$refs.kbImportFile.click()">Tastatur importieren (JSON)</button>
+              <input x-ref="kbImportFile" type="file" accept="application/json,.json" class="hidden" tabindex="-1" aria-hidden="true" @change="kbImport($event)">
+            </div>
             <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr))">
               <template x-for="p in kb.profiles" :key="p.id">
                 <article class="rounded-box bg-base-200 p-3 flex flex-col gap-2" :class="p.id === km.profile && 'ring-1 ring-primary'">
@@ -1001,18 +1033,20 @@
                     <span class="font-semibold" x-text="p.name"></span>
                     <span class="badge badge-sm" x-text="p.kind === 'custom' ? 'Eigene' : 'Eingebaut'"></span>
                     <span class="badge badge-sm badge-primary" x-show="p.id === km.profile">aktiv</span>
+                    <span class="badge badge-sm badge-outline" x-show="p.id === kb.default">Standard</span>
                   </div>
                   <p class="text-xs opacity-70" x-text="p.note"></p>
                   <div class="flex flex-wrap gap-1 mt-auto">
                     <button type="button" class="btn btn-xs btn-primary" x-show="p.id !== km.profile" @click="kbActivate(p.id)">Verwenden</button>
                     <button type="button" class="btn btn-xs btn-outline" @click="kbDuplicate(p)">Duplizieren</button>
+                    <a class="btn btn-xs btn-ghost" :href="'/api/keyboards/' + encodeURIComponent(p.id) + '/export'" :download="'funkeykid-' + p.id + '.json'">Exportieren</a>
                     <button type="button" class="btn btn-xs btn-ghost" x-show="p.kind === 'custom'" @click="kbRename(p)">Umbenennen</button>
                     <button type="button" class="btn btn-xs btn-ghost text-error" x-show="p.kind === 'custom'" @click="kbDelete(p)">Löschen</button>
                   </div>
                 </article>
               </template>
             </div>
-            <p class="text-xs opacity-70">Eine Tastatur ist nur eine Liste von Tasten: Position, Beschriftung und welcher Code beim Drücken ankommt. Eingebaute Tastaturen sind fest; dupliziere eine, dann kannst du jede Taste neu beschriften und ihren Code festlegen (auch per Lernmodus). Jede Tastatur hat ihre eigene Belegung.</p>
+            <p class="text-xs opacity-70">Eine Tastatur ist nur eine Liste von Tasten: Position, Beschriftung und welcher Code beim Drücken ankommt. Eingebaute Tastaturen sind fest; dupliziere eine, dann kannst du jede Taste neu beschriften und ihren Code festlegen (auch per Lernmodus). Jede Tastatur hat ihre eigene Belegung. »Exportieren« speichert Tastatur und Belegung als JSON-Datei; »Importieren« legt daraus eine eigene Tastatur an (Geräusche und Bilder, die es hier nicht gibt, werden übersprungen).</p>
           </div>
         </div>
 
@@ -1268,11 +1302,11 @@
         <div class="card-body">
           <h2 class="card-title mb-4">Einstellungen</h2>
           <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Tastatur-Layout</span></label>
-            <select class="select select-bordered" x-model="settings.keyboard_layout" @change="autoSave()">
-              <option value="de">Deutsch (QWERTZ)</option>
-              <option value="us">English (QWERTY)</option>
+            <label class="label" for="settings-language"><span class="label-text">Sprache der Tastatur</span></label>
+            <select id="settings-language" class="select select-bordered" @change="kbSetLanguage({ language: $event.target.value })">
+              <template x-for="(label, id) in kb.languages" :key="id"><option :value="id" :selected="id === kb.language" x-text="label"></option></template>
             </select>
+            <span class="text-xs opacity-60 mt-1">Standard-Tastatur, Ziffernblock und eigene Tastaturen: Tastatur → Tastaturen verwalten.</span>
           </div>
           <div class="form-control mb-3">
             <label class="label"><span class="label-text">Lautstärke</span></label>
@@ -1867,9 +1901,14 @@ function funkeykid() {
     },
     async _loadKeymap() {
       const km = await fetch('/api/keymap').then(r => r.json());
-      // the active profile changed elsewhere: reload drawing and map together
-      if (this.kbProfile && km.profile !== this.kbProfile.id) return this._reload();
+      // profile, language or "Standard" changed elsewhere: reload drawing, list and map together
+      if (this.kbProfile && !this._kmMatches(km)) return this._reload();
       this.km = km;
+    },
+    // a key-map answer belongs to the drawing and profile list on screen (FUNK-64 review)
+    _kmMatches(km) {
+      return !!km && km.profile === this.kbProfile?.id && km.language === this.kb.language
+        && km.default === this.kb.default && km.selected === this.kb.selected;
     },
     // a key-map save or reset, bound to the profile the editor showed (409 = switched meanwhile)
     async _keymapWrite(id, profile, opts) {
@@ -1881,7 +1920,8 @@ function funkeykid() {
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { this.showToast('Nicht gespeichert: ' + (data.error || res.status), 'error'); return null; }
-      if (data.profile === this.kbProfile?.id) this.km = data;
+      if (this._kmMatches(data)) this.km = data;
+      else await this._reload();             // switched elsewhere meanwhile: load everything together
       return data;
     },
     async kmSelect(id) {
@@ -1945,7 +1985,8 @@ function funkeykid() {
     },
 
     // Keyboard profiles + drawn keyboard (FUNK-63)
-    kb: { active: '', icons: [], profiles: [] },
+    kb: { active: '', selected: '', default: '', default_name: '', language: 'de', family: 'pc', numpad: false,
+          languages: {}, families: {}, icons: [], profiles: [] },
     kbProfile: null, kbManage: false, kbSelSlot: null, kbFlashCodes: [], _kbFlashT: null, kbLoading: false,
     kbKeyEdit: { label: '', shift: '', altgr: '', fn: '', name: '', code: '', icon: '', w: 1 },
     kbIconNames: { cut: 'Schere', copy: 'Kopieren', paste: 'Einfügen', globe: 'Weltkugel', search: 'Lupe',
@@ -1959,7 +2000,9 @@ function funkeykid() {
         for (let attempt = 0; attempt < 3; attempt++) {
           const [km, kb] = await Promise.all([fetch('/api/keymap').then(r => r.json()), fetch('/api/keyboards').then(r => r.json())]);
           const p = await fetch('/api/keyboards/' + encodeURIComponent(km.profile)).then(r => r.json());
-          if (!p || !p.keys || p.id !== km.profile || kb.active !== km.profile) continue;   // switched between the requests
+          // the three answers must describe the same moment: else something switched between them
+          if (!p || !p.keys || p.id !== km.profile || kb.active !== km.profile || kb.language !== km.language
+              || kb.default !== km.default || kb.selected !== km.selected) continue;
           this.km = km; this.kb = kb; this.kbProfile = p;
           this.kbSelSlot = null; this.kmSel = null;   // nothing selected on the old drawing survives
           return;
@@ -1969,7 +2012,9 @@ function funkeykid() {
         this.kbLoading = false;
       }
     },
-    _applyList(data) { if (data && data.active === this.km.profile) this.kb = data; },
+    // A list response only updates the profile list. Language, "Standard" and the
+    // selection are installed by _reload() together with the key map they belong to.
+    _applyList(data) { if (data && Array.isArray(data.profiles)) this.kb = Object.assign({}, this.kb, { profiles: data.profiles }); },
     async _refreshList() { this._applyList(await fetch('/api/keyboards').then(r => r.json())); },
     // install a profile snapshot and keep the selection consistent with it, whoever saved
     _installProfile(p, savedSlot) {
@@ -2110,14 +2155,14 @@ function funkeykid() {
     },
     kbActivate(id) { return this.kbQueue(() => this._activate(id)); },
     async _activate(id) {
-      if (!id || id === this.km.profile) return;
+      if (!id || id === this.kb.selected) return;
       const res = await fetch('/api/keyboards/' + encodeURIComponent(id) + '/activate', { method: 'POST' });
       await this._reload();
       if (!res.ok) { this.showToast('Tastatur nicht umgeschaltet', 'error'); return; }
       this.showToast('»' + (this.kbProfile?.name || id) + '« ist aktiv: Die Tastatur nutzt jetzt diese Belegung.');
     },
     kbDuplicate(p) {
-      const name = prompt('Name der neuen Tastatur:', p.name + ' (Kopie)');
+      const name = prompt('Name der neuen Tastatur:', p.name.slice(0, 32).trimEnd() + ' (Kopie)');
       if (!name) return;
       return this.kbQueue(async () => {
         // Copy of the active profile: same keys, same key map, so switching to it changes nothing
@@ -2187,6 +2232,38 @@ function funkeykid() {
       });
     },
     kbTakeCode() { if (this.kmLast?.id) this.kbSaveKey({ code: this.kmLast.id }); },
+    // FUNK-64: language, "Standard" (PC/Mac, number pad), export/import
+    letterAlphabet() {
+      return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(this.kb.language === 'de' ? ['Ä', 'Ö', 'Ü'] : []);
+    },
+    kbSetLanguage(patch) {
+      return this.kbQueue(async () => {
+        const res = await fetch('/api/language', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+        const data = await res.json().catch(() => ({}));
+        await this._reload();
+        if (!res.ok) { this.showToast('Nicht geändert: ' + (data.error || res.status), 'error'); return; }
+        this.showToast('Sprache: ' + ((data.languages || {})[data.language] || data.language) + ' · Standard: ' + data.default_name);
+      });
+    },
+    kbImport(ev) {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file) return;
+      return this.kbQueue(async () => {
+        let bundle;
+        try { bundle = JSON.parse(await file.text()); } catch { this.showToast('Das ist keine JSON-Datei', 'error'); return; }
+        const res = await fetch('/api/keyboards/import', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bundle }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Nicht importiert: ' + (data.error || res.status), 'error'); return; }
+        this._applyList(data);
+        const name = (data.profiles || []).find(p => p.id === data.id)?.name || data.id;
+        const skipped = (data.skipped || []).length;
+        this.showToast('»' + name + '« importiert, ' + data.imported + ' Belegungen'
+          + (skipped ? ', ' + skipped + ' übersprungen (Geräusch oder Bild fehlt hier)' : '') + '. »Verwenden« schaltet darauf um.');
+      });
+    },
 
     async init() {
       // Load version info
@@ -2272,7 +2349,8 @@ function funkeykid() {
         // against the state the operations before it left (A→B→A ends on A)
         const d = JSON.parse(e.data);
         this.kbQueue(async () => {
-          if (d.profile === this.km.profile && d.profile === this.kbProfile?.id) return;
+          if (d.profile === this.km.profile && d.profile === this.kbProfile?.id && d.selected === this.kb.selected
+              && d.language === this.kb.language && d.default === this.kb.default) return;
           await this._reload();
           this.showToast('Tastatur »' + d.name + '« ist jetzt aktiv');
         });
@@ -2953,10 +3031,10 @@ function funkeykid() {
     // Letter nav — auto-saves current before opening next
     async navLetter(delta) {
       if (!this.editingLetter || this._navBusy) return;
-      const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const alphabet = this.letterAlphabet();
       const cur = alphabet.indexOf(this.editingLetter);
       if (cur < 0) return;
-      const next = alphabet[(cur + delta + 26) % 26];
+      const next = alphabet[(cur + delta + alphabet.length) % alphabet.length];
       await this.navLetterTo(next);
     },
     async navLetterTo(target) {

@@ -87,7 +87,7 @@ Then `nixos-rebuild switch`.
 
 ### Wrong letters (Y/Z swapped)
 
-Keyboard layout is set to `"de"` (QWERTZ) in settings.json. evdev reports US scancodes; `keyboard.py` maps Y↔Z. If you see wrong letters, check `settings.keyboard_layout`.
+The keyboard language is `"de"` (QWERTZ) or `"us"`. Set it in Einstellungen, or under Tastatur → Tastaturen verwalten. evdev reports US scancodes, and for `de` `keyboard.py` swaps Y↔Z. If you see wrong letters, check `settings.language` (older installs: `settings.keyboard_layout`, which is migrated).
 
 ### Keyboard shows disconnected in pixdcon home scene (gray dots)
 

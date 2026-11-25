@@ -1850,27 +1850,43 @@ function funkeykid() {
       { id: 'sound', label: 'Geräusch' }, { id: 'imgsound', label: 'Bild + Geräusch' },
       { id: 'func', label: 'Funktion' }, { id: 'none', label: 'Nichts' },
     ],
-    async loadKeymap() {
-      const seq = this._kbSeq;
-      try {
-        const km = await fetch('/api/keymap').then(r => r.json());
-        if (seq !== this._kbSeq) return;      // a profile reload started meanwhile: it brings its own map
-        // the active profile changed elsewhere: reload drawing and map together
-        if (this.kbProfile && km.profile !== this.kbProfile.id) { this.kbReload(); return; }
-        this.km = km;
-      } catch {}
+    // ── One queue for every keyboard/key-map operation that fetches and installs state ──
+    // Operations never overlap: a late response can never install over newer state, and
+    // each one starts from what the previous one left (FUNK-63 review). Dialogs run before
+    // an operation is queued; queued operations call the _private helpers, never the queue.
+    _kbQ: Promise.resolve(), _kmLoadQueued: false,
+    kbQueue(fn) {
+      const run = this._kbQ.then(fn).catch((err) => console.warn('[keyboard]', err));
+      this._kbQ = run;
+      return run;
     },
-    kmUrl(id) { return '/api/keymap/' + encodeURIComponent(id) + '?profile=' + encodeURIComponent(this.km.profile || ''); },
-    async kmSwitched(res) {
-      // 409: the profile was switched while this editor was open (FUNK-63)
-      if (res.status !== 409) return false;
-      this.showToast('Die Tastatur wurde inzwischen umgeschaltet: nicht gespeichert, Ansicht neu geladen', 'error');
-      await this.kbReload();
-      return true;
+    loadKeymap() {
+      if (this._kmLoadQueued) return this._kbQ;        // one queued refresh is enough
+      this._kmLoadQueued = true;
+      return this.kbQueue(async () => { this._kmLoadQueued = false; await this._loadKeymap(); });
+    },
+    async _loadKeymap() {
+      const km = await fetch('/api/keymap').then(r => r.json());
+      // the active profile changed elsewhere: reload drawing and map together
+      if (this.kbProfile && km.profile !== this.kbProfile.id) return this._reload();
+      this.km = km;
+    },
+    // a key-map save or reset, bound to the profile the editor showed (409 = switched meanwhile)
+    async _keymapWrite(id, profile, opts) {
+      const res = await fetch('/api/keymap/' + encodeURIComponent(id) + '?profile=' + encodeURIComponent(profile), opts);
+      if (res.status === 409) {
+        this.showToast('Die Tastatur wurde inzwischen umgeschaltet: nicht gespeichert, Ansicht neu geladen', 'error');
+        await this._reload();
+        return null;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { this.showToast('Nicht gespeichert: ' + (data.error || res.status), 'error'); return null; }
+      if (data.profile === this.kbProfile?.id) this.km = data;
+      return data;
     },
     async kmSelect(id) {
       this.kmSel = id;
-      this.kmSelProfile = this.km.profile;
+      const prof = this.kmSelProfile = this.km.profile;
       const a = (this.km.map || {})[id];
       this.kmEdit = Object.assign(
         { action: 'default', letter: 'A', func: 'volup', file: (this.sounds || [])[0] || '', image: (this.images || [])[0] || '', word: '', volume: 100 },
@@ -1878,7 +1894,7 @@ function funkeykid() {
       this.kmSelDefault = '';
       try {
         const r = await fetch('/api/press/' + encodeURIComponent(id) + '?dry=1', { method: 'POST' }).then(r => r.json());
-        if (this.kmSel === id) this.kmSelDefault = r.default || 'ohne Wirkung (spielt nur ein Zufallsgeräusch, wenn das in den Einstellungen an ist)';
+        if (this.kmSel === id && this.kmSelProfile === prof) this.kmSelDefault = r.default || 'ohne Wirkung (spielt nur ein Zufallsgeräusch, wenn das in den Einstellungen an ist)';
       } catch {}
     },
     kmSelInfo() {
@@ -1891,43 +1907,30 @@ function funkeykid() {
       if (d.describe) return d.describe;
       return d.default || 'ohne Wirkung';
     },
-    async kmSave() {
+    kmSave() {
       const id = this.kmSel;
       if (!id || !this.kmSelValid()) return;
-      const e = this.kmEdit;
-      let res;
-      const seq = this._kbSeq;
-      if (e.action === 'default') {
-        res = await fetch(this.kmUrl(id), { method: 'DELETE' });
-      } else {
+      const e = JSON.parse(JSON.stringify(this.kmEdit)), profile = this.km.profile;
+      let opts = { method: 'DELETE' };
+      if (e.action !== 'default') {
         const body = { action: e.action };
         if (e.action === 'letter') body.letter = e.letter;
         if (e.action === 'func') body.func = e.func;
         if (e.action === 'sound' || e.action === 'imgsound') { body.file = e.file; body.volume = Number(e.volume) || 100; }
         if (e.action === 'imgsound') { body.image = e.image; body.word = e.word || ''; }
-        res = await fetch(this.kmUrl(id), {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        opts = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
       }
-      if (await this.kmSwitched(res)) return;
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { this.showToast('Nicht gespeichert: ' + (data.error || res.status), 'error'); return; }
-      this.kmApply(data, seq);
-      this.showToast('Taste ' + id + ': ' + (e.action === 'default' ? 'wieder Standard' : (data.describe || {})[id]));
+      return this.kbQueue(async () => {
+        const data = await this._keymapWrite(id, profile, opts);
+        if (data) this.showToast('Taste ' + id + ': ' + (e.action === 'default' ? 'wieder Standard' : (data.describe || {})[id]));
+      });
     },
-    async kmReset(id) {
-      const seq = this._kbSeq;
-      const res = await fetch(this.kmUrl(id), { method: 'DELETE' });
-      if (await this.kmSwitched(res)) return;
-      if (!res.ok) return;
-      const data = await res.json().catch(() => null);
-      if (data && this.kmApply(data, seq) && this.kmSel === id) this.kmSelect(id);
-    },
-    // a key-map response is used only if no profile reload started since the request
-    // and it belongs to the drawing on screen (checked after the body arrived)
-    kmApply(data, seq) {
-      if (seq !== this._kbSeq || !data || data.profile !== this.kbProfile?.id) return false;
-      this.km = data;
-      return true;
+    kmReset(id) {
+      const profile = this.km.profile;
+      return this.kbQueue(async () => {
+        const data = await this._keymapWrite(id, profile, { method: 'DELETE' });
+        if (data && this.kmSel === id && this.kmSelProfile === data.profile) this.kmSelect(id);
+      });
     },
     // the selected key belongs to the profile on screen (not to one shown before a switch)
     kmSelValid() {
@@ -1943,21 +1946,19 @@ function funkeykid() {
 
     // Keyboard profiles + drawn keyboard (FUNK-63)
     kb: { active: '', icons: [], profiles: [] },
-    kbProfile: null, kbManage: false, kbSelSlot: null, kbFlashCodes: [], _kbFlashT: null, _kbSeq: 0, kbLoading: false,
+    kbProfile: null, kbManage: false, kbSelSlot: null, kbFlashCodes: [], _kbFlashT: null, kbLoading: false,
     kbKeyEdit: { label: '', shift: '', altgr: '', fn: '', name: '', code: '', icon: '', w: 1 },
     kbIconNames: { cut: 'Schere', copy: 'Kopieren', paste: 'Einfügen', globe: 'Weltkugel', search: 'Lupe',
                    prev: 'Zurück', play: 'Abspielen', next: 'Vor', mute: 'Ton aus', vold: 'Leiser', volu: 'Lauter', screen: 'Bildschirm' },
-    // Drawing, key map and profile list always come from one reload and are assigned
-    // together; a reload started later wins, late responses are dropped (FUNK-63 review).
-    async kbReload() {
-      const seq = ++this._kbSeq;
+    kbReload() { return this.kbQueue(() => this._reload()); },
+    // Drawing, key map and profile list come from one reload and are installed together.
+    async _reload() {
       this.kbSelSlot = null; this.kmSel = null;
       this.kbLoading = true;                 // the old drawing takes no clicks while the new one loads
       try {
         for (let attempt = 0; attempt < 3; attempt++) {
           const [km, kb] = await Promise.all([fetch('/api/keymap').then(r => r.json()), fetch('/api/keyboards').then(r => r.json())]);
           const p = await fetch('/api/keyboards/' + encodeURIComponent(km.profile)).then(r => r.json());
-          if (seq !== this._kbSeq) return;
           if (!p || !p.keys || p.id !== km.profile || kb.active !== km.profile) continue;   // switched between the requests
           this.km = km; this.kb = kb; this.kbProfile = p;
           this.kbSelSlot = null; this.kmSel = null;   // nothing selected on the old drawing survives
@@ -1965,12 +1966,19 @@ function funkeykid() {
         }
       } catch {
       } finally {
-        if (seq === this._kbSeq) this.kbLoading = false;
+        this.kbLoading = false;
       }
     },
-    kbApplyList(data) { if (data && data.active === this.km.profile) this.kb = data; },
-    async kbRefreshList() {
-      try { const kb = await fetch('/api/keyboards').then(r => r.json()); if (kb.active === this.km.profile) this.kb = kb; } catch {}
+    _applyList(data) { if (data && data.active === this.km.profile) this.kb = data; },
+    async _refreshList() { this._applyList(await fetch('/api/keyboards').then(r => r.json())); },
+    // install a profile snapshot and keep the selection consistent with it, whoever saved
+    _installProfile(p, savedSlot) {
+      this.kbProfile = p;
+      const sel = this.kbSelKey();
+      if (!sel) { if (this.kbSelSlot) { this.kbSelSlot = null; this.kmSel = null; } return; }
+      if (sel.slot === savedSlot) this.kbKeyEditFrom(sel);
+      const want = sel.code && !this.kbIsShift(sel.code) ? sel.code : null;
+      if (want !== this.kmSel) { if (want) this.kmSelect(want); else this.kmSel = null; }
     },
     kbIsShift(code) { return code === 'LEFTSHIFT' || code === 'RIGHTSHIFT'; },
     kbStyle() {
@@ -2094,56 +2102,64 @@ function funkeykid() {
       if (s.action === 'letter') return 'Inhalt von ' + s.letter;
       return 'Nichts';
     },
-    async kbApplySuggest() {
+    kbApplySuggest() {
       const s = this.kbSuggest();
       if (!s) return;
       this.kmEdit = Object.assign({}, this.kmEdit, JSON.parse(JSON.stringify(s)));
-      await this.kmSave();
+      return this.kmSave();
     },
-    async kbActivate(id) {
+    kbActivate(id) { return this.kbQueue(() => this._activate(id)); },
+    async _activate(id) {
       if (!id || id === this.km.profile) return;
       const res = await fetch('/api/keyboards/' + encodeURIComponent(id) + '/activate', { method: 'POST' });
-      if (!res.ok) { this.showToast('Tastatur nicht umgeschaltet', 'error'); await this.kbReload(); return; }
-      await this.kbReload();
+      await this._reload();
+      if (!res.ok) { this.showToast('Tastatur nicht umgeschaltet', 'error'); return; }
       this.showToast('»' + (this.kbProfile?.name || id) + '« ist aktiv: Die Tastatur nutzt jetzt diese Belegung.');
     },
-    async kbDuplicate(p) {
+    kbDuplicate(p) {
       const name = prompt('Name der neuen Tastatur:', p.name + ' (Kopie)');
       if (!name) return;
-      const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id) + '/duplicate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { this.showToast('Nicht dupliziert: ' + (data.error || res.status), 'error'); return; }
-      this.kbApplyList(data);
-      if (p.id === this.km.profile) {
-        // same keys, same key map: switching changes nothing for the kids, and the copy is editable
-        await this.kbActivate(data.id);
-        this.showToast('»' + name + '« angelegt und aktiv: Jetzt kannst du jede Taste beschriften.');
-      } else {
-        this.showToast('»' + name + '« angelegt. »Verwenden« schaltet darauf um.');
-      }
+      const follow = p.id === this.km.profile;
+      return this.kbQueue(async () => {
+        const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id) + '/duplicate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Nicht dupliziert: ' + (data.error || res.status), 'error'); return; }
+        this._applyList(data);
+        if (follow && p.id === this.km.profile) {
+          // same keys, same key map: switching changes nothing for the kids, and the copy is editable
+          await this._activate(data.id);
+          this.showToast('»' + name + '« angelegt und aktiv: Jetzt kannst du jede Taste beschriften.');
+        } else {
+          this.showToast('»' + name + '« angelegt. »Verwenden« schaltet darauf um.');
+        }
+      });
     },
-    async kbRename(p) {
+    kbRename(p) {
       const name = prompt('Neuer Name:', p.name);
       if (!name || name === p.name) return;
-      const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { this.showToast('Nicht umbenannt: ' + (data.error || res.status), 'error'); return; }
-      this.kbApplyList(data);
-      if (p.id === this.km.profile) await this.kbReload();
+      return this.kbQueue(async () => {
+        const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Nicht umbenannt: ' + (data.error || res.status), 'error'); return; }
+        this._applyList(data);
+        if (p.id === this.km.profile) await this._reload();
+      });
     },
-    async kbDelete(p) {
+    kbDelete(p) {
       if (!confirm('Tastatur »' + p.name + '« und ihre Belegung wirklich löschen?')) return;
-      const wasActive = p.id === this.km.profile;
-      const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { this.showToast('Nicht gelöscht: ' + (data.error || res.status), 'error'); return; }
-      this.kbApplyList(data);
-      if (wasActive) await this.kbReload();
-      this.showToast('»' + p.name + '« gelöscht' + (wasActive ? ': wieder ' + (this.kbProfile?.name || 'Standard') + ' aktiv' : ''));
+      return this.kbQueue(async () => {
+        const wasActive = p.id === this.km.profile;
+        const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Nicht gelöscht: ' + (data.error || res.status), 'error'); return; }
+        this._applyList(data);
+        if (wasActive) await this._reload();
+        this.showToast('»' + p.name + '« gelöscht' + (wasActive ? ': wieder ' + (this.kbProfile?.name || 'Standard') + ' aktiv' : ''));
+      });
     },
-    async kbSaveKey(extra) {
+    kbSaveKey(extra) {
       const k = this.kbSelKey();
       if (!k || this.kbProfile?.kind !== 'custom') return;
       const e = Object.assign({}, this.kbKeyEdit, extra || {});
@@ -2155,24 +2171,19 @@ function funkeykid() {
       if (code !== (k.code || '')) patch.code = code;
       if (!k.stacked && Number(e.w) !== k.w) patch.w = Number(e.w);
       if (!Object.keys(patch).length) { this.showToast('Nichts geändert'); return; }
-      const pid = this.kbProfile.id, seq = this._kbSeq, slot = k.slot;
-      const res = await fetch('/api/keyboards/' + encodeURIComponent(pid) + '/keys/' + encodeURIComponent(slot), {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { this.showToast('Taste nicht gespeichert: ' + (data.error || res.status), 'error'); return; }
-      this.showToast('Taste »' + (k.name || slot) + '« gespeichert');
-      // Install only a newer snapshot of the profile still on screen: an older response
-      // (or one from before a switch) never replaces newer state (FUNK-63 review).
-      if (seq !== this._kbSeq || this.kbProfile?.id !== pid || data.id !== pid || !((data.rev || 0) > (this.kbProfile.rev || 0))) return;
-      this.kbProfile = data;
-      // follow the saved key only if it is still the selected one; done now, not after more awaits
-      const nk = this.kbSelKey();
-      if (this.kbSelSlot === slot && nk) {
-        this.kbKeyEditFrom(nk);
-        if (nk.code && !this.kbIsShift(nk.code)) this.kmSelect(nk.code); else this.kmSel = null;
-      }
-      this.loadKeymap();          // built-in labels for a new code (guarded itself)
-      this.kbRefreshList();       // silhouette in the profile list (guarded itself)
+      const pid = this.kbProfile.id, slot = k.slot, name = k.name || k.slot;
+      return this.kbQueue(async () => {
+        if (this.kbProfile?.id !== pid) { this.showToast('Die Tastatur wurde umgeschaltet: Taste nicht gespeichert', 'error'); return; }
+        const res = await fetch('/api/keyboards/' + encodeURIComponent(pid) + '/keys/' + encodeURIComponent(slot), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Taste nicht gespeichert: ' + (data.error || res.status), 'error'); return; }
+        this.showToast('Taste »' + name + '« gespeichert');
+        // a strictly newer snapshot of the profile on screen (rev guards against any reordering)
+        if (this.kbProfile?.id === pid && data.id === pid && (data.rev || 0) > (this.kbProfile.rev || 0)) this._installProfile(data, slot);
+        await this._loadKeymap();      // built-in labels for a new code
+        await this._refreshList();     // silhouette in the profile list
+      });
     },
     kbTakeCode() { if (this.kmLast?.id) this.kbSaveKey({ code: this.kmLast.id }); },
 
@@ -2255,12 +2266,15 @@ function funkeykid() {
           ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[this.editSetId]?.name || this.editSetId}".`
           : `Set "${d.name}" aktiv`);
       });
-      es.addEventListener('keyboard_profile', async (e) => {
-        // keyboard profile switched in another browser (FUNK-63)
+      es.addEventListener('keyboard_profile', (e) => {
+        // keyboard profile switched (another browser, FUNK-63): queued, so it is decided
+        // against the state the operations before it left (A→B→A ends on A)
         const d = JSON.parse(e.data);
-        if (d.profile === this.km.profile) return;
-        await this.kbReload();
-        this.showToast('Tastatur »' + d.name + '« ist jetzt aktiv');
+        this.kbQueue(async () => {
+          if (d.profile === this.km.profile && d.profile === this.kbProfile?.id) return;
+          await this._reload();
+          this.showToast('Tastatur »' + d.name + '« ist jetzt aktiv');
+        });
       });
       es.addEventListener('gen_update', (e) => {
         const d = JSON.parse(e.data);

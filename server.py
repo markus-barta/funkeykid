@@ -12,6 +12,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+import keymap
 from keyboard import KeyboardListener, is_battery_low
 from display import Display, HEARTBEAT_SECONDS
 from version import VERSION, VERSION_SCHEME, RELEASE_CHANNEL, RELEASE_SEQUENCE, BUILD, REPO
@@ -707,15 +708,53 @@ def _play_number(digit):
         display.publish_letter(digit, word, image)
 
 
-def handle_key(key_name, raw_key=None):
-    """Handle a key press — cycles through enabled entries per letter."""
-    global last_letter, cycle_index, favorites, flat_pos
+def _active_keymap():
+    """The key map of the active keyboard profile (FUNK-62): {key_id: action}."""
+    profile = settings.get("keyboard_profile") or keymap.DEFAULT_PROFILE
+    return (settings.get("keymaps") or {}).get(profile) or {}
+
+
+def _keymap_profile():
+    return settings.get("keyboard_profile") or keymap.DEFAULT_PROFILE
+
+
+def _resolve_press(key_name, raw_key, mods=()):
+    """(key_id, matched_id, action) for a press. Shift+digit stays the favourite shortcut."""
+    kid = keymap.key_id(raw_key, mods)
+    if key_name.startswith("SHIFT_"):
+        return kid, None, None
+    matched, action = keymap.resolve(_active_keymap(), raw_key, mods)
+    return kid, matched, action
+
+
+def handle_key(key_name, raw_key=None, mods=()):
+    """Handle a key press: a key-map entry wins (FUNK-62), else the built-in behaviour."""
     raw_key = raw_key or key_name
     if time.time() - startup_time < STARTUP_GRACE_SECONDS:
         return
-    print(f"[key] handle_key({key_name}, raw={raw_key})", flush=True)
+    kid, matched, action = _resolve_press(key_name, raw_key, mods)
+    has_content = bool(get_enabled_entries(key_name)) if action is None and len(key_name) <= 2 else False
+    unassigned = keymap.is_unassigned(key_name, raw_key, action, has_content)
+    print(f"[key] handle_key({key_name}, raw={raw_key}, id={kid})"
+          + (f" → keymap {matched}: {keymap.describe(action)}" if action else "")
+          + (" (no function)" if unassigned else ""), flush=True)
+    if unassigned:
+        keymap_seen_unassigned[kid] = time.time()
+    sse_broadcast("rawkey", {
+        "key": key_name, "raw": raw_key, "id": kid, "mods": list(keymap.canonical_mods(mods)),
+        "matched": matched, "action": action, "describe": keymap.describe(action),
+        "default": keymap.default_label(key_name, has_content), "unassigned": unassigned,
+        "timestamp": time.time(),
+    })
+    if action is not None:
+        _run_keymap_action(matched, action)
+        return
+    _handle_builtin(key_name)
 
-    sse_broadcast("rawkey", {"key": key_name, "raw": raw_key, "timestamp": time.time()})
+
+def _handle_builtin(key_name):
+    """Today's built-in key behaviour (unchanged by FUNK-62)."""
+    global last_letter, cycle_index, favorites, flat_pos
 
     # Space = stop
     if key_name == "SPACE":
@@ -772,19 +811,7 @@ def handle_key(key_name, raw_key=None):
 
     if not entries:
         if settings.get("random_sounds_enabled"):
-            all_sounds = []
-            for ldata in get_active_set().values():
-                for e in ldata.get("entries", []):
-                    if not e.get("enabled"):
-                        continue
-                    _normalize_letter_entry(e)
-                    for t in (e.get("tracks") or {}).values():
-                        if t.get("enabled", True) and t.get("file"):
-                            p = os.path.join(SOUNDS_DIR, t["file"])
-                            if os.path.exists(p):
-                                all_sounds.append(p)
-            if all_sounds:
-                play_sound_sequence([random.choice(all_sounds)])
+            _play_random_sound()
         return
 
     # Position memory: advance index if same letter, keep position if returning
@@ -798,6 +825,97 @@ def handle_key(key_name, raw_key=None):
     flat_pos = _flat_pos_for(key_name, idx)
 
     _play_entry(key_name, entries[idx], idx)
+
+
+def _play_random_sound():
+    """Play one random enabled track of the active set."""
+    all_sounds = []
+    for ldata in get_active_set().values():
+        for e in ldata.get("entries", []):
+            if not e.get("enabled"):
+                continue
+            _normalize_letter_entry(e)
+            for t in (e.get("tracks") or {}).values():
+                if t.get("enabled", True) and t.get("file"):
+                    p = os.path.join(SOUNDS_DIR, t["file"])
+                    if os.path.exists(p):
+                        all_sounds.append(p)
+    if all_sounds:
+        play_sound_sequence([random.choice(all_sounds)])
+
+
+# ── Key map actions (FUNK-62) ────────────────────────────────────────────────
+
+keymap_seen_unassigned = {}   # key_id → last press time: pressed, but no function (in memory)
+_muted_from = None            # volume before "Stumm" (func mute)
+
+
+def _toggle_mute():
+    global _muted_from
+    if current_volume > 0:
+        _muted_from = current_volume
+        change_volume(-current_volume)
+    else:
+        change_volume((_muted_from or 50) - current_volume)
+        _muted_from = None
+
+
+def _activate_next_set():
+    global cycle_index, last_letter
+    ids = list(settings.get("sets", {}))
+    if len(ids) < 2:
+        return
+    cur = settings.get("active_set")
+    nxt = ids[(ids.index(cur) + 1) % len(ids)] if cur in ids else ids[0]
+    settings["active_set"] = nxt
+    cycle_index = {}
+    last_letter = None
+    save_settings()
+    name = settings["sets"][nxt].get("name", nxt)
+    print(f"[keymap] next set → {nxt} ({name})", flush=True)
+    sse_broadcast("keypress", {"letter": "★", "word": name, "sound": "", "image": "", "entry_index": 0, "timestamp": time.time()})
+
+
+_KEYMAP_FUNCS = {
+    "volup": lambda: change_volume(10),
+    "voldown": lambda: change_volume(-10),
+    "mute": _toggle_mute,
+    "stop": lambda: _handle_builtin("SPACE"),
+    "replay": lambda: _replay_last(),
+    "fav": lambda: _toggle_favorite(),
+    "nextset": _activate_next_set,
+    "random": lambda: _play_random_sound(),
+    "prevsound": lambda: _navigate_flat(-1),
+    "nextsound": lambda: _navigate_flat(+1),
+    "prevletter": lambda: _navigate_letter(-1),
+    "nextletter": lambda: _navigate_letter(+1),
+}
+
+
+def _run_keymap_action(kid, action):
+    kind = action.get("action")
+    if kind == "none":
+        return
+    if kind == "letter":
+        _handle_builtin(action["letter"])
+        return
+    if kind == "func":
+        fn = _KEYMAP_FUNCS.get(action.get("func"))
+        if fn:
+            fn()
+        return
+    if kind in ("sound", "imgsound"):
+        path = os.path.join(SOUNDS_DIR, action.get("file", ""))
+        image = action.get("image", "") if kind == "imgsound" else ""
+        word = action.get("word", "") if kind == "imgsound" else ""
+        if os.path.exists(path):
+            play_sound_sequence([(path, action.get("volume", 100))])
+        else:
+            print(f"[keymap] {kid}: sound file missing: {action.get('file')}", flush=True)
+        sse_broadcast("keypress", {"letter": "", "word": word or kid, "sound": action.get("file", ""),
+                                   "image": image, "entry_index": 0, "timestamp": time.time()})
+        if display and kind == "imgsound":
+            display.publish_letter("", word, image)
 
 
 def _toggle_favorite():
@@ -904,6 +1022,12 @@ async def api_get_status(request):
 async def api_get_diagnostics(request):
     """Detailed keyboard + BT diagnostics for troubleshooting."""
     diag = keyboard.get_diagnostics() if keyboard else {"error": "no keyboard listener"}
+    diag = dict(diag)
+    km = _active_keymap()
+    seen = [kid for kid, _ in sorted(keymap_seen_unassigned.items(), key=lambda kv: -kv[1]) if kid not in km]
+    diag["keymap_unassigned_seen"] = seen     # pressed, but no function (FUNK-62)
+    if seen and isinstance(diag.get("logs"), list):
+        diag["logs"] = diag["logs"] + [f"Gedrückt ohne Wirkung: {', '.join(seen)}"]
     return web.json_response(diag)
 
 
@@ -1294,8 +1418,87 @@ async def api_upload_image(request):
 
 async def api_test_key(request):
     letter = request.match_info["letter"].upper()
-    handle_key(letter)
+    handle_key(letter, _raw_for_key(letter))
     return web.json_response({"ok": True, "letter": letter})
+
+
+def _raw_for_key(key_name):
+    """The code a physical key sends for a (layout-translated) key name: inverse layout."""
+    from keyboard import LAYOUTS
+    layout = LAYOUTS.get(settings.get("keyboard_layout", "de"), {})
+    for raw, key in layout.items():
+        if key == key_name:
+            return raw
+    return key_name
+
+
+# ── Key map API (FUNK-62) ────────────────────────────────────────────────────
+
+def _keymap_payload():
+    km = _active_keymap()
+    seen = sorted(keymap_seen_unassigned.items(), key=lambda kv: -kv[1])
+    return {
+        "profile": _keymap_profile(),
+        "map": km,
+        "describe": {kid: keymap.describe(a) for kid, a in km.items()},
+        "functions": keymap.FUNCTIONS,
+        "letters": list(keymap.LETTER_TARGETS),
+        "seen_unassigned": [{"id": kid, "at": at} for kid, at in seen if kid not in km],
+    }
+
+
+async def api_get_keymap(request):
+    return web.json_response(_keymap_payload())
+
+
+async def api_put_keymap(request):
+    kid = request.match_info["key_id"]
+    try:
+        keymap.parse_key_id(kid)
+        action = keymap.validate(await request.json())
+    except (keymap.KeymapError, ValueError) as e:
+        return web.json_response({"error": str(e)}, status=400)
+    if action["action"] in ("sound", "imgsound") and not os.path.isfile(os.path.join(SOUNDS_DIR, action["file"])):
+        return web.json_response({"error": f"sound not found: {action['file']}"}, status=400)
+    if action["action"] == "imgsound" and not os.path.isfile(os.path.join(IMAGES_DIR, action["image"])):
+        return web.json_response({"error": f"image not found: {action['image']}"}, status=400)
+    maps = settings.setdefault("keymaps", {})
+    maps.setdefault(_keymap_profile(), {})[kid] = action
+    save_settings()
+    print(f"[keymap] {kid} = {keymap.describe(action)}", flush=True)
+    return web.json_response(_keymap_payload())
+
+
+async def api_delete_keymap(request):
+    kid = request.match_info["key_id"]
+    try:
+        keymap.parse_key_id(kid)
+    except keymap.KeymapError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    removed = (settings.get("keymaps") or {}).get(_keymap_profile(), {}).pop(kid, None)
+    if removed is not None:
+        save_settings()
+        print(f"[keymap] {kid} back to built-in behaviour", flush=True)
+    return web.json_response(_keymap_payload())
+
+
+async def api_press(request):
+    """Press a key by id, like the physical keyboard (virtual input; ?dry=1 only resolves)."""
+    kid = request.match_info["key_id"]
+    try:
+        raw, mods = keymap.parse_key_id(kid)
+    except keymap.KeymapError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    from keyboard import LAYOUTS
+    key_name = LAYOUTS.get(settings.get("keyboard_layout", "de"), {}).get(raw, raw)
+    _, matched, action = _resolve_press(key_name, raw, mods)
+    result = {"id": kid, "key": key_name, "matched": matched, "action": action,
+              "describe": keymap.describe(action),
+              "default": keymap.default_label(key_name, bool(get_enabled_entries(key_name)) if len(key_name) <= 2 else False)}
+    if request.query.get("dry") not in ("1", "true"):
+        handle_key(key_name, raw, mods)
+        result["pressed"] = True
+    return web.json_response(result)
 
 
 async def api_get_layout(request):
@@ -1985,6 +2188,10 @@ def create_app():
     # Test
     app.router.add_post("/api/test/{letter}", api_test_key)
     app.router.add_get("/api/layout/{name}", api_get_layout)
+    app.router.add_get("/api/keymap", api_get_keymap)
+    app.router.add_put("/api/keymap/{key_id}", api_put_keymap)
+    app.router.add_delete("/api/keymap/{key_id}", api_delete_keymap)
+    app.router.add_post("/api/press/{key_id}", api_press)
     # Version
     app.router.add_get("/api/version", api_version)
     # AI Generation

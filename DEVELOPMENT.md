@@ -219,6 +219,23 @@ LAYOUTS = {
 
 3 seconds after container start, all keypresses are ignored. Prevents stale BT events from triggering sounds during container restart/weekly update.
 
+### Key map (FUNK-62)
+
+Every key of the kids' keyboard can do something. The pure logic is in `keymap.py`, with tests in `tests/test_keymap.py`. The UI is the Tastatur tab, section "Tastenbelegung".
+
+- **Key id** = the code the keyboard sends: the evdev name without `KEY_`, such as `CUT`, `A`, or `Y` (the German Z). Ctrl, Alt and Meta held at the time are prefixed in a fixed order, as in `CTRL+X`. Shift is not part of the id: Shift + digit stays the favourite shortcut. Ids never depend on the language layout. `keyboard.py` tracks the held modifiers per input node and passes them to `handle_key(key, raw, mods)`.
+- **Storage:** `settings["keymaps"][<profile>][<key id>] = action`. The profile is `settings["keyboard_profile"]`, default `acme-bk03`; FUNK-63 adds profiles. `PUT /api/settings` never touches `keymaps`.
+- **Resolution:** an entry for the id with modifiers wins; then an entry for the plain key; otherwise the built-in behaviour, unchanged. Built-in: letters, digits, Space = Stopp, + and − = volume, Enter = play again, Tab = favourite, arrows = navigation. Any other key plays a random sound only if "Zufällige Sounds" is on.
+- **Actions:**
+  - `letter` (the content of a letter or digit);
+  - `sound` (a file from `sounds/` and a volume);
+  - `imgsound` (plus an image from `images/` and a word, which go to the Pixoo as `publish_letter("", word, image)`);
+  - `func` (`keymap.FUNCTIONS`: volume ±, mute, stop, replay, favourite, next set, random sound, navigation);
+  - `none` (silent).
+- **Learn mode:** every press sends the `rawkey` SSE event with `id`, `matched`, `action`, `default` and `unassigned`. In learn mode the UI selects the pressed key.
+- **Unassigned presses:** a press with neither an entry nor a built-in role is remembered in memory. It appears in "Gedrückt, aber ohne Wirkung" and in `/api/diagnostics` as `keymap_unassigned_seen`.
+- **Virtual press:** `POST /api/press/{id}` presses a key by id, exactly like the keyboard. `?dry=1` only resolves it, so you can check a mapping without a sound. The virtual test keyboard (`/api/test/{letter}`) goes through the same path, via the inverse layout.
+
 ---
 
 ## Sound Generation (ElevenLabs)
@@ -598,6 +615,9 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 | POST | `/api/sets/{id}/letters/{L}/entries` | Add entry |
 | DELETE | `/api/sets/{id}/letters/{L}/entries/{i}` | Delete entry |
 | POST | `/api/test/{letter}` | Simulate keypress |
+| GET | `/api/keymap` | Key map of the active profile + functions + unassigned presses (FUNK-62) |
+| PUT/DELETE | `/api/keymap/{id}` | Assign an action to a key id / back to built-in |
+| POST | `/api/press/{id}` | Press a key by id like the keyboard (`?dry=1`: resolve only) |
 | POST | `/api/suggest-word` | AI word suggestion |
 | POST | `/api/generate/sound` | Generate sound (ElevenLabs) |
 | POST | `/api/generate/image` | Generate image (Gemini) |

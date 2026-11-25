@@ -38,6 +38,9 @@ LAYOUTS = {
     },
 }
 
+# Modifiers that become part of a key id (CTRL+X); Shift stays separate (Shift+digit = favourite)
+MODIFIER_KEYS = frozenset({"LEFTCTRL", "RIGHTCTRL", "LEFTALT", "LEFTMETA", "RIGHTMETA"})
+
 RESCAN_SECONDS = 1.0            # a (re)connected keyboard is grabbed within ~1 s
 IDLE_POLL_SECONDS = 0.5         # scan interval while no node is open
 SELECT_TIMEOUT_SECONDS = 0.25   # keeps stop/restart responsive
@@ -163,6 +166,7 @@ class KeyboardListener:
         self._lifecycle = threading.RLock()   # serializes start/stop/restart
         self._grab_failed_at = {}
         self._shift_held = {}    # path -> {shift keycodes currently down}, from the event stream
+        self._mods_held = {}     # path -> {CTRL/ALT/META key names currently down} (FUNK-62 key ids)
         self._bt_address = None  # never exposed via status or diagnostics
         self._primary = None     # primary open node, read by the battery worker
         # Live status
@@ -269,6 +273,7 @@ class KeyboardListener:
                           f"{RESTART_JOIN_SECONDS:.0f} s; starting anyway (grabs retry)", flush=True)
             self._bt_address = None
             self._shift_held = {}
+            self._mods_held = {}
             self._grab_failed_at = {}
             self.start()
 
@@ -455,6 +460,7 @@ class KeyboardListener:
                 self._close(open_devs.pop(path), path in grabbed)
                 grabbed.discard(path)
                 self._shift_held.pop(path, None)
+                self._mods_held.pop(path, None)
                 print(f"[keyboard] Node gone: {path}", flush=True)
         now = time.monotonic()
         for path, node in wanted.items():
@@ -508,6 +514,17 @@ class KeyboardListener:
             else:
                 held.discard(event.code)
         key_event = evdev.categorize(event)
+        name = key_event.keycode
+        if isinstance(name, (list, tuple)):
+            name = name[0]
+        name = str(name)[4:] if str(name).startswith("KEY_") else str(name)
+        # Ctrl/Alt/Meta held → part of the key id (e.g. CTRL+X), FUNK-62
+        if name in MODIFIER_KEYS:
+            mods = self._mods_held.setdefault(dev.path, set())
+            if event.value:
+                mods.add(name)
+            else:
+                mods.discard(name)
         if key_event.keystate != evdev.KeyEvent.key_down:
             return
         raw = key_event.keycode
@@ -525,8 +542,9 @@ class KeyboardListener:
         self.last_key = key
         self.last_raw_key = raw
         self.last_key_at = time.time()
+        mods = tuple(sorted(m for m in self._mods_held.get(dev.path, ()) if m != raw))
         if self._should_process(key) and self._callback:
-            self._callback(key, raw)
+            self._callback(key, raw, mods)
 
     def _should_process(self, key_name):
         """Debounce check."""
@@ -592,6 +610,7 @@ class KeyboardListener:
                         self._close(open_devs.pop(path, dev), path in grabbed)
                         grabbed.discard(path)
                         self._shift_held.pop(path, None)
+                        self._mods_held.pop(path, None)
                         last_scan = 0.0
         finally:
             for path, dev in list(open_devs.items()):

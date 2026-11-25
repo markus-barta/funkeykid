@@ -10,6 +10,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **Per-letter content**: each key plays its entry's audio tracks and shows an illustration on the Pixoo 64. A-Z + digits 0-9.
 - **Cycle on repeat**: pressing the same letter cycles through its enabled entries; position memory per letter.
 - **Random-sounds fallback**: unmapped keys can play a random clip from the library (opt-in).
+- **Key map** (FUNK-62): any key can be given its own sound, image + sound, a function (volume, mute, stop, next set, …), a letter's content, or nothing. This includes the keyboard's media keys, like the scissors. In learn mode (Tastatur tab) you press the key and assign it; keys pressed without any effect are listed. See DEVELOPMENT.md § Key map.
 
 ### Multi-track audio model (v3.0.0)
 - Each entry carries a `tracks` dict keyed by kind: `FX` (sound effect), `DE` (German TTS), `EN` (English TTS). Extensible later.

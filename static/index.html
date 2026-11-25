@@ -902,6 +902,105 @@
 
     <!-- ═══ TEST TAB ═══ -->
     <div x-show="tab === 'test'" x-cloak>
+      <!-- Key map (FUNK-62): what every key of the kids' keyboard does -->
+      <div class="card bg-base-100 shadow mb-6 max-w-3xl mx-auto">
+        <div class="card-body gap-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <h2 class="card-title">Tastenbelegung</h2>
+            <span class="badge badge-ghost" x-text="'Profil: ' + (km.profile || '')"></span>
+            <div class="flex-1"></div>
+            <button type="button" class="btn btn-sm" :class="kmLearn ? 'btn-primary' : 'btn-outline'"
+                    @click="kmLearn = !kmLearn" :aria-pressed="kmLearn ? 'true' : 'false'">
+              Lernmodus <span x-text="kmLearn ? 'an' : 'aus'"></span>
+            </button>
+          </div>
+          <p class="text-sm opacity-70" x-show="kmLearn">Drück eine Taste auf der echten Tastatur: Sie wird hier ausgewählt, und du siehst, was sie sendet.</p>
+          <p class="text-sm opacity-70" x-show="!kmLearn">Jede Taste kann etwas tun. Schalte den Lernmodus ein und drück die Taste, oder wähle unten eine, die schon gedrückt wurde.</p>
+          <div class="text-sm" x-show="kmLast">
+            Zuletzt gedrückt: <code class="kbd kbd-sm" x-text="kmLast?.id"></code>
+            → <span x-text="kmLastText()"></span>
+            <button type="button" class="btn btn-xs btn-ghost" x-show="!kmLearn && kmLast?.id" @click="kmSelect(kmLast.id)">belegen</button>
+          </div>
+          <div class="flex flex-wrap items-center gap-2" x-show="(km.seen_unassigned || []).length">
+            <span class="text-sm font-semibold">Gedrückt, aber ohne Wirkung:</span>
+            <template x-for="u in km.seen_unassigned" :key="u.id">
+              <button type="button" class="btn btn-xs btn-outline border-dashed" @click="kmSelect(u.id)" x-text="u.id"></button>
+            </template>
+          </div>
+
+          <div class="rounded-box bg-base-200 p-4 flex flex-col gap-3" x-show="kmSel">
+            <div class="flex flex-wrap items-baseline gap-2">
+              <span class="text-lg font-bold">Taste <code x-text="kmSel"></code></span>
+              <span class="text-sm opacity-70" x-text="kmSelInfo()"></span>
+            </div>
+            <div class="flex flex-wrap gap-2" role="group" aria-label="Was passiert beim Drücken?">
+              <template x-for="o in kmOptions" :key="o.id">
+                <button type="button" class="btn btn-sm" :class="kmEdit.action === o.id ? 'btn-primary' : 'btn-ghost border-base-300'"
+                        @click="kmEdit.action = o.id" :aria-pressed="kmEdit.action === o.id ? 'true' : 'false'" x-text="o.label"></button>
+              </template>
+            </div>
+            <div x-show="kmEdit.action === 'default'" class="text-sm opacity-80">Die Taste macht, was sie ohne Belegung macht (siehe oben).</div>
+            <div x-show="kmEdit.action === 'none'" class="text-sm opacity-80">Die Taste bleibt still. Der Rechner sieht sie auch nicht: Die Tastatur gehört exklusiv funkeykid.</div>
+            <label class="form-control max-w-xs" x-show="kmEdit.action === 'letter'">
+              <span class="label-text">Spielt den Inhalt von</span>
+              <select class="select select-bordered select-sm" x-model="kmEdit.letter">
+                <template x-for="l in km.letters" :key="l"><option :value="l" x-text="l"></option></template>
+              </select>
+            </label>
+            <label class="form-control max-w-xs" x-show="kmEdit.action === 'func'">
+              <span class="label-text">Funktion</span>
+              <select class="select select-bordered select-sm" x-model="kmEdit.func">
+                <template x-for="fid in Object.keys(km.functions || {})" :key="fid"><option :value="fid" x-text="km.functions[fid]"></option></template>
+              </select>
+            </label>
+            <div class="flex flex-wrap gap-3 items-end" x-show="kmEdit.action === 'sound' || kmEdit.action === 'imgsound'">
+              <label class="form-control">
+                <span class="label-text">Geräusch (aus »Dateien«)</span>
+                <select class="select select-bordered select-sm max-w-xs" x-model="kmEdit.file">
+                  <template x-for="f in sounds" :key="f"><option :value="f" x-text="f"></option></template>
+                </select>
+              </label>
+              <label class="form-control w-40">
+                <span class="label-text">Lautstärke <span x-text="kmEdit.volume + '%'"></span></span>
+                <input type="range" class="range range-xs range-primary" min="10" max="200" step="10" x-model.number="kmEdit.volume">
+              </label>
+            </div>
+            <div class="flex flex-wrap gap-3 items-end" x-show="kmEdit.action === 'imgsound'">
+              <label class="form-control">
+                <span class="label-text">Bild auf dem Pixoo</span>
+                <select class="select select-bordered select-sm max-w-xs" x-model="kmEdit.image">
+                  <template x-for="f in images" :key="f"><option :value="f" x-text="f"></option></template>
+                </select>
+              </label>
+              <img :src="kmEdit.image ? '/images/' + kmEdit.image : ''" x-show="kmEdit.image" class="img-preview" style="width:64px;height:64px" alt="">
+              <label class="form-control">
+                <span class="label-text">Wort (optional)</span>
+                <input type="text" maxlength="24" class="input input-bordered input-sm w-40" x-model="kmEdit.word">
+              </label>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="btn btn-sm btn-primary" @click="kmSave()">Speichern</button>
+              <button type="button" class="btn btn-sm btn-outline" @click="kmTry()">Ausprobieren</button>
+              <button type="button" class="btn btn-sm btn-ghost" @click="kmSel = null">Schließen</button>
+            </div>
+          </div>
+
+          <div x-show="Object.keys(km.map || {}).length">
+            <h3 class="font-semibold mb-1">Eigene Belegungen</h3>
+            <ul class="flex flex-col gap-1">
+              <template x-for="kid in Object.keys(km.map || {})" :key="kid">
+                <li class="flex flex-wrap items-center gap-2 text-sm">
+                  <code class="kbd kbd-sm" x-text="kid"></code>
+                  <span x-text="(km.describe || {})[kid]"></span>
+                  <button type="button" class="btn btn-xs btn-ghost" @click="kmSelect(kid)">Bearbeiten</button>
+                  <button type="button" class="btn btn-xs btn-ghost" @click="kmReset(kid)">Zurücksetzen</button>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <div class="text-center mb-4 opacity-60">Klicke Tasten — spielt Sound + zeigt Bild</div>
       <div class="flex flex-col items-center gap-1">
         <!-- Number row -->
@@ -1515,6 +1614,7 @@ function funkeykid() {
     settings: { ai_prompts: { suggest_model: '', suggest: '', sound: '', image: '' } },
     sets: {},
     activeSetId: '',
+    editSetId: '',      // set an open letter/number editor belongs to (a set switch elsewhere must not redirect its save)
     activeSet: null,
     sounds: [],
     images: [],
@@ -1553,6 +1653,69 @@ function funkeykid() {
     pressedKey: null,
     lastTestLetter: null, lastTestWord: null, lastTestImage: null,
 
+    // Key map (FUNK-62)
+    km: { profile: '', map: {}, describe: {}, functions: {}, letters: [], seen_unassigned: [] },
+    kmLearn: false, kmLast: null, kmSel: null, kmSelDefault: '',
+    kmEdit: { action: 'default', letter: 'A', func: 'volup', file: '', image: '', word: '', volume: 100 },
+    kmOptions: [
+      { id: 'default', label: 'Standard' }, { id: 'letter', label: 'Buchstabe / Ziffer' },
+      { id: 'sound', label: 'Geräusch' }, { id: 'imgsound', label: 'Bild + Geräusch' },
+      { id: 'func', label: 'Funktion' }, { id: 'none', label: 'Nichts' },
+    ],
+    async loadKeymap() {
+      try { this.km = await fetch('/api/keymap').then(r => r.json()); } catch {}
+    },
+    async kmSelect(id) {
+      this.kmSel = id;
+      const a = (this.km.map || {})[id];
+      this.kmEdit = Object.assign(
+        { action: 'default', letter: 'A', func: 'volup', file: (this.sounds || [])[0] || '', image: (this.images || [])[0] || '', word: '', volume: 100 },
+        a ? JSON.parse(JSON.stringify(a)) : {});
+      this.kmSelDefault = '';
+      try {
+        const r = await fetch('/api/press/' + encodeURIComponent(id) + '?dry=1', { method: 'POST' }).then(r => r.json());
+        if (this.kmSel === id) this.kmSelDefault = r.default || 'ohne Wirkung (spielt nur ein Zufallsgeräusch, wenn das in den Einstellungen an ist)';
+      } catch {}
+    },
+    kmSelInfo() {
+      const d = (this.km.describe || {})[this.kmSel];
+      return d ? 'Belegt: ' + d : 'Standard: ' + (this.kmSelDefault || '…');
+    },
+    kmLastText() {
+      const d = this.kmLast;
+      if (!d) return '';
+      if (d.describe) return d.describe;
+      return d.default || 'ohne Wirkung';
+    },
+    async kmSave() {
+      const id = this.kmSel;
+      if (!id) return;
+      const e = this.kmEdit;
+      let res;
+      if (e.action === 'default') {
+        res = await fetch('/api/keymap/' + encodeURIComponent(id), { method: 'DELETE' });
+      } else {
+        const body = { action: e.action };
+        if (e.action === 'letter') body.letter = e.letter;
+        if (e.action === 'func') body.func = e.func;
+        if (e.action === 'sound' || e.action === 'imgsound') { body.file = e.file; body.volume = Number(e.volume) || 100; }
+        if (e.action === 'imgsound') { body.image = e.image; body.word = e.word || ''; }
+        res = await fetch('/api/keymap/' + encodeURIComponent(id), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { this.showToast('Nicht gespeichert: ' + (data.error || res.status), 'error'); return; }
+      this.km = data;
+      this.showToast('Taste ' + id + ': ' + (e.action === 'default' ? 'wieder Standard' : (data.describe || {})[id]));
+    },
+    async kmReset(id) {
+      const res = await fetch('/api/keymap/' + encodeURIComponent(id), { method: 'DELETE' });
+      if (res.ok) { this.km = await res.json(); if (this.kmSel === id) this.kmSelect(id); }
+    },
+    async kmTry() {
+      if (this.kmSel) await fetch('/api/press/' + encodeURIComponent(this.kmSel), { method: 'POST' });
+    },
+
     async init() {
       // Load version info
       try {
@@ -1566,6 +1729,7 @@ function funkeykid() {
       } catch {}
       await this.refresh();
       try { this.favorites = await fetch('/api/favorites').then(r => r.json()); } catch {}
+      await this.loadKeymap();
       this.connectSSE();
       this.loadDiagnostics();  // fills the keyboard picker in Settings
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
@@ -1588,6 +1752,9 @@ function funkeykid() {
         this.hw.last_raw_key = d.raw;
         this.hw.last_key_at = d.timestamp;
         this.updateAgo();
+        this.kmLast = d;                       // key map (FUNK-62)
+        if (this.kmLearn && this.tab === 'test' && d.id) this.kmSelect(d.id);
+        if (d.unassigned) this.loadKeymap();
       });
       es.addEventListener('keypress', (e) => {
         const d = JSON.parse(e.data);
@@ -1613,6 +1780,16 @@ function funkeykid() {
         const d = JSON.parse(e.data);
         this.hw.volume = d.volume;
         this.settings.volume = d.volume;
+      });
+      es.addEventListener('active_set', async (e) => {
+        // set switched by the keyboard ("Nächstes Set") or another browser (FUNK-62)
+        const d = JSON.parse(e.data);
+        if (d.active_set === this.activeSetId) return;
+        await this.refresh();
+        const editing = (this.editingLetter || this.editingNumber) && this.editSetId && this.editSetId !== d.active_set;
+        this.showToast(editing
+          ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[this.editSetId]?.name || this.editSetId}".`
+          : `Set "${d.name}" aktiv`);
       });
       es.addEventListener('gen_update', (e) => {
         const d = JSON.parse(e.data);
@@ -1735,14 +1912,16 @@ function funkeykid() {
         if (s.audio_normalize_lufs === undefined) s.audio_normalize_lufs = -16;
         // Battery warning threshold (FUNK-58), 0 = off
         if (s.battery_low_threshold === undefined) s.battery_low_threshold = 20;
+        const setId = s.active_set || Object.keys(sets)[0] || '';
+        const setData = setId ? await fetch(`/api/sets/${setId}`).then(r => r.json()) : null;
+        // id and content change together: an editor opening meanwhile never pairs
+        // one set's content with another set's id (FUNK-62 review)
         this.settings = s;
         this.sets = sets;
-        this.activeSetId = s.active_set || Object.keys(sets)[0] || '';
         this.sounds = snd;
         this.images = img;
-        if (this.activeSetId) {
-          this.activeSet = await fetch(`/api/sets/${this.activeSetId}`).then(r => r.json());
-        }
+        this.activeSetId = setId;
+        if (setData) this.activeSet = setData;
       } catch (e) {
         this.showToast('Verbindung fehlgeschlagen', 'error');
       }
@@ -1864,6 +2043,7 @@ function funkeykid() {
       ]);
       this.sounds = snd;
       this.images = img;
+      const setId = this.activeSetId;          // same step as the content read below
       const cur = this.getNumber(digit) || {};
       const data = JSON.parse(JSON.stringify({
         word: cur.word || '',
@@ -1874,6 +2054,7 @@ function funkeykid() {
       this._ensureTracks(data);
       this.editNumberData = data;
       await this.$nextTick();
+      this.editSetId = setId;
       this.editingNumber = digit;
     },
     async saveNumber() {
@@ -1885,7 +2066,7 @@ function funkeykid() {
         backgrounds: this.editNumberData.backgrounds,
         tracks,
       };
-      await fetch(`/api/sets/${this.activeSetId}/numbers/${digit}`, {
+      await fetch(`/api/sets/${this.editSetId || this.activeSetId}/numbers/${digit}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
@@ -2066,6 +2247,7 @@ function funkeykid() {
       this.sounds = snd;
       this.images = img;
       this._blacklist = bl || [];
+      const setId = this.activeSetId;          // same step as the content read below
       const entries = this.getEntries(letter);
       this.editEntries = entries.length
         ? JSON.parse(JSON.stringify(entries)).map(e => {
@@ -2078,6 +2260,7 @@ function funkeykid() {
         : [this._blankEntry()];
       this._suggestOpen = false;
       await this.$nextTick();
+      this.editSetId = setId;
       this.editingLetter = letter;
     },
     async saveLetter() {
@@ -2092,7 +2275,7 @@ function funkeykid() {
         if (e._imageDesc) c._imageDesc = e._imageDesc;
         return c;
       });
-      await fetch(`/api/sets/${this.activeSetId}/letters/${letter}`, {
+      await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${letter}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ entries: cleanEntries }),
@@ -2306,7 +2489,7 @@ function funkeykid() {
           if (e._imageDesc) c._imageDesc = e._imageDesc;
           return c;
         });
-        await fetch(`/api/sets/${this.activeSetId}/letters/${letter}`, {
+        await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${letter}`, {
           method: 'PUT',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ entries: cleanEntries }),
@@ -2317,7 +2500,7 @@ function funkeykid() {
           fetch('/api/blacklist/' + target).then(r => r.json()),
         ]);
         this._blacklist = bl || [];
-        const updated = await fetch(`/api/sets/${this.activeSetId}/letters/${target}`).then(r => r.json());
+        const updated = await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${target}`).then(r => r.json());
         const entries = updated.entries || [];
         this.editEntries = entries.length
           ? JSON.parse(JSON.stringify(entries)).map(e => {

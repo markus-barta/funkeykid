@@ -754,8 +754,12 @@ def _resolve_press(key_name, raw_key, mods=()):
     return kid, matched, action
 
 
-def handle_key(key_name, raw_key=None, mods=()):
-    """Handle a key press: a key-map entry wins (FUNK-62), else the built-in behaviour."""
+def handle_key(key_name, raw_key=None, mods=(), virtual=False):
+    """Handle a key press: a key-map entry wins (FUNK-62), else the built-in behaviour.
+
+    ``virtual`` presses (test keyboard, /api/press) behave the same, but never
+    confirm a guessed key code: only the real keyboard can do that (FUNK-63).
+    """
     raw_key = raw_key or key_name
     if time.time() - startup_time < STARTUP_GRACE_SECONDS:
         return
@@ -765,14 +769,15 @@ def handle_key(key_name, raw_key=None, mods=()):
     print(f"[key] handle_key({key_name}, raw={raw_key}, id={kid})"
           + (f" → keymap {matched}: {keymap.describe(action)}" if action else "")
           + (" (no function)" if unassigned else ""), flush=True)
-    _remember(keyboard_seen, kid)
+    if not virtual:
+        _remember(keyboard_seen, kid)
     if unassigned:
         _remember(keymap_seen_unassigned, kid)
     sse_broadcast("rawkey", {
         "key": key_name, "raw": raw_key, "id": kid, "mods": list(keymap.canonical_mods(mods)),
         "matched": matched, "action": action, "describe": keymap.describe(action),
         "default": keymap.default_label(key_name, has_content), "unassigned": unassigned,
-        "timestamp": time.time(),
+        "virtual": virtual, "timestamp": time.time(),
     })
     if action is not None:
         _run_keymap_action(matched, action)
@@ -875,7 +880,7 @@ def _play_random_sound():
 # ── Key map actions (FUNK-62) ────────────────────────────────────────────────
 
 keymap_seen_unassigned = {}   # key_id → last press time: pressed, but no function (in memory)
-keyboard_seen = {}            # key_id → last press time: every press, confirms guessed codes (FUNK-63)
+keyboard_seen = {}            # key_id → last physical press time: confirms guessed codes (FUNK-63)
 SEEN_MAX = 300                # /api/press can invent ids: keep both maps bounded
 
 
@@ -1460,7 +1465,7 @@ async def api_upload_image(request):
 
 async def api_test_key(request):
     letter = request.match_info["letter"].upper()
-    handle_key(letter, _raw_for_key(letter))
+    handle_key(letter, _raw_for_key(letter), virtual=True)
     return web.json_response({"ok": True, "letter": letter})
 
 
@@ -1575,7 +1580,7 @@ async def api_press(request):
     result = {"id": kid, "key": key_name, "matched": matched, "action": action,
               "describe": keymap.describe(action), "default": _builtin_for(raw)[0]}
     if request.query.get("dry") not in ("1", "true"):
-        handle_key(key_name, raw, mods)
+        handle_key(key_name, raw, mods, virtual=True)
         result["pressed"] = True
     return web.json_response(result)
 

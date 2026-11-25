@@ -2166,6 +2166,8 @@ function funkeykid() {
       if (nk) this.kbKeyEditFrom(nk);
       await this.loadKeymap();
       await this.kbRefreshList();
+      // switched while refreshing: the key belongs to the old drawing, select nothing (FUNK-63 review)
+      if (seq !== this._kbSeq || this.kbProfile?.id !== pid || this.km.profile !== pid) return;
       if (nk && nk.code && !this.kbIsShift(nk.code)) this.kmSelect(nk.code); else this.kmSel = null;
       this.showToast('Taste »' + (nk?.name || k.slot) + '« gespeichert');
     },
@@ -2208,7 +2210,8 @@ function funkeykid() {
         this.hw.last_key_at = d.timestamp;
         this.updateAgo();
         this.kmLast = d;                       // key map (FUNK-62)
-        if (d.id && !(this.km.seen_codes || []).includes(d.id)) this.km.seen_codes = (this.km.seen_codes || []).concat([d.id]);
+        // only the real keyboard confirms a guessed code, not Ausprobieren or the test keys
+        if (d.id && !d.virtual && !(this.km.seen_codes || []).includes(d.id)) this.km.seen_codes = (this.km.seen_codes || []).concat([d.id]);
         if (this.tab === 'test') this.kbFlash(d);          // the key lights up in the drawn keyboard (FUNK-63)
         if (this.kmLearn && this.tab === 'test' && d.id) this.kbSelectId(d.id);
         if (d.unassigned) this.loadKeymap();

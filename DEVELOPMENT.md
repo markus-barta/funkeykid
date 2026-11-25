@@ -1,11 +1,11 @@
 # funkeykid — Development Guide
 
-**Version**: 3.1.1
+**Version**: INSPR-CalVer3 (`version.json`; see the UI footer or `/api/version`, and DEPLOY.md § Versioning)
 **Repo**: https://github.com/markus-barta/funkeykid
 **Host**: hsb1 (Home Server Barta 1)
 **Image**: ghcr.io/markus-barta/funkeykid:latest
 **Task tracking**: [PPM](https://pm.barta.cm) — project `FUNK` (id 5). Issue keys like `FUNK-1` / `FUNK-2` referenced below resolve there. No `+pm/backlog/` in this repo.
-**Related repo**: [pixdicon](https://github.com/markus-barta/pixdcon) — Pixoo scene renderer (separate codebase, funkeykid publishes MQTT into its funkeykid scene).
+**Related repos**: [pixdcon](https://github.com/markus-barta/pixdcon), the Pixoo scene renderer (separate codebase; funkeykid publishes MQTT into its funkeykid scene). nixcfg holds hsb1's host configuration: how the container runs.
 
 ---
 
@@ -69,42 +69,17 @@ Keyboard connect/disconnect:
 
 ## Host Setup (hsb1)
 
-### Docker Compose
+### Container and host configuration (nixcfg)
 
-```yaml
-funkeykid:
-  image: ghcr.io/markus-barta/funkeykid:latest
-  container_name: funkeykid
-  network_mode: host
-  restart: unless-stopped
-  privileged: true           # Required for /dev/input access
-  environment:
-    - TZ=Europe/Vienna
-    - XDG_RUNTIME_DIR=/run/user/1001      # kiosk user
-    - PULSE_SERVER=unix:/run/user/1001/pulse/native
-    - DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
-  env_file:
-    - /home/mba/secrets/smarthome.env     # MQTT credentials
-    - /home/mba/secrets/funkeykid-api.env # ELEVENLABS_API_KEY + OPENROUTER_API_KEY
-  volumes:
-    - ./mounts/funkeykid/settings.json:/data/settings.json
-    - ./mounts/funkeykid/sounds:/data/sounds
-    - ./mounts/funkeykid/images:/data/images
-    - ./mounts/funkeykid/ai-generated:/data/ai-generated
-    - /dev/input:/dev/input
-    - /run/user/1001/pulse:/run/user/1001/pulse
-    - /run/dbus:/run/dbus
-```
+hsb1 runs the container from the nixcfg compose spec, `hosts/hsb1/docker/compose-spec.nix` (service `funkeykid`), plus the `spec` overlay in `hosts/hsb1/configuration.nix`. Together they are the source of truth:
+- the `funkeykid` service: image, env, agenix env files, mounts;
+- the configuration.nix overlay: the `FUNKEYKID_KEYBOARD` pin and the CA bundle.
 
-### NixOS Module (`modules/funkeykid.nix`)
+The spec is rendered to `/etc/compose/hsb1/docker-compose.yml` and reconciled by `compose-hsb1.service`. There is no hand-edited compose file. DEPLOY.md § Production Setup has the summary, file paths and the locked roll. Change the host side only through nixcfg, with an OPS ticket.
 
-Three independent toggles (all default true except `enable`):
+### NixOS Module (`modules/funkeykid.nix` in nixcfg)
 
-| Option | Default | Purpose |
-|--------|---------|---------|
-| `enable` | `false` | Systemd Python service — OFF when using Docker |
-| `hardwareIsolation` | `true` | udev rules: strip ACME BK03 from logind/X11 |
-| `bluetoothReconnect` | `true` | Auto-connect ACME BK03 on boot (5 retries) |
+The options are `enable` (off: hsb1 uses Docker), `keyboardName`, `hardwareIsolation` and `bluetoothReconnect`. See DEPLOY.md § NixOS Module.
 
 **CRITICAL**: `hardwareIsolation` MUST stay `true` even with Docker. Without it:
 - Child's keypresses type into host terminals
@@ -123,7 +98,8 @@ Three independent toggles (all default true except `enable`):
 | `~/docker/mounts/funkeykid/archive/sounds/` | Archived/unused sounds | ✅ |
 | `~/docker/mounts/funkeykid/archive/images/` | Archived/unused images | ✅ |
 | `~/docker/mounts/funkeykid/backup-v1.0/` | v1.0 backup (sounds + images + settings) | ✅ |
-| `~/secrets/funkeykid-api.env` | API keys (ElevenLabs + OpenRouter) | ✅ |
+| `/run/agenix/hsb1-funkeykid-api-env` | API keys (ElevenLabs + OpenRouter), agenix from nixcfg `secrets/` | ✅ (in nixcfg) |
+| `/run/agenix/hsb1-smarthome-env` | MQTT credentials, agenix from nixcfg `secrets/` | ✅ (in nixcfg) |
 
 ---
 
@@ -142,7 +118,7 @@ Both audio streams mix via PipeWire.
 ```
 
 **Rules:**
-- Mount `/run/user/1001/pulse` (kiosk), NOT `/run/user/1000/pulse` (mba)
+- Mount the kiosk runtime dir `/run/user/1001` (the whole dir, not just `pulse/`; see FAQ "No sound after reboot"), NOT `/run/user/1000` (mba)
 - Set `XDG_RUNTIME_DIR=/run/user/1001` and `PULSE_SERVER=unix:/run/user/1001/pulse/native`
 - paplay exits 0 on null sink but produces no audible output — always verify with real sink
 - DO NOT break kiosk's PipeWire session — babycam depends on it
@@ -431,15 +407,16 @@ scp static/index.html mba@hsb1.lan:/tmp/fk.html
 ssh mba@hsb1.lan "docker cp /tmp/fk.html funkeykid:/app/static/index.html"
 ```
 
-**Important**: Hotfixed files lost on `docker compose up --force-recreate`. Always commit + push.
+**Important**: Hotfixed files are lost at the next recreate: a roll, a nixcfg switch that changes the spec, or the Saturday `compose-hsb1-update.timer`. Always commit, push and release.
 
-### Full CI Deployment
+### Full CI Deployment (release → locked roll)
 
-```bash
-git add . && git commit -m "..." && git push
-gh run watch --exit-status  # Wait for GitHub Actions
-ssh mba@hsb1.lan "cd ~/docker && docker compose pull funkeykid && docker compose up -d funkeykid"
-```
+A push to `main` only publishes `:<commit-sha>`. hsb1 runs `:latest`, which moves only with a release:
+1. Run `scripts/reserve_version.py` and merge through a PR.
+2. Tag `v<version>`. CI publishes `:<version>`, the release manifest, then `:latest`.
+3. Roll only funkeykid on hsb1, under the stack lock, with a dry run first.
+
+The exact commands are in DEPLOY.md § Versioning and § "Normal: Release → CI → locked roll on hsb1". Never run compose from `~/docker`; hsb1's compose file is rendered from nixcfg.
 
 ### After Container Recreate
 
@@ -447,9 +424,11 @@ The Dockerfile includes bluez + Pillow. After image pull, these are baked in. Ma
 
 ### pixdcon Scenes
 
+These scenes belong to the pixdcon repository; change them through a PIXD ticket. `pixdcon2-edge` (pixdcon v2) drives the displays and runs them from the shared scene mount; v1 `pixdcon` is the fallback.
+
 **funkeykid scene** (`scenes/pixoo/funkeykid.js`) on pixoo-189:
-- Subscribes to `home/hsb1/funkeykid/display` MQTT
-- Loads images from `/app/assets/pixoo/funkeykid/` (host-mounted)
+- Subscribes to `home/hsb1/funkeykid/display` MQTT, and to the retained `home/hsb1/funkeykid/keyboard-info` for the start screen (PIXD-122)
+- Loads images from `/app/assets/pixoo/funkeykid/`. That is funkeykid's `~/docker/mounts/funkeykid/images`, mounted read-only into both pixdcon containers by the nixcfg compose spec.
 - Renders: bg image + letter (top-left, big font) + word (bottom-center on 50% darkened strip)
 - Bottom 8px of bg image darkened by halving RGB values → readable text on any background
 - Idle: shows last bg image after 10s
@@ -459,13 +438,7 @@ The Dockerfile includes bluez + Pillow. After image pull, these are baked in. Ma
 - Subscribes to `home/hsb1/funkeykid/keyboard-info` (retained)
 - Header indicator at x=30,33,36 y=3: 3 green dots (connected), 2 gray dots (disconnected)
 
-To update images for pixdcon, copy to both:
-```bash
-# Active images (funkeykid reads these)
-~/docker/mounts/funkeykid/images/
-# pixdcon assets (scene reads these)
-~/docker/mounts/pixdcon/assets/pixoo/funkeykid/
-```
+To update images, put them only into `~/docker/mounts/funkeykid/images/`; pixdcon sees the same directory through its mount. Then restart the instance that drives pixoo-189 (`docker restart pixdcon2-edge`), because pixdcon caches images per process.
 
 ---
 
@@ -559,7 +532,7 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 
 **Consumers:**
 - `…/display` → pixdcon `funkeykid.js` scene (Pixoo64 letter rendering)
-- `…/keyboard-info` → pixdcon `home.js` scene (keyboard status dots in header) and the planned funkeykid start screen (FUNK-58)
+- `…/keyboard-info` → pixdcon `home.js` scene (keyboard status dots in header) and the funkeykid scene's start screen (FUNK-58 contract, rendered since PIXD-122)
 
 **keyboard-info contract (v3.2.0)**, also in the `display.py` docstring:
 - Re-published on every change and as a **heartbeat every 10 s** (`heartbeat_s`). Treat 3 missed beats as offline.
@@ -573,9 +546,9 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 
 1. **Audio null sink**: mba (uid 1000) PipeWire has null sink. ALWAYS use kiosk (uid 1001)
 2. **Docker /dev/input**: keep it a bind mount (`/dev/input:/dev/input`), which makes BT devices connecting after container start visible within ~1 s. "Neu verbinden" restarts the listener.
-3. **pixdcon image cache**: `loadPixooImage` caches forever — restart pixdcon for new images
+3. **pixdcon image cache**: `loadPixooImage` caches per process. Restart the driving instance (`docker restart pixdcon2-edge`) for new images
 4. **Umlaut filenames**: NEVER use ä/ö/ü in filenames → use ae/oe/ue
-5. **Hotfix volatility**: `docker cp` changes lost on image pull — always commit+push
+5. **Hotfix volatility**: `docker cp` changes are lost at the next recreate. Always commit, push and release
 6. **Startup sounds**: 3s grace period prevents stale BT events at container restart
 7. **Small AI models**: Ignore exclusion lists — use system message + server-side validation + auto-retry
 
@@ -773,7 +746,7 @@ Single-pass (not two-pass): accuracy is fine for toy-fidelity, finishes in ~1 s 
 }
 ```
 
-Rendering lives in **`pixdicon/scenes/pixoo/funkeykid.js`**:
+Rendering lives in **`pixdcon/scenes/pixoo/funkeykid.js`**:
 
 - `bar:true` payloads touch only the overlay state (`_volumeBar`, `_volumeBarAt`) so the letter-render path isn't polluted with "80 %" text once the overlay expires.
 - Overlay TTL **1.5 s**; a real letter/image payload cancels it instantly.

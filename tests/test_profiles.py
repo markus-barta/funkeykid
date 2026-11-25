@@ -41,9 +41,9 @@ def test_builtin_profiles_validate_as_custom_copies(pid):
         assert key["name"]
 
 
-@pytest.mark.parametrize("pid,width", [("acme-bk03", 14.4), ("pc-de", 18.5), ("mac-de", 15.0), ("pc-us", 18.5),
-                                       ("mac-us", 15.0), ("pc-de-num", 23.0), ("mac-de-num", 23.0),
-                                       ("pc-us-num", 23.0), ("mac-us-num", 23.0)])
+@pytest.mark.parametrize("pid,width", [("acme-bk03", 14.4), ("pc-de", 18.5), ("mac-de", 14.5), ("pc-us", 18.5),
+                                       ("mac-us", 14.5), ("pc-de-num", 23.0), ("mac-de-num", 22.0),
+                                       ("pc-us-num", 23.0), ("mac-us-num", 22.0)])
 def test_profile_widths(pid, width):
     assert pf.layout(pf.BUILTIN[pid])["width"] == pytest.approx(width, abs=0.01)
 
@@ -55,10 +55,10 @@ def test_bk03_rows_line_up():
 
 @pytest.mark.parametrize("lang", ["de", "us"])
 @pytest.mark.parametrize("mac", [False, True])
-def test_main_block_rows_are_15_units(lang, mac):
-    """No letter row misses a key or has one too wide, in any language."""
+def test_main_block_rows_line_up(lang, mac):
+    """No letter row misses a key or has one too wide: 15 units on a PC, 14.5 on Apple keyboards."""
     for i, row in enumerate(pf._main_block(lang, mac)):
-        assert pf._row_width(row) == pytest.approx(15.0), (lang, mac, i)
+        assert pf._row_width(row) == pytest.approx(14.5 if mac else 15.0), (lang, mac, i)
 
 
 @pytest.mark.parametrize("pid", ["pc-de-num", "pc-us-num", "mac-de-num", "mac-us-num"])
@@ -66,7 +66,8 @@ def test_number_pad_is_a_4x5_block_right_of_the_keyboard(pid):
     keys = {k["slot"]: k for k in pf.layout(pf.BUILTIN[pid])["keys"]}
     pad = [k for k in keys.values() if k["code"].startswith("KP") or k["code"] == "NUMLOCK"]
     assert {k["code"] for k in pad} >= {f"KP{d}" for d in "0123456789"} | {"KPENTER", "KPPLUS", "KPMINUS", "KPDOT", "NUMLOCK"}
-    assert min(k["x"] for k in pad) == pytest.approx(19.0) and max(k["x"] + k["w"] for k in pad) == pytest.approx(23.0)
+    x0 = 18.0 if pid.startswith("mac") else 19.0
+    assert min(k["x"] for k in pad) == pytest.approx(x0) and max(k["x"] + k["w"] for k in pad) == pytest.approx(x0 + 4)
     assert keys["kp0"]["w"] == 2 and keys["kpenter"]["h"] == 2
     assert keys["kp7"]["y"] == keys["kp8"]["y"] == keys["kp9"]["y"] < keys["kp4"]["y"] < keys["kp1"]["y"] < keys["kp0"]["y"]
     if pid.startswith("mac"):
@@ -85,7 +86,7 @@ def test_bk03_shows_every_key_from_the_photo():
     keys = list(pf.iter_keys(bk))
     assert len(keys) == 14 + 14 + 14 + 13 + 12 + 11   # esc…einfg, ^…rück, tab…#, feststell…eingabe, umsch…umsch, strg…→
     top = [k for k in keys if k.get("icon")]
-    assert [k["icon"] for k in top] == list(pf.ICONS)
+    assert [k["icon"] for k in top] == list(pf.ICONS[:12])
     assert [k["fn"] for k in top] == [f"F{n}" for n in range(1, 13)]
     assert all(k.get("guess") for k in top)               # unconfirmed until pressed in learn mode
     assert _key(bk, "cut")["code"] == "CUT" and _key(bk, "cut")["name"].startswith("Schere")
@@ -138,7 +139,7 @@ def test_render_and_summary():
     r = pf.render(pf.BUILTIN["acme-bk03"])
     assert r["id"] == "acme-bk03" and r["kind"] == "builtin" and len(r["keys"]) == 78
     s = pf.summary(pf.BUILTIN["mac-de"])
-    assert s["keys"] == len(s["shape"]) and s["width"] == pytest.approx(15.0)
+    assert s["keys"] == len(s["shape"]) and s["width"] == pytest.approx(14.5)
 
 
 # ── custom profiles ──────────────────────────────────────────────────────────
@@ -276,3 +277,32 @@ def test_copy_name_fits_the_name_limit():
         name = pf.copy_name(prof["name"])
         assert name.endswith(" (Kopie)") and len(name) <= pf.PROFILE_NAME_MAX
         pf.duplicate(prof, "custom-c", name)
+
+
+def test_mac_with_number_pad_matches_the_photo():
+    """FUNK-66: the Magic Keyboard with Touch ID and number pad (Markus's photo, German)."""
+    prof = pf.BUILTIN["mac-de-num"]
+    rows = [[k for k in row["keys"] if "gap" not in k] for row in prof["rows"]]
+    top = rows[0]
+    assert [k.get("icon") for k in top[1:14]] == ["sundim", "sun", "windows", "search", "mic", "moon",
+                                                  "prev", "play", "next", "mute", "vold", "volu", "touchid"]
+    assert [k["fn"] for k in top[1:13]] == [f"F{n}" for n in range(1, 13)] and all(k["guess"] for k in top[1:14])
+    assert [k["code"] for k in top[14:]] == [f"F{n}" for n in range(13, 20)]
+    assert top[0]["w"] == 1.5                                           # wide esc
+    by = {k["slot"]: k for k in pf.iter_keys(prof)}
+    assert [by[s]["icon"] for s in ("doc", "home", "end")] == ["doc", "home", "end"]
+    assert (by["pgup"]["label"], by["del"]["label"], by["pgdn"]["label"]) == ("↑", "⌦", "↓")
+    bottom = rows[5]
+    assert [k["slot"] for k in bottom[:4]] == ["fn", "lctrl", "lalt", "lmeta"] and bottom[0]["icon"] == "globe"
+    assert [(k["label"], k["shift"]) for k in bottom[1:4]] == [("control", "⌃"), ("option", "⌥"), ("command", "⌘")]
+    # Mac-German legends: € on E, @ on L, nothing else from AltGr
+    assert (by["e"]["altgr"], by["l"]["altgr"]) == ("€", "@")
+    assert not any(by[s].get("altgr") for s in ("q", "m", "d7", "d8", "d9", "d0", "sz", "plus", "lt"))
+    suggest = {k["slot"]: k["suggest"]["func"] for k in top if "suggest" in k}
+    assert suggest == {"f7": "prevsound", "f8": "replay", "f9": "nextsound", "f10": "mute", "f11": "voldown", "f12": "volup"}
+
+
+def test_pc_profiles_keep_their_pc_legends():
+    by = {k["slot"]: k for k in pf.iter_keys(pf.BUILTIN["pc-de"])}
+    assert (by["q"]["altgr"], by["m"]["altgr"], by["d7"]["altgr"]) == ("@", "µ", "{")
+    assert by["f1"]["code"] == "F1" and "icon" not in by["f1"]

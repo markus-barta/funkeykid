@@ -606,7 +606,7 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 | GET | `/api/keyboards` | Keyboard profiles (summary + silhouette) and the active one (FUNK-63) |
 | GET | `/api/keyboards/{id}` | One profile with the absolute key layout |
 | POST | `/api/keyboards/{id}/activate` | Make a profile active (its key map drives the keyboard) |
-| POST | `/api/keyboards/{id}/duplicate` | Custom copy of a profile and its key map (`{"name"}` optional) |
+| POST | `/api/keyboards/{id}/duplicate` | Custom copy of a profile and its key map (`{"name"}` optional; `"activate_if_active": true` makes the copy active if the source still is) |
 | PUT/DELETE | `/api/keyboards/{id}` | Rename / delete a custom profile |
 | PUT | `/api/keyboards/{id}/keys/{slot}` | Edit a custom key: `label`, `name`, `shift`, `altgr`, `fn`, `icon`, `code`, `w` |
 | POST | `/api/suggest-word` | AI word suggestion |

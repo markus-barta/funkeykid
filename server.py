@@ -1669,13 +1669,20 @@ async def api_duplicate_keyboard(request):
         prof = profiles.duplicate(source, profiles.new_id(name, set(custom) | set(settings.get("keyboard_profiles") or {})), name)
     except ValueError as e:      # ProfileError is a ValueError
         return web.json_response({"error": str(e)}, status=400)
+    # "activate_if_active": the copy becomes active only if its source still is, decided
+    # here in the same step as the copy (another browser may have switched meanwhile)
+    follow = body.get("activate_if_active") is True and _keymap_profile() == source["id"]
     _store_custom(prof)
     # the copy starts with the source's key map
     maps = settings.setdefault("keymaps", {})
     maps[prof["id"]] = json.loads(json.dumps(maps.get(source["id"], {})))
+    if follow:
+        settings["keyboard_profile"] = prof["id"]
     save_settings()
-    print(f"[keyboard] profile {source['id']} duplicated → {prof['id']}", flush=True)
-    return web.json_response(dict(_keyboards_payload(), id=prof["id"]))
+    print(f"[keyboard] profile {source['id']} duplicated → {prof['id']}" + (" (active)" if follow else ""), flush=True)
+    if follow:
+        _profile_switched()
+    return web.json_response(dict(_keyboards_payload(), id=prof["id"], activated=follow))
 
 
 async def api_put_keyboard(request):

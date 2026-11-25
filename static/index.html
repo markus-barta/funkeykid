@@ -2119,18 +2119,19 @@ function funkeykid() {
     kbDuplicate(p) {
       const name = prompt('Name der neuen Tastatur:', p.name + ' (Kopie)');
       if (!name) return;
-      const follow = p.id === this.km.profile;
       return this.kbQueue(async () => {
+        // Copy of the active profile: same keys, same key map, so switching to it changes nothing
+        // for the kids and makes it editable. The server switches only if the source is still
+        // active when it makes the copy: another browser's choice is never overridden.
         const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id) + '/duplicate', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, activate_if_active: true }) });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { this.showToast('Nicht dupliziert: ' + (data.error || res.status), 'error'); return; }
-        this._applyList(data);
-        if (follow && p.id === this.km.profile) {
-          // same keys, same key map: switching changes nothing for the kids, and the copy is editable
-          await this._activate(data.id);
+        if (data.activated) {
+          await this._reload();
           this.showToast('»' + name + '« angelegt und aktiv: Jetzt kannst du jede Taste beschriften.');
         } else {
+          this._applyList(data);
           this.showToast('»' + name + '« angelegt. »Verwenden« schaltet darauf um.');
         }
       });

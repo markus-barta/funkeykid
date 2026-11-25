@@ -233,6 +233,21 @@ A profile describes what a keyboard looks like and what each key sends. The UI d
 - **Export / import** (FUNK-64): `GET /api/keyboards/{id}/export` downloads `{"format": "funkeykid.keyboard.v1", "profile", "keymap"}`, for built-ins too. `POST /api/keyboards/import` with `{"bundle", "name"?}` creates a new custom profile with that key map and never activates it. Everything is validated like a UI edit. Entries whose sound or image is missing on this machine are skipped and listed in `skipped`.
 - **Not yet:** a phone or tablet keyboard (FUNK-65).
 
+### Set export / import as ZIP (FUNK-43)
+
+A set travels as one ZIP. The logic is in `setbundle.py`, with tests in `tests/test_setbundle.py`. The UI is the Sets tab: "Exportieren" on each card, and "Set importieren (ZIP)".
+
+- **File:** `funkeykid-set.json` holds `{"format": "funkeykid.set.v1", "set_id", "set", "missing"}`. The set carries name, description, letters (entries with word, image, `_imageDesc` and FX/DE/EN tracks with file, enabled, prompt and volume), numbers (word, image subject, tracks, backgrounds) and track order. The ZIP also holds `sounds/<file>` and `images/<file>` for every referenced file that exists. Export never fails on stored data: files it cannot include are listed in `missing`.
+- **Import, step 1 (preview):** the upload is streamed into `<data>/import-staging/<token>.zip` (400 MB at most) and checked strictly:
+  - only `funkeykid-set.json`, `sounds/<name>` and `images/<name>` are allowed, with plain names and known extensions;
+  - no duplicates and no encryption;
+  - sizes and member counts are capped, and members are read one by one, never with `extractall`;
+  - the set is rebuilt from known fields.
+
+  Each referenced file then gets a status: `new`, `same` (identical, reused), `conflict` (same name, other content), `local` (not in the ZIP, but here) or `missing`. Previews expire after an hour.
+- **Import, step 2 (commit):** the token is claimed at once, so a second commit fails. Files are written through temp files under a lock. A conflict is resolved per file: `rename` (the default: stored as `name-2.ext`, with references rewritten), `keep` (use the file here) or `overwrite` (replaces it for every set that uses it). The import always creates a new set with a fresh id, and activates it only if asked.
+- **Not in scope:** merging into an existing set. Blacklist and favourites are global, not part of a set.
+
 ### Language migration (FUNK-64)
 
 `settings.language` replaces `settings.keyboard_layout`. A missing `language` is taken from `keyboard_layout` (`profiles.language_of`), so an existing `de` or `us` setup keeps its letter mapping. Every key that had a role before keeps it. Only keys that had no built-in role gain one: the umlaut keys (and only if the set has content for them), the pad digits and pad Enter. `PUT /api/language` writes `keyboard_layout` in step, so a rollback to an older image still finds the same layout. `PUT /api/settings` never writes `keyboard_layout` any more.
@@ -626,6 +641,10 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 | PUT | `/api/keyboards/{id}/keys/{slot}` | Edit a custom key: `label`, `name`, `shift`, `altgr`, `fn`, `icon`, `code`, `w` |
 | GET | `/api/keyboards/{id}/export` | Profile + key map as a JSON file (FUNK-64) |
 | POST | `/api/keyboards/import` | `{"bundle", "name"?}`: new custom profile from an export, never activated |
+| GET | `/api/sets/{id}/export` | The set as a ZIP: `funkeykid-set.json` + `sounds/…` + `images/…` (FUNK-43) |
+| POST | `/api/sets/import/preview` | Multipart `file`: check a set ZIP, return a token, the counts and each file's status |
+| POST | `/api/sets/import/commit` | `{"token", "name"?, "resolutions"?, "activate"?}`: import as a new set |
+| POST | `/api/sets/import/cancel` | `{"token"}`: drop a preview |
 | GET/PUT | `/api/language` | Language (`de`, `us`), `family` (`pc`, `mac`), `numpad`; what "Standard" means |
 | POST | `/api/suggest-word` | AI word suggestion |
 | POST | `/api/generate/sound` | Generate sound (ElevenLabs) |

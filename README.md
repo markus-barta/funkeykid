@@ -13,6 +13,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **Key map** (FUNK-62): any key can be given its own sound, image + sound, a function (volume, mute, stop, next set, …), a letter's content, or nothing. This includes the keyboard's media keys, like the scissors. In learn mode (Tastatur tab) you press the key and assign it; keys pressed without any effect are listed. See DEVELOPMENT.md § Key map.
 - **Keyboard profiles** (FUNK-63): the Tastatur tab draws the keyboard (ACME BK03, PC Deutsch, Mac Deutsch) with what every key does; click a key to assign it, or press it in learn mode and it lights up. Each keyboard has its own key map. Duplicate one to relabel keys or fix the code a key sends. See DEVELOPMENT.md § Keyboard profiles.
 - **Language and number pad** (FUNK-64): the keyboard language (Deutsch or English US) decides the letters: Z/Y, and Ü/Ö/Ä as letters for German. "Standard" means a PC or Mac keyboard of that language, with or without a number pad, and the pad digits play the numbers. Keyboards and their key maps can be exported and imported as JSON files.
+- **Set export / import** (FUNK-43): a set travels as one ZIP with all its sounds and pictures, for backups, siblings or another device. Importing shows a preview first, and if a file with the same name but other content already exists, you choose per file: rename, keep or overwrite.
 
 ### Multi-track audio model (v3.0.0)
 - Each entry carries a `tracks` dict keyed by kind: `FX` (sound effect), `DE` (German TTS), `EN` (English TTS). Extensible later.

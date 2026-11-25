@@ -4,6 +4,8 @@ import json
 import os
 import subprocess
 import random
+import shutil
+import re
 import threading
 import time
 import uuid
@@ -14,6 +16,7 @@ from aiohttp import web
 
 import keymap
 import profiles
+import setbundle
 from keyboard import KeyboardListener, is_battery_low
 from display import Display, HEARTBEAT_SECONDS
 from version import VERSION, VERSION_SCHEME, RELEASE_CHANNEL, RELEASE_SEQUENCE, BUILD, REPO
@@ -395,10 +398,23 @@ def _migrate_to_sets():
 
 
 def save_settings():
+    """Write settings.json. Everything is serialized *before* the file is opened.
+
+    An error while serializing then never leaves a truncated file. On hsb1
+    settings.json is a single-file bind mount, so it cannot be replaced by a
+    rename; it is rewritten in place with one write. A lone Unicode surrogate
+    from some request cannot be written as UTF-8: the file then uses ASCII
+    escapes, which json.load reads back identically (FUNK-43 review).
+    """
     os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
-    with open(SETTINGS_PATH, "w") as f:
-        json.dump(settings, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    try:
+        payload = (json.dumps(settings, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    except UnicodeEncodeError:
+        payload = (json.dumps(settings, indent=2, ensure_ascii=True) + "\n").encode("ascii")
+    with open(SETTINGS_PATH, "wb") as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
 
 
 def get_active_set():
@@ -1217,17 +1233,306 @@ async def api_delete_set(request):
     return web.json_response({"ok": True})
 
 
+def _set_active(set_id):
+    """The active-set state change, without saving."""
+    global cycle_index, last_letter
+    settings["active_set"] = set_id
+    cycle_index = {}
+    last_letter = None
+
+
+def _announce_active(set_id):
+    sse_broadcast("active_set", {"active_set": set_id, "name": settings["sets"][set_id].get("name", set_id)})
+
+
+def _activate_set(set_id):
+    """Make a set active (it must exist); saves and tells the browsers."""
+    _set_active(set_id)
+    save_settings()
+    _announce_active(set_id)
+
+
 async def api_activate_set(request):
     set_id = request.match_info["set_id"]
     if set_id not in settings.get("sets", {}):
         return web.json_response({"error": "Set not found"}, status=404)
-    settings["active_set"] = set_id
-    global cycle_index, last_letter
-    cycle_index = {}
-    last_letter = None
-    save_settings()
-    sse_broadcast("active_set", {"active_set": set_id, "name": settings["sets"][set_id].get("name", set_id)})
+    _activate_set(set_id)
     return web.json_response({"ok": True, "active_set": set_id})
+
+
+# ── Set export / import as ZIP (FUNK-43) ─────────────────────────────────────
+
+IMPORT_DIR = os.path.join(DATA_DIR, "import-staging")
+IMPORT_TTL_SECONDS = 3600
+MAX_PENDING_IMPORTS = 3                       # uploads running + previews waiting
+MAX_STAGING_BYTES = 1024 * 1024 * 1024        # all staged uploads together
+DISK_RESERVE_BYTES = 512 * 1024 * 1024        # never fill a disk below this
+set_imports = {}      # token → {"path", "created", "set", "members"}: previews waiting for commit
+_uploading = {}       # token → bytes received so far
+_committing = {}      # token → staged ZIP of a commit still running (counted until it is removed)
+_import_lock = asyncio.Lock()   # one commit at a time: publish, save and commit/rollback together
+
+
+def _remove_quiet(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _purge_imports():
+    """Drop previews older than an hour, and staged files no preview knows (e.g. from before a restart)."""
+    now = time.time()
+    for token, imp in list(set_imports.items()):
+        if now - imp["created"] > IMPORT_TTL_SECONDS:
+            set_imports.pop(token, None)
+            _remove_quiet(imp["path"])
+    known = {imp["path"] for imp in set_imports.values()} | set(_committing.values())
+    try:
+        for name in os.listdir(IMPORT_DIR):
+            path = os.path.join(IMPORT_DIR, name)
+            if path not in known and now - os.path.getmtime(path) > IMPORT_TTL_SECONDS:
+                _remove_quiet(path)
+    except OSError:
+        pass
+
+
+def _staged_bytes():
+    total = sum(_uploading.values())
+    for path in [imp["path"] for imp in set_imports.values()] + list(_committing.values()):
+        try:
+            total += os.path.getsize(path)
+        except OSError:
+            pass
+    return total
+
+
+def _pending_imports():
+    return len(set_imports) + len(_uploading) + len(_committing)
+
+
+def _settings_file_unchanged(before):
+    """True if settings.json still holds exactly the bytes it had before a failed save."""
+    try:
+        with open(SETTINGS_PATH, "rb") as f:
+            return f.read() == before
+    except FileNotFoundError:
+        return before is None
+    except OSError:
+        return False
+
+
+def _restore_settings_file(before):
+    """Put settings.json back exactly as it was (in place: it is a single-file bind mount on hsb1)."""
+    if before is None:
+        return False
+    try:
+        with open(SETTINGS_PATH, "wb") as f:
+            f.write(before)
+            f.flush()
+            os.fsync(f.fileno())
+        return True
+    except OSError:
+        return False
+
+
+def _purge_import_dir_at_start():
+    """Tokens live in memory: after a restart every staged upload is an orphan."""
+    try:
+        for name in os.listdir(IMPORT_DIR):
+            _remove_quiet(os.path.join(IMPORT_DIR, name))
+    except OSError:
+        pass
+    setbundle.purge_temp_files(SOUNDS_DIR, IMAGES_DIR)
+
+
+async def _import_janitor():
+    """Expire abandoned previews even when nobody starts another import."""
+    while True:
+        await asyncio.sleep(300)
+        try:
+            _purge_imports()
+        except Exception as e:
+            print(f"[sets] import cleanup failed: {e}", flush=True)
+
+
+def _export_copy(set_data):
+    """A normalized deep copy of a stored set, as the export writes it."""
+    import copy as _copy
+    out = _copy.deepcopy(set_data)
+    for letter_cfg in out.get("letters", {}).values():
+        for e in letter_cfg.get("entries", []):
+            _normalize_letter_entry(e)
+            _strip_legacy_sound(e)
+    for n in out.get("numbers", {}).values():
+        _normalize_number_entry(n)
+        _strip_legacy_sound(n)
+    out["track_order"] = _normalize_track_order(out.get("track_order"))
+    return out
+
+
+def _import_set_id(name, sets):
+    """A free, URL-safe set id for an imported set."""
+    base = re.sub(r"[^a-z0-9-]+", "-", _slugify(name)).strip("-") or "set"
+    sid, n = base, 2
+    while sid in sets:
+        sid, n = f"{base}-{n}", n + 1
+    return sid
+
+
+async def api_export_set(request):
+    set_id = request.match_info["set_id"]
+    stored = settings.get("sets", {}).get(set_id)
+    if stored is None:
+        return web.json_response({"error": "Set not found"}, status=404)
+    data = _export_copy(stored)               # snapshot now; the ZIP is built off the event loop
+    body = await asyncio.get_running_loop().run_in_executor(
+        None, setbundle.build_zip, set_id, data, SOUNDS_DIR, IMAGES_DIR, VERSION)
+    fname = re.sub(r"[^A-Za-z0-9._-]+", "-", set_id)[:60] or "set"
+    print(f"[sets] exported {set_id} ({len(body)} bytes)", flush=True)
+    return web.Response(body=body, content_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="funkeykid-set-{fname}.zip"'})
+
+
+async def api_import_set_preview(request):
+    """Upload a set ZIP (multipart field "file"): check it and say what importing would do."""
+    _purge_imports()
+    try:
+        reader = await request.multipart()
+        field = await reader.next()
+    except Exception:
+        return web.json_response({"error": "upload the ZIP as multipart field 'file'"}, status=400)
+    if field is None or field.name != "file":
+        return web.json_response({"error": "upload the ZIP as multipart field 'file'"}, status=400)
+    os.makedirs(IMPORT_DIR, exist_ok=True)
+    if _pending_imports() >= MAX_PENDING_IMPORTS:
+        return web.json_response({"error": "too many imports open at once: import or cancel one first"}, status=429)
+    if shutil.disk_usage(IMPORT_DIR).free < setbundle.MAX_UPLOAD_BYTES + DISK_RESERVE_BYTES:
+        return web.json_response({"error": "not enough free disk space for an import"}, status=507)
+    token = uuid.uuid4().hex
+    path = os.path.join(IMPORT_DIR, f"{token}.zip")
+    loop = asyncio.get_running_loop()
+    _uploading[token] = 0
+    try:
+        size = 0
+        with open(path, "wb") as f:
+            while True:
+                chunk = await field.read_chunk(1 << 20)
+                if not chunk:
+                    break
+                size += len(chunk)
+                _uploading[token] = size
+                if size > setbundle.MAX_UPLOAD_BYTES:
+                    raise setbundle.BundleError("the file is too large")
+                if _staged_bytes() > MAX_STAGING_BYTES:
+                    raise setbundle.BundleError("too much import data waiting: import or cancel an open import first")
+                f.write(chunk)
+        set_data, members = await loop.run_in_executor(None, setbundle.read_zip, path)
+        files = await loop.run_in_executor(None, setbundle.plan, path, set_data, members, SOUNDS_DIR, IMAGES_DIR)
+    except setbundle.BundleError as e:
+        _remove_quiet(path)
+        return web.json_response({"error": str(e)}, status=400)
+    except BaseException:
+        _remove_quiet(path)
+        raise
+    finally:
+        _uploading.pop(token, None)
+    set_imports[token] = {"path": path, "created": time.time(), "set": set_data, "members": members}
+    letters = set_data["letters"]
+    print(f"[sets] import preview {token[:8]}: {set_data['name']} ({len(files)} files)", flush=True)
+    return web.json_response({
+        "token": token, "name": set_data["name"], "description": set_data["description"],
+        "counts": {"letters": len(letters), "entries": sum(len(c["entries"]) for c in letters.values()),
+                   "numbers": len(set_data["numbers"])},
+        "files": files,
+    })
+
+
+async def api_import_set_commit(request):
+    """Import a previewed set as a new set. Body: {"token", "name"?, "resolutions"?, "activate"?}."""
+    try:
+        body = await _json_object(request)
+        token, name = body.get("token"), body.get("name")
+        resolutions = body.get("resolutions") or {}
+        if not isinstance(token, str):
+            raise ValueError("token missing")
+        if name is not None and (not isinstance(name, str) or len(name) > setbundle.NAME_MAX
+                                 or not setbundle._utf8(name)):
+            raise ValueError(f"name must be text of at most {setbundle.NAME_MAX} characters")
+        if not isinstance(resolutions, dict) or not all(isinstance(k, str) and isinstance(v, str)
+                                                         for k, v in resolutions.items()):
+            raise ValueError("resolutions must map file paths to rename, keep or overwrite")
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    imp = set_imports.pop(token, None)        # claimed now: a second commit of the same preview finds nothing
+    if imp is None:
+        return web.json_response({"error": "this preview has expired or was already imported: upload the file again"},
+                                 status=404)
+    _committing[token] = imp["path"]          # still staged: counted and protected until removed
+    try:
+        async with _import_lock:              # publish, save and commit/rollback as one unit
+            return await _commit_import(imp, name, resolutions, body.get("activate") is True)
+    finally:
+        _committing.pop(token, None)
+        _remove_quiet(imp["path"])
+
+
+async def _commit_import(imp, name, resolutions, activate):
+    needed = sum(imp["members"].values())
+    for base in (SOUNDS_DIR, IMAGES_DIR):
+        os.makedirs(base, exist_ok=True)
+        if shutil.disk_usage(base).free < needed + DISK_RESERVE_BYTES:
+            return web.json_response({"error": "not enough free disk space for the set's files"}, status=507)
+    try:
+        data, summary, txn = await asyncio.get_running_loop().run_in_executor(
+            None, setbundle.apply, imp["path"], imp["set"], imp["members"], SOUNDS_DIR, IMAGES_DIR, resolutions)
+    except setbundle.BundleError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    # no await from here on: choose the id, add the set and save in one step, or undo everything
+    if name and name.strip():
+        data["name"] = name.strip()
+    sets = settings.setdefault("sets", {})
+    sid = _import_set_id(data["name"], sets)
+    previous_active = settings.get("active_set")
+    try:
+        with open(SETTINGS_PATH, "rb") as f:
+            before = f.read()
+    except OSError:
+        before = None
+    sets[sid] = data
+    try:
+        if activate:
+            _set_active(sid)
+        save_settings()
+    except Exception as e:
+        sets.pop(sid, None)
+        if activate:
+            _set_active(previous_active)
+        if _settings_file_unchanged(before) or _restore_settings_file(before):
+            txn.rollback()                    # settings.json does not name the set: its files can go
+            print(f"[sets] import of {sid} undone: settings not saved ({e})", flush=True)
+            return web.json_response({"error": "the settings could not be saved: nothing was imported"}, status=500)
+        txn.commit()                          # settings.json may name the set: keep its files
+        print(f"[sets] import of {sid} failed and settings.json could not be restored ({e})", flush=True)
+        return web.json_response({"error": "the settings could not be saved, and the previous settings could not be "
+                                           "restored: check the Sets tab after a restart"}, status=500)
+    txn.commit()
+    if activate:
+        _announce_active(sid)
+    print(f"[sets] imported {sid}: {len(summary['written'])} written, {len(summary['renamed'])} renamed, "
+          f"{len(summary['reused'])} reused, {len(summary['missing'])} missing", flush=True)
+    return web.json_response({"ok": True, "id": sid, "name": data["name"], "active": activate, "summary": summary})
+
+
+async def api_import_set_cancel(request):
+    try:
+        token = (await _json_object(request)).get("token")
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    imp = set_imports.pop(token, None) if isinstance(token, str) else None
+    if imp:
+        _remove_quiet(imp["path"])
+    return web.json_response({"ok": True})
 
 
 # ── Letter entries within a set ──────────────────────────────────────────────
@@ -2533,6 +2838,10 @@ def create_app():
     app.router.add_put("/api/sets/{set_id}", api_update_set)
     app.router.add_delete("/api/sets/{set_id}", api_delete_set)
     app.router.add_post("/api/sets/{set_id}/activate", api_activate_set)
+    app.router.add_get("/api/sets/{set_id}/export", api_export_set)
+    app.router.add_post("/api/sets/import/preview", api_import_set_preview)
+    app.router.add_post("/api/sets/import/commit", api_import_set_commit)
+    app.router.add_post("/api/sets/import/cancel", api_import_set_cancel)
     # Letter entries within a set
     app.router.add_get("/api/sets/{set_id}/letters/{letter}", api_get_letter)
     app.router.add_put("/api/sets/{set_id}/letters/{letter}", api_put_letter)
@@ -2596,6 +2905,7 @@ def main():
 
     os.makedirs(SOUNDS_DIR, exist_ok=True)
     os.makedirs(IMAGES_DIR, exist_ok=True)
+    _purge_import_dir_at_start()             # FUNK-43: staged uploads and temp files from before a restart
 
     settings = load_settings()
     _load_favorites()
@@ -2657,6 +2967,7 @@ def main():
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", PORT)
         await site.start()
+        asyncio.create_task(_import_janitor())
         print(f"[funkeykid] Server running on http://0.0.0.0:{PORT}", flush=True)
         # Keep running forever
         await asyncio.Event().wait()

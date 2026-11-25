@@ -99,8 +99,8 @@ def parse_key_id(kid):
     raw, mods = parts[-1], tuple(parts[:-1])
     if len(set(mods)) != len(mods) or canonical_mods(mods) != mods:
         raise KeymapError(f"modifiers must be unique and in the order {'+'.join(MODIFIER_ORDER)}: {kid!r}")
-    if raw.startswith("SHIFT_"):
-        raise KeymapError("Shift+digit is the favourite shortcut and cannot be mapped")
+    if raw.startswith("SHIFT_") or raw in ("LEFTSHIFT", "RIGHTSHIFT"):
+        raise KeymapError("Shift (Shift+digit is the favourite shortcut) cannot be mapped")
     if key_id(raw, mods) != kid:
         # e.g. KEY_CUT (→ CUT) or CTRL+LEFTCTRL (→ LEFTCTRL): an id a press can never produce
         raise KeymapError(f"not a canonical key id (a press yields {key_id(raw, mods)!r}): {kid!r}")
@@ -203,6 +203,15 @@ def default_label(key, has_content=False):
     if has_content:
         return f"{key} (Set-Inhalt)"
     return None
+
+
+def default_kind(key, has_content=False):
+    """The kind of a key's built-in behaviour: "func", "letter" (set content) or None."""
+    if default_label(key, has_content) is None:
+        return None
+    if key in DEFAULT_LABELS or key.startswith("SHIFT_"):
+        return "func"
+    return "letter"
 
 
 def is_unassigned(key, raw, action, has_content=False):

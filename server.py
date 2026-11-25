@@ -13,6 +13,7 @@ from pathlib import Path
 from aiohttp import web
 
 import keymap
+import profiles
 from keyboard import KeyboardListener, is_battery_low
 from display import Display, HEARTBEAT_SECONDS
 from version import VERSION, VERSION_SCHEME, RELEASE_CHANNEL, RELEASE_SEQUENCE, BUILD, REPO
@@ -708,14 +709,20 @@ def _play_number(digit):
         display.publish_letter(digit, word, image)
 
 
-def _active_keymap():
-    """The key map of the active keyboard profile (FUNK-62): {key_id: action}."""
-    profile = settings.get("keyboard_profile") or keymap.DEFAULT_PROFILE
-    return (settings.get("keymaps") or {}).get(profile) or {}
+def _custom_profiles():
+    """Valid custom keyboard profiles from settings (FUNK-63): {id: profile}."""
+    return profiles.customs(settings.get("keyboard_profiles"))
 
 
 def _keymap_profile():
-    return settings.get("keyboard_profile") or keymap.DEFAULT_PROFILE
+    """The active keyboard profile id; an unknown or deleted one falls back to the default."""
+    pid = settings.get("keyboard_profile") or keymap.DEFAULT_PROFILE
+    return pid if profiles.get(pid, _custom_profiles()) else keymap.DEFAULT_PROFILE
+
+
+def _active_keymap():
+    """The key map of the active keyboard profile (FUNK-62): {key_id: action}."""
+    return (settings.get("keymaps") or {}).get(_keymap_profile()) or {}
 
 
 def _resolve_press(key_name, raw_key, mods=()):
@@ -738,8 +745,9 @@ def handle_key(key_name, raw_key=None, mods=()):
     print(f"[key] handle_key({key_name}, raw={raw_key}, id={kid})"
           + (f" → keymap {matched}: {keymap.describe(action)}" if action else "")
           + (" (no function)" if unassigned else ""), flush=True)
+    _remember(keyboard_seen, kid)
     if unassigned:
-        keymap_seen_unassigned[kid] = time.time()
+        _remember(keymap_seen_unassigned, kid)
     sse_broadcast("rawkey", {
         "key": key_name, "raw": raw_key, "id": kid, "mods": list(keymap.canonical_mods(mods)),
         "matched": matched, "action": action, "describe": keymap.describe(action),
@@ -847,6 +855,15 @@ def _play_random_sound():
 # ── Key map actions (FUNK-62) ────────────────────────────────────────────────
 
 keymap_seen_unassigned = {}   # key_id → last press time: pressed, but no function (in memory)
+keyboard_seen = {}            # key_id → last press time: every press, confirms guessed codes (FUNK-63)
+SEEN_MAX = 300                # /api/press can invent ids: keep both maps bounded
+
+
+def _remember(seen, kid):
+    seen.pop(kid, None)
+    seen[kid] = time.time()
+    while len(seen) > SEEN_MAX:
+        seen.pop(next(iter(seen)))
 _muted_from = None            # volume before "Stumm" (func mute)
 
 
@@ -1439,16 +1456,39 @@ def _raw_for_key(key_name):
 
 # ── Key map API (FUNK-62) ────────────────────────────────────────────────────
 
+def _key_name(raw):
+    """The (layout-translated) key name for a code the keyboard sends."""
+    from keyboard import LAYOUTS
+    return LAYOUTS.get(settings.get("keyboard_layout", "de"), {}).get(raw, raw)
+
+
+def _builtin_for(raw):
+    """(label, kind) of what a code does without a key-map entry; (None, None) if nothing."""
+    key_name = _key_name(raw)
+    has_content = bool(get_enabled_entries(key_name)) if len(key_name) <= 2 else False
+    return keymap.default_label(key_name, has_content), keymap.default_kind(key_name, has_content)
+
+
 def _keymap_payload():
     km = _active_keymap()
+    pid = _keymap_profile()
+    prof = profiles.get(pid, _custom_profiles())
     seen = sorted(keymap_seen_unassigned.items(), key=lambda kv: -kv[1])
+    defaults = {}
+    for code in profiles.codes(prof):
+        raw, _ = keymap.parse_key_id(code) if code not in profiles.SHIFT_CODES else (code, ())
+        label, kind = _builtin_for(raw)
+        defaults[code] = {"label": label, "kind": kind}
     return {
-        "profile": _keymap_profile(),
+        "profile": pid,
+        "profile_name": prof["name"],
         "map": km,
         "describe": {kid: keymap.describe(a) for kid, a in km.items()},
         "functions": keymap.FUNCTIONS,
         "letters": list(keymap.LETTER_TARGETS),
         "seen_unassigned": [{"id": kid, "at": at} for kid, at in seen if kid not in km],
+        "seen_codes": list(keyboard_seen),
+        "defaults": defaults,
     }
 
 
@@ -1494,16 +1534,145 @@ async def api_press(request):
         raw, mods = keymap.parse_key_id(kid)
     except keymap.KeymapError as e:
         return web.json_response({"error": str(e)}, status=400)
-    from keyboard import LAYOUTS
-    key_name = LAYOUTS.get(settings.get("keyboard_layout", "de"), {}).get(raw, raw)
+    key_name = _key_name(raw)
     _, matched, action = _resolve_press(key_name, raw, mods)
     result = {"id": kid, "key": key_name, "matched": matched, "action": action,
-              "describe": keymap.describe(action),
-              "default": keymap.default_label(key_name, bool(get_enabled_entries(key_name)) if len(key_name) <= 2 else False)}
+              "describe": keymap.describe(action), "default": _builtin_for(raw)[0]}
     if request.query.get("dry") not in ("1", "true"):
         handle_key(key_name, raw, mods)
         result["pressed"] = True
     return web.json_response(result)
+
+
+# ── Keyboard profiles API (FUNK-63) ──────────────────────────────────────────
+
+def _keyboards_payload():
+    custom = _custom_profiles()
+    return {"active": _keymap_profile(), "icons": list(profiles.ICONS),
+            "profiles": [profiles.summary(p) for p in profiles.all_profiles(custom)]}
+
+
+async def _json_object(request, optional=False):
+    """The request body as a dict; raises ValueError with a readable message."""
+    if optional and not request.can_read_body:
+        return {}
+    try:
+        body = await request.json()
+    except ValueError:
+        raise ValueError("body must be JSON") from None
+    if body is None and optional:
+        return {}
+    if not isinstance(body, dict):
+        raise ValueError("body must be a JSON object")
+    return body
+
+
+def _custom_or_error(pid):
+    """(profile, None) for a custom profile, else (None, error response)."""
+    prof = _custom_profiles().get(pid)
+    if prof:
+        return prof, None
+    if pid in profiles.BUILTIN:
+        return None, web.json_response({"error": "built-in profiles are read-only: duplicate it first"}, status=400)
+    return None, web.json_response({"error": "profile not found"}, status=404)
+
+
+def _store_custom(prof):
+    settings.setdefault("keyboard_profiles", {})[prof["id"]] = prof
+    save_settings()
+
+
+def _profile_switched():
+    pid = _keymap_profile()
+    sse_broadcast("keyboard_profile", {"profile": pid, "name": profiles.get(pid, _custom_profiles())["name"]})
+
+
+async def api_get_keyboards(request):
+    return web.json_response(_keyboards_payload())
+
+
+async def api_get_keyboard(request):
+    prof = profiles.get(request.match_info["profile_id"], _custom_profiles())
+    if not prof:
+        return web.json_response({"error": "profile not found"}, status=404)
+    return web.json_response(profiles.render(prof))
+
+
+async def api_activate_keyboard(request):
+    pid = request.match_info["profile_id"]
+    if not profiles.get(pid, _custom_profiles()):
+        return web.json_response({"error": "profile not found"}, status=404)
+    settings["keyboard_profile"] = pid
+    save_settings()
+    print(f"[keyboard] profile → {pid}", flush=True)
+    _profile_switched()
+    return web.json_response(_keyboards_payload())
+
+
+async def api_duplicate_keyboard(request):
+    custom = _custom_profiles()
+    source = profiles.get(request.match_info["profile_id"], custom)
+    if not source:
+        return web.json_response({"error": "profile not found"}, status=404)
+    try:
+        name = (await _json_object(request, optional=True)).get("name") or f"{source['name']} (Kopie)"
+        if not isinstance(name, str):
+            raise ValueError("name must be text")
+        prof = profiles.duplicate(source, profiles.new_id(name, custom), name)
+    except ValueError as e:      # ProfileError is a ValueError
+        return web.json_response({"error": str(e)}, status=400)
+    _store_custom(prof)
+    # the copy starts with the source's key map
+    maps = settings.setdefault("keymaps", {})
+    maps[prof["id"]] = json.loads(json.dumps(maps.get(source["id"], {})))
+    save_settings()
+    print(f"[keyboard] profile {source['id']} duplicated → {prof['id']}", flush=True)
+    return web.json_response(dict(_keyboards_payload(), id=prof["id"]))
+
+
+async def api_put_keyboard(request):
+    prof, err = _custom_or_error(request.match_info["profile_id"])
+    if err:
+        return err
+    try:
+        body = await _json_object(request)
+        prof = profiles.rename(prof, name=body.get("name"), note=body.get("note"))
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    _store_custom(prof)
+    if prof["id"] == _keymap_profile():
+        _profile_switched()
+    return web.json_response(_keyboards_payload())
+
+
+async def api_put_keyboard_key(request):
+    prof, err = _custom_or_error(request.match_info["profile_id"])
+    if err:
+        return err
+    try:
+        prof = profiles.edit_key(prof, request.match_info["slot"], await _json_object(request))
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    _store_custom(prof)
+    print(f"[keyboard] {prof['id']}: key {request.match_info['slot']} edited", flush=True)
+    return web.json_response(profiles.render(prof))
+
+
+async def api_delete_keyboard(request):
+    pid = request.match_info["profile_id"]
+    _, err = _custom_or_error(pid)
+    if err:
+        return err
+    was_active = pid == _keymap_profile()
+    settings.get("keyboard_profiles", {}).pop(pid, None)
+    (settings.get("keymaps") or {}).pop(pid, None)
+    if was_active:
+        settings["keyboard_profile"] = keymap.DEFAULT_PROFILE
+    save_settings()
+    print(f"[keyboard] profile {pid} deleted", flush=True)
+    if was_active:
+        _profile_switched()
+    return web.json_response(_keyboards_payload())
 
 
 async def api_get_layout(request):
@@ -2197,6 +2366,13 @@ def create_app():
     app.router.add_put("/api/keymap/{key_id}", api_put_keymap)
     app.router.add_delete("/api/keymap/{key_id}", api_delete_keymap)
     app.router.add_post("/api/press/{key_id}", api_press)
+    app.router.add_get("/api/keyboards", api_get_keyboards)
+    app.router.add_get("/api/keyboards/{profile_id}", api_get_keyboard)
+    app.router.add_put("/api/keyboards/{profile_id}", api_put_keyboard)
+    app.router.add_delete("/api/keyboards/{profile_id}", api_delete_keyboard)
+    app.router.add_post("/api/keyboards/{profile_id}/activate", api_activate_keyboard)
+    app.router.add_post("/api/keyboards/{profile_id}/duplicate", api_duplicate_keyboard)
+    app.router.add_put("/api/keyboards/{profile_id}/keys/{slot}", api_put_keyboard_key)
     # Version
     app.router.add_get("/api/version", api_version)
     # AI Generation

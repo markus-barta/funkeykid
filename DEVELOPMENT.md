@@ -200,7 +200,7 @@ LAYOUTS = {
 Every key of the kids' keyboard can do something. The pure logic is in `keymap.py`, with tests in `tests/test_keymap.py`. The UI is the Tastatur tab, section "Tastenbelegung".
 
 - **Key id** = the code the keyboard sends: the evdev name without `KEY_`, such as `CUT`, `A`, or `Y` (the German Z). Ctrl, Alt and Meta held at the time are prefixed in a fixed order, as in `CTRL+X`. Shift is not part of the id: Shift + digit stays the favourite shortcut. Ids never depend on the language layout. `keyboard.py` tracks the held modifiers per input node and passes them to `handle_key(key, raw, mods)`.
-- **Storage:** `settings["keymaps"][<profile>][<key id>] = action`. The profile is `settings["keyboard_profile"]`, default `acme-bk03`; FUNK-63 adds profiles. `PUT /api/settings` never touches `keymaps`.
+- **Storage:** `settings["keymaps"][<profile>][<key id>] = action`, one map per keyboard profile (see below). `PUT /api/settings` never touches `keymaps`, `keyboard_profile` or `keyboard_profiles`.
 - **Resolution:** an entry for the id with modifiers wins; then an entry for the plain key; otherwise the built-in behaviour, unchanged. Built-in: letters, digits, Space = Stopp, + and − = volume, Enter = play again, Tab = favourite, arrows = navigation. Any other key plays a random sound only if "Zufällige Sounds" is on.
 - **Actions:**
   - `letter` (the content of a letter or digit);
@@ -211,6 +211,18 @@ Every key of the kids' keyboard can do something. The pure logic is in `keymap.p
 - **Learn mode:** every press sends the `rawkey` SSE event with `id`, `matched`, `action`, `default` and `unassigned`. In learn mode the UI selects the pressed key.
 - **Unassigned presses:** a press with neither an entry nor a built-in role is remembered in memory. It appears in "Gedrückt, aber ohne Wirkung" and in `/api/diagnostics` as `keymap_unassigned_seen`.
 - **Virtual press:** `POST /api/press/{id}` presses a key by id, exactly like the keyboard. `?dry=1` only resolves it, so you can check a mapping without a sound. The virtual test keyboard (`/api/test/{letter}`) goes through the same path, via the inverse layout.
+- **Shift** cannot be mapped (`LEFTSHIFT`, `RIGHTSHIFT`): Shift + digit is the favourite shortcut.
+
+### Keyboard profiles (FUNK-63)
+
+A profile describes what a keyboard looks like and what each key sends. The UI draws the keyboard from it, so a custom keyboard is a key list, not a picture. The pure logic is in `profiles.py`, with tests in `tests/test_profiles.py`.
+
+- **Data:** rows of keys in key units (1 = one letter key). A key has a `slot` (its stable name in the profile), a `code` (the key id it sends, `""` = nothing reaches funkeykid, like fn), a width, legends (`label` in the middle, `shift` top left, `altgr` bottom left, `fn` in red), an optional `icon`, `guess` for a code that is assumed until a real press confirms it, and an optional `suggest` (a function, letter or "nothing" the UI offers). Rows can hold gaps and stacks (two half-height keys, like the BK03's ↑/↓). `profiles.layout()` turns this into absolute `x, y, w, h`.
+- **Built-in:** `acme-bk03` (default, drawn from a photo: media keys on the top row with F1–F12 on fn, OS-mode switching on fn+Q/W/E; the top-row codes are guesses), `pc-de` (ISO, no number pad) and `mac-de`. They are read-only.
+- **Custom:** a duplicate of any profile, stored validated in `settings["keyboard_profiles"][custom-<slug>]`; it starts with a copy of the source's key map. Its keys' legends, code, icon and width can be edited, including "take the code of the last pressed key" for a key the drawing gets wrong. Deleting a custom profile deletes its key map; if it was active, `acme-bk03` becomes active again.
+- **Active profile:** `settings["keyboard_profile"]`, switched with `POST /api/keyboards/{id}/activate` (SSE `keyboard_profile`). An unknown or deleted id falls back to `acme-bk03`. The active profile's key map is what the real keyboard uses.
+- **UI:** Tastatur tab. The drawing marks each key by what it does (letter content, sound, image + sound, function, nothing, or reserved), a press on the real keyboard lights its key up, and learn mode selects it. `/api/keymap` adds `defaults` (built-in label and kind per code of the active profile) and `seen_codes` (ids pressed since start, which confirm guessed codes).
+- **Not yet:** the language setting that decides letters (so Ü/Ö/Ä act as letters) and profile import/export are FUNK-64; a phone/tablet keyboard is FUNK-65.
 
 ---
 
@@ -591,6 +603,12 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 | GET | `/api/keymap` | Key map of the active profile + functions + unassigned presses (FUNK-62) |
 | PUT/DELETE | `/api/keymap/{id}` | Assign an action to a key id / back to built-in |
 | POST | `/api/press/{id}` | Press a key by id like the keyboard (`?dry=1`: resolve only) |
+| GET | `/api/keyboards` | Keyboard profiles (summary + silhouette) and the active one (FUNK-63) |
+| GET | `/api/keyboards/{id}` | One profile with the absolute key layout |
+| POST | `/api/keyboards/{id}/activate` | Make a profile active (its key map drives the keyboard) |
+| POST | `/api/keyboards/{id}/duplicate` | Custom copy of a profile and its key map (`{"name"}` optional) |
+| PUT/DELETE | `/api/keyboards/{id}` | Rename / delete a custom profile |
+| PUT | `/api/keyboards/{id}/keys/{slot}` | Edit a custom key: `label`, `name`, `shift`, `altgr`, `fn`, `icon`, `code`, `w` |
 | POST | `/api/suggest-word` | AI word suggestion |
 | POST | `/api/generate/sound` | Generate sound (ElevenLabs) |
 | POST | `/api/generate/image` | Generate image (Gemini) |

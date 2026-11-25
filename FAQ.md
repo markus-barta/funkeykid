@@ -105,8 +105,8 @@ Keyboard layout is set to `"de"` (QWERTZ) in settings.json. evdev reports US sca
 ### Letter not showing on Pixoo
 
 1. **Check MQTT connection**: Container logs should show `[display] MQTT connected`
-2. **Check pixdcon is running**: `docker ps | grep pixdcon`
-3. **Check pixdcon scene**: pixoo-189 must run the `funkeykid` scene (check config.json)
+2. **Check pixdcon is running**: `docker ps | grep pixdcon`. `pixdcon2-edge` drives the displays; v1 `pixdcon` is the fallback.
+3. **Check pixdcon scene**: pixoo-189 must run the `funkeykid` scene. Check it in the pixdcon2-edge UI at http://hsb1.lan:8082; its config is `~/docker/mounts/pixdcon2-edge/config.json` and belongs to the pixdcon project.
 4. **Check MQTT message arrives**:
    ```bash
    mosquitto_sub -h hsb1.lan -u smarthome -P '***' -t 'home/hsb1/funkeykid/display' -v
@@ -116,14 +116,12 @@ Keyboard layout is set to `"de"` (QWERTZ) in settings.json. evdev reports US sca
 ### Keyboard status dots not showing in home scene
 
 1. Check retained MQTT message exists (see keyboard section above)
-2. Check pixdcon logs for subscription: `grep keyboard-info` in `docker logs pixdcon`
+2. Check pixdcon logs for subscription: `docker logs pixdcon2-edge 2>&1 | grep keyboard-info`
 3. The home scene must be running on pixoo-159
 
 ### Images look wrong / old images showing
 
-pixdcon's `loadPixooImage()` caches images at scene init. After updating images:
-- Restart pixdcon: `docker compose restart pixdcon`
-- Or trigger scene reload by touching the scene file
+pixdcon's `loadPixooImage()` caches images per process (`lib/pixoo-image.js`), and a scene reload does not clear that cache. After updating images, restart the instance that drives pixoo-189: `ssh mba@hsb1.lan "docker restart pixdcon2-edge"`.
 
 ---
 
@@ -131,22 +129,23 @@ pixdcon's `loadPixooImage()` caches images at scene init. After updating images:
 
 ### Changes not taking effect after push
 
-1. **CI built?**: `gh run list --limit 1` — check it's green
-2. **Image pulled?**: `docker compose pull funkeykid` on hsb1
-3. **Container recreated?**: `docker compose up -d funkeykid` (not just `restart`)
-4. **Correct files in image?**: `docker exec funkeykid cat /app/server.py | head -5`
+A push to main does **not** reach hsb1: it only publishes `:<commit-sha>`. hsb1 runs `:latest`, which moves only with a release.
+
+1. **Released?** Follow DEPLOY.md § Release procedure: reserve the version, merge, then tag `v<version>`. Check that the release job is green: `gh run list --limit 3`.
+2. **Rolled?** Use the locked single-service roll in DEPLOY.md § Normal (pull, dry run, `up -d --no-deps funkeykid`). A plain `docker restart` keeps the old image.
+3. **Right version running?** `curl -s http://hsb1.lan:8081/api/version` must show the release's version, and the image digest must equal its `release-manifest.json`.
 
 ### Hotfix lost after update
 
-`docker cp` changes live in the container layer. `docker compose up -d` recreates from the image, losing hotfixes. Always commit + push after hotfixing.
+`docker cp` changes live in the container layer. Every recreate starts from the image again and drops the hotfix: a roll, a nixcfg switch that changes the spec, or the Saturday `compose-hsb1-update.timer`. Always commit, push and release after hotfixing.
 
 ### Settings reset after update
 
-Settings live in `/data/settings.json` (volume mount), NOT in the image. They survive container recreation. If settings reset: check the volume mount is correct in docker-compose.yml.
+Settings live in `/data/settings.json` (volume mount), NOT in the image. They survive container recreation. If settings reset: check the `settings.json` mount of the `funkeykid` service in nixcfg `hosts/hsb1/docker/compose-spec.nix`.
 
 ### Container exits with code 127 / PipeWire socket mount fails
 
-**Symptom**: Container won't start, `docker inspect` shows error like:
+**Symptom**: Container won't start (`docker ps -a` shows it Exited); the compose output or `journalctl -u compose-hsb1.service` shows an error like:
 ```
 error mounting "/run/user/1001/pipewire-0": not a directory:
 Are you trying to mount a directory onto a file (or vice-versa)?
@@ -154,7 +153,7 @@ Are you trying to mount a directory onto a file (or vice-versa)?
 
 **Cause**: PipeWire creates `/run/user/1001/pipewire-0` as a Unix socket. If Docker tries to mount it and the path doesn't exist yet, Docker creates a **directory** at that path instead. This blocks PipeWire from creating its socket on next start, killing audio for everything on the kiosk session (funkeykid, babycam/VLC, etc.).
 
-**Fix**: Do NOT mount `pipewire-0` directly in docker-compose.yml. Audio goes through PulseAudio's compatibility socket at `/run/user/1001/pulse/native` (already mounted). If this already happened:
+**Fix**: Do NOT mount `pipewire-0` directly (nixcfg `compose-spec.nix`). Audio goes through PulseAudio's compatibility socket at `/run/user/1001/pulse/native` (already mounted). If this already happened:
 
 ```bash
 # Remove the stale directory Docker created
@@ -163,8 +162,7 @@ sudo rmdir /run/user/1001/pipewire-0
 # Restart PipeWire + PulseAudio for the kiosk user
 sudo systemctl --user -M kiosk@ restart pipewire.socket pipewire.service pipewire-pulse.socket pipewire-pulse.service
 
-# Recreate the container
-cd ~/docker && docker compose up -d funkeykid
+# Recreate the container: the locked `up -d --no-deps funkeykid` from DEPLOY.md § Normal (no pull needed)
 ```
 
 ### No sound after reboot (paplay: Connection refused)
@@ -178,10 +176,10 @@ Check with: `sudo journalctl _UID=1001 --grep 'pipewire-pulse'` — look for `Fa
 **Quick fix** (manual, does not survive reboot):
 ```bash
 sudo systemctl --user -M kiosk@ restart pipewire-pulse.socket pipewire-pulse.service
-cd ~/docker && docker compose restart funkeykid
+docker restart funkeykid
 ```
 
-**Permanent fix (applied 2026-04-11)**: The bind mount in `~/docker/docker-compose.yml` on hsb1 now points at the parent runtime directory so Docker never creates the `pulse/` child as root:
+**Permanent fix (applied 2026-04-11, now in nixcfg `compose-spec.nix`)**: The bind mount now points at the parent runtime directory so Docker never creates the `pulse/` child as root:
 ```yaml
 - /run/user/1001:/run/user/1001
 ```

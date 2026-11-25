@@ -2,7 +2,7 @@
 
 Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a learning device that plays per-letter sounds, shows the letter + illustration on a Pixoo 64 display, and lets a parent author content via a web UI including AI generation.
 
-**Host**: hsb1 · **Image**: `ghcr.io/markus-barta/funkeykid:latest` · **UI**: http://hsb1.lan:8081 · **Version**: 3.1.1
+**Host**: hsb1 · **Image**: `ghcr.io/markus-barta/funkeykid:latest` · **UI**: http://hsb1.lan:8081 · **Version**: INSPR-CalVer3, shown in the UI footer and at `/api/version` (`version.json`)
 
 ## Features
 
@@ -45,14 +45,14 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **Editable AI prompts** — system prompt for word suggestion, sound description template, image style prompt, all in Settings.
 - **Virtual keyboard** — QWERTZ + number row with ⌫ + Ü/Ö/Ä/ß + ↵ Enter + Tab ★ favorite + Space + −/+ volume + ◀▲▼▶ arrows. Clicking any key calls the same handler as the physical keyboard.
 
-### Pixoo 64 display (via pixdicon, separate repo)
+### Pixoo 64 display (via pixdcon, separate repo)
 - `display.publish_letter(letter, word, image)` → scene draws the bg image + letter + word.
 - `display.publish_volume(volume)` → scene renders a **vertical VU-meter** overlay (FUNK-2): 10 tapered segments from narrow-green at the bottom to wide-red at the top, with "VOLUME" label and `NN%` in neutral gray. TTL 1.5 s; any letter press cancels the overlay.
-- `display.publish_keyboard_status(status)` → retained `keyboard-info` (`online`, `connected`, `exclusive`, `battery_level`, `battery_low`, …), re-published every 10 s, with an MQTT last-will that flips it to `online: false` if funkeykid dies. It feeds the home scene's status dots and the planned start screen. Contract: `display.py` docstring / DEVELOPMENT.md § MQTT Topics.
+- `display.publish_keyboard_status(status)` → retained `keyboard-info` (`online`, `connected`, `exclusive`, `battery_level`, `battery_low`, …), re-published every 10 s, with an MQTT last-will that flips it to `online: false` if funkeykid dies. It feeds the home scene's status dots and the funkeykid scene's start screen (PIXD-122). Contract: `display.py` docstring / DEVELOPMENT.md § MQTT Topics.
 
 ### Ops / platform
-- **Docker** image on hsb1 with `host` networking, privileged, volume-mounted `/data`.
-- **GitHub Actions CI → GHCR** on push to `main` (build + BUILD_SHA + BUILD_TIME baked in). `docker compose pull && up -d` on hsb1 to roll forward.
+- **Docker** image on hsb1 with `host` networking, privileged, volume-mounted `/data`. How hsb1 runs it (compose spec, agenix secrets, keyboard pin) is declared in nixcfg (`hosts/hsb1/docker/compose-spec.nix`). See DEPLOY.md § Production Setup.
+- **GitHub Actions CI → GHCR**: `:<commit-sha>` on every push to `main`; on a release tag, `:<version>` first, then `:latest` (BUILD_SHA + BUILD_TIME baked in). hsb1 runs `:latest` and is rolled with a locked single-service compose roll.
 - **SSE live updates** for keypresses, gen jobs, AI log, normalize progress, volume, favorites, keyboard connection.
 - **Versioning**: INSPR Calendar Versioning 3 (`inspr-calver-3`, `YYMMDDhhmmss.0.0`, UTC), authoritative in `version.json`. It was migrated from legacy 3.2.0 in FUNK-60. A release = `scripts/reserve_version.py` → PR → tag `v<version>` → CI publishes the immutable `:<version>` and `:latest` plus a release-set manifest. The footer renders the version through the shared INSPR Pretty/SemVer renderer, vendored and pinned. See DEPLOY.md § Versioning.
 - **Cache-Control: no-cache** on `index.html` so clients pick up new builds immediately.
@@ -88,16 +88,16 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 
 ## Deploy
 
-Normal path:
+Normal path: **release, then roll**. A push to `main` alone does not reach hsb1.
 
-```bash
-git add . && git commit -m "..."
-git push
-gh run watch --exit-status
-ssh mba@hsb1.lan "cd ~/docker && docker compose pull funkeykid && docker compose up -d funkeykid"
-```
+1. Reserve the version: `python3 scripts/reserve_version.py`, which updates `version.json`. Merge it through a PR with green CI.
+2. Tag `v<version>` on the merge commit and push the tag. CI publishes `:<version>`, the GitHub release with its manifest, then `:latest`.
+3. Roll **only** funkeykid on hsb1 with the locked compose roll (pull, dry run, `up -d --no-deps funkeykid`).
+4. Verify that `/api/version` and the running digest match the release manifest.
 
-Static-only hotfix (lost on next pull — don't skip the commit):
+The exact commands are in **DEPLOY.md** § Versioning → "Release procedure" and § "Normal: Release → CI → locked roll on hsb1". hsb1's compose file comes from nixcfg; never run compose from `~/docker`.
+
+Static-only hotfix (lost at the next recreate; don't skip the commit and release):
 
 ```bash
 scp static/index.html mba@hsb1.lan:/tmp/fk.html

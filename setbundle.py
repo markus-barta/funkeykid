@@ -396,14 +396,16 @@ def plan(path, set_data, members, sounds_dir, images_dir):
     return files
 
 
-def _free_name(base, name, taken):
+def _free_name(base, name, taken, kind):
+    """name-2.ext, name-3.ext …: not taken, not on disk, and still a valid name (stem shortened if needed)."""
     stem, ext = os.path.splitext(name)
     n = 2
-    candidate = f"{stem}-{n}{ext}"
-    while candidate in taken or os.path.exists(os.path.join(base, candidate)):
+    while True:
+        suffix = f"-{n}"
+        candidate = safe_name(stem[:200 - len(suffix) - len(ext)] + suffix + ext, kind)
+        if candidate not in taken and not os.path.exists(os.path.join(base, candidate)):
+            return candidate
         n += 1
-        candidate = f"{stem}-{n}{ext}"
-    return candidate
 
 
 def _remove(path):
@@ -525,7 +527,10 @@ def apply(path, set_data, members, sounds_dir, images_dir, resolutions=None):
                     base = sounds_dir if item["kind"] == "sound" else images_dir
                     os.makedirs(base, exist_ok=True)
                     staged.append((item, action, _stage(z, item["path"], base), base))
-            taken = set()
+            # every name the set refers to is reserved, even a missing one: a renamed file
+            # must never take a name another reference already means (FUNK-43 review)
+            ref_sounds, ref_images = referenced_files(data)
+            taken = {"sound": set(ref_sounds), "image": set(ref_images)}
             for item, action, tmp, base in staged:
                 name = item["name"]
                 if action == "overwrite":
@@ -538,7 +543,8 @@ def apply(path, set_data, members, sounds_dir, images_dir, resolutions=None):
                         txn.created.append(final)
                     summary["overwritten"].append(item["path"])
                     continue
-                target = name if action == "new" else _free_name(base, name, taken)
+                kind = item["kind"]
+                target = name if action == "new" else _free_name(base, name, taken[kind], kind)
                 while True:
                     final = os.path.join(base, target)
                     try:
@@ -547,10 +553,10 @@ def apply(path, set_data, members, sounds_dir, images_dir, resolutions=None):
                         if target == name and _sha256_file(tmp) == _sha256_file(final):
                             target = None           # the very same file appeared meanwhile: reuse it
                             break
-                        target = _free_name(base, name, taken)
+                        target = _free_name(base, name, taken[kind], kind)
                         continue
                     txn.created.append(final)
-                    taken.add(target)
+                    taken[kind].add(target)
                     break
                 if target is None:
                     summary["reused"].append(item["path"])

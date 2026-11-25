@@ -395,3 +395,35 @@ def test_zip64_record_without_sentinels_cannot_bypass_the_check(tmp_path, monkey
     monkeypatch.setattr(sb, "MAX_MEMBERS", 3)
     with pytest.raises(sb.BundleError, match="too many"):
         sb._check_central_directory(path)
+
+
+# ── review round 3: rename targets ───────────────────────────────────────────
+
+def test_rename_never_takes_a_name_the_set_already_refers_to(dirs, tmp_path):
+    """The set refers to a.mp3 (conflict) and a-2.mp3 (missing everywhere)."""
+    raw = _set()
+    raw["letters"]["A"]["entries"][1]["tracks"] = {"FX": {"file": "a_affe-2.mp3", "enabled": True, "prompt": "", "volume": 100}}
+    path = _export(dirs, tmp_path, raw)
+    snd, img = dirs("dst", files={"sounds": {"a_affe.mp3": b"OTHER"}})
+    imported, summary = _import(path, snd, img)
+    a = imported["letters"]["A"]["entries"]
+    assert a[0]["tracks"]["FX"]["file"] == "a_affe-3.mp3"             # not -2: that name is referenced
+    assert a[1]["tracks"]["FX"]["file"] == "a_affe-2.mp3" and "sounds/a_affe-2.mp3" in summary["missing"]
+    assert not os.path.exists(os.path.join(snd, "a_affe-2.mp3"))
+
+
+def test_renamed_long_names_stay_valid_and_round_trip(dirs, tmp_path):
+    long_name = "x" * 196 + ".mp3"                                     # 200 characters, the limit
+    raw = _set()
+    raw["letters"]["A"]["entries"][0]["tracks"]["FX"]["file"] = long_name
+    snd, img = dirs("src", files={"sounds": {long_name: b"LONG"}, "images": FILES["images"]})
+    path = tmp_path / "long.zip"
+    path.write_bytes(sb.build_zip("tiere", raw, snd, img))
+    dsnd, dimg = dirs("dst", files={"sounds": {long_name: b"OTHER"}})
+    imported, summary = _import(str(path), dsnd, dimg)
+    new = imported["letters"]["A"]["entries"][0]["tracks"]["FX"]["file"]
+    assert len(new) <= 200 and new.endswith("-2.mp3") and sb.safe_name(new, "sound") == new
+    assert open(os.path.join(dsnd, new), "rb").read() == b"LONG"
+    again = sb.build_zip("tiere", imported, dsnd, dimg)               # exports again, with the file
+    with zipfile.ZipFile(io.BytesIO(again)) as z:
+        assert f"sounds/{new}" in z.namelist()

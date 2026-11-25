@@ -940,6 +940,8 @@
                         @click="activeSetId=sid; activateSet()">Aktivieren</button>
                 <button class="btn btn-sm btn-outline" @click="duplicateSet(sid)">Duplizieren</button>
                 <button class="btn btn-sm btn-outline" @click="renameSet(sid)">Umbenennen</button>
+                <a class="btn btn-sm btn-outline" :href="'/api/sets/' + encodeURIComponent(sid) + '/export'"
+                   :download="'funkeykid-set-' + sid + '.zip'" title="Set mit allen Geräuschen und Bildern als ZIP-Datei">Exportieren</a>
                 <button class="btn btn-sm btn-error btn-outline" x-show="Object.keys(sets).length > 1"
                         @click="deleteSet(sid)">Löschen</button>
               </div>
@@ -948,7 +950,84 @@
         </template>
       </div>
 
-      <button class="btn btn-primary mt-4" @click="createSet()">+ Neues Set</button>
+      <div class="flex flex-wrap items-center gap-2 mt-4">
+        <button class="btn btn-primary" @click="createSet()">+ Neues Set</button>
+        <button type="button" class="btn btn-outline" :disabled="setImportBusy" @click="$refs.setImportFile.click()">
+          <span class="loading loading-spinner loading-xs" x-show="setImportBusy"></span>
+          Set importieren (ZIP)</button>
+        <input x-ref="setImportFile" type="file" accept=".zip,application/zip" class="hidden" tabindex="-1" aria-hidden="true"
+               @change="setImportPreview($event)">
+        <span class="text-xs opacity-60">Ein exportiertes Set samt Geräuschen und Bildern, z. B. von einem anderen funkeykid.</span>
+      </div>
+
+      <!-- Set import preview (FUNK-43) -->
+      <dialog class="modal" :class="setImport && 'modal-open'" aria-labelledby="set-import-title">
+        <!-- x-if: the dialog body exists only while a preview is open, so its bindings never see null -->
+        <template x-if="setImport">
+        <div class="modal-box fk-modal-md">
+          <div class="flex items-center gap-3 px-5 py-3 border-b border-base-content/5">
+            <h3 id="set-import-title" class="font-bold text-lg flex-1">Set importieren</h3>
+            <button class="btn btn-sm btn-circle btn-ghost" @click="setImportCancel()" title="Abbrechen" aria-label="Abbrechen">✕</button>
+          </div>
+          <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4 min-w-0">
+            <label class="form-control">
+              <span class="label-text">Name des neuen Sets</span>
+              <input type="text" maxlength="200" class="input input-bordered input-sm" x-model="setImport.name">
+            </label>
+            <p class="text-sm" x-text="setImport ? (setImport.counts.letters + ' Buchstaben, ' + setImport.counts.entries + ' Einträge, ' + setImport.counts.numbers + ' Ziffern') : ''"></p>
+            <div class="flex flex-wrap gap-2 text-xs">
+              <span class="badge badge-success badge-outline" x-text="setImportCount('new') + ' Dateien neu'"></span>
+              <span class="badge badge-ghost" x-text="(setImportCount('same') + setImportCount('local')) + ' schon vorhanden'"></span>
+              <span class="badge badge-warning badge-outline" x-show="setImportCount('conflict')" x-text="setImportCount('conflict') + ' Konflikte'"></span>
+              <span class="badge badge-error badge-outline" x-show="setImportCount('missing')" x-text="setImportCount('missing') + ' fehlen'"></span>
+            </div>
+            <div x-show="setImportCount('conflict')" class="space-y-2">
+              <h4 class="font-semibold text-sm">Gleicher Name, anderer Inhalt</h4>
+              <p class="text-xs opacity-70">»Umbenennen« speichert die Datei aus dem Import unter neuem Namen (nichts geht verloren). »Vorhandene behalten« nimmt die Datei, die schon hier ist. »Überschreiben« ersetzt sie, auch für andere Sets, die sie benutzen.</p>
+              <template x-for="f in (setImport ? setImport.files.filter(f => f.status === 'conflict') : [])" :key="f.path">
+                <div class="flex flex-wrap items-center gap-2 text-sm">
+                  <span class="badge badge-sm" x-text="f.kind === 'sound' ? 'Geräusch' : 'Bild'"></span>
+                  <code class="flex-1 min-w-0 truncate" x-text="f.name"></code>
+                  <select class="select select-bordered select-xs" :aria-label="'Konflikt bei ' + f.name"
+                          @change="setImport.resolutions[f.path] = $event.target.value">
+                    <option value="rename" :selected="setImport.resolutions[f.path] === 'rename'">Umbenennen</option>
+                    <option value="keep" :selected="setImport.resolutions[f.path] === 'keep'">Vorhandene behalten</option>
+                    <option value="overwrite" :selected="setImport.resolutions[f.path] === 'overwrite'">Überschreiben</option>
+                  </select>
+                </div>
+              </template>
+            </div>
+            <div x-show="setImportCount('missing')" class="text-sm">
+              <h4 class="font-semibold">Fehlen in der Datei und hier</h4>
+              <p class="text-xs opacity-70">Diese Einträge werden übernommen, spielen die fehlende Datei aber nicht ab.</p>
+              <ul class="text-xs list-disc ml-5">
+                <template x-for="f in (setImport ? setImport.files.filter(f => f.status === 'missing') : [])" :key="f.path">
+                  <li x-text="f.name"></li>
+                </template>
+              </ul>
+            </div>
+            <details class="text-sm">
+              <summary class="cursor-pointer opacity-70">Alle Dateien</summary>
+              <ul class="text-xs mt-2 space-y-0.5">
+                <template x-for="f in (setImport ? setImport.files : [])" :key="f.path">
+                  <li class="flex gap-2"><code class="flex-1 min-w-0 truncate" x-text="f.path"></code>
+                    <span x-text="{ new: 'neu', same: 'identisch vorhanden', local: 'schon hier', conflict: 'Konflikt', missing: 'fehlt' }[f.status]"></span></li>
+                </template>
+              </ul>
+            </details>
+            <label class="label cursor-pointer gap-2" style="justify-content: flex-start">
+              <input type="checkbox" class="checkbox checkbox-sm" x-model="setImport.activate">
+              <span class="label-text">Nach dem Import aktivieren</span>
+            </label>
+          </div>
+          <div class="flex flex-wrap justify-end gap-2 px-6 py-4 border-t border-base-content/5">
+            <button class="btn btn-ghost" @click="setImportCancel()">Abbrechen</button>
+            <button class="btn btn-primary" :disabled="setImportBusy" @click="setImportCommit()">
+              <span class="loading loading-spinner loading-xs" x-show="setImportBusy"></span>Importieren</button>
+          </div>
+        </div>
+        </template>
+      </dialog>
     </div>
 
     <!-- ═══ TEST TAB ═══ -->
@@ -2880,6 +2959,60 @@ function funkeykid() {
       });
       await this.refresh();
       this.showToast(`Set "${name}" erstellt`);
+    },
+    // ── Set export / import as ZIP (FUNK-43) ──
+    setImport: null, setImportBusy: false,
+    setImportCount(status) { return (this.setImport?.files || []).filter(f => f.status === status).length; },
+    async setImportPreview(ev) {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file || this.setImportBusy) return;
+      this.setImportBusy = true;
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await fetch('/api/sets/import/preview', { method: 'POST', body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Nicht importierbar: ' + (data.error || res.status), 'error'); return; }
+        const resolutions = {};
+        for (const f of data.files) if (f.status === 'conflict') resolutions[f.path] = 'rename';
+        this.setImport = Object.assign(data, { resolutions, activate: false });
+      } catch (e) {
+        this.showToast('Hochladen fehlgeschlagen', 'error');
+      } finally {
+        this.setImportBusy = false;
+      }
+    },
+    async setImportCommit() {
+      const imp = this.setImport;
+      if (!imp || this.setImportBusy) return;
+      this.setImportBusy = true;
+      try {
+        const res = await fetch('/api/sets/import/commit', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: imp.token, name: imp.name, resolutions: imp.resolutions, activate: !!imp.activate }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          this.showToast('Nicht importiert: ' + (data.error || res.status), 'error');
+          if (res.status === 404) this.setImport = null;      // preview gone: upload again
+          return;
+        }
+        this.setImport = null;
+        await this.refresh();
+        const s = data.summary;
+        this.showToast('Set »' + data.name + '« importiert: ' + s.written.length + ' Dateien neu'
+          + (Object.keys(s.renamed).length ? ', ' + Object.keys(s.renamed).length + ' umbenannt' : '')
+          + (s.reused.length ? ', ' + s.reused.length + ' schon vorhanden' : '')
+          + (s.missing.length ? ', ' + s.missing.length + ' fehlen' : '') + (data.active ? '. Es ist jetzt aktiv.' : '.'));
+      } finally {
+        this.setImportBusy = false;
+      }
+    },
+    setImportCancel() {
+      const imp = this.setImport;
+      this.setImport = null;
+      if (imp) fetch('/api/sets/import/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                                   body: JSON.stringify({ token: imp.token }) }).catch(() => {});
     },
     async duplicateSet(sid) {
       const name = prompt('Name fuer Kopie:', this.sets[sid]?.name + ' (Kopie)');

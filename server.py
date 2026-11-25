@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import random
+import re
 import threading
 import time
 import uuid
@@ -14,6 +15,7 @@ from aiohttp import web
 
 import keymap
 import profiles
+import setbundle
 from keyboard import KeyboardListener, is_battery_low
 from display import Display, HEARTBEAT_SECONDS
 from version import VERSION, VERSION_SCHEME, RELEASE_CHANNEL, RELEASE_SEQUENCE, BUILD, REPO
@@ -1217,17 +1219,188 @@ async def api_delete_set(request):
     return web.json_response({"ok": True})
 
 
-async def api_activate_set(request):
-    set_id = request.match_info["set_id"]
-    if set_id not in settings.get("sets", {}):
-        return web.json_response({"error": "Set not found"}, status=404)
-    settings["active_set"] = set_id
+def _activate_set(set_id):
+    """Make a set active (it must exist); saves and tells the browsers."""
     global cycle_index, last_letter
+    settings["active_set"] = set_id
     cycle_index = {}
     last_letter = None
     save_settings()
     sse_broadcast("active_set", {"active_set": set_id, "name": settings["sets"][set_id].get("name", set_id)})
+
+
+async def api_activate_set(request):
+    set_id = request.match_info["set_id"]
+    if set_id not in settings.get("sets", {}):
+        return web.json_response({"error": "Set not found"}, status=404)
+    _activate_set(set_id)
     return web.json_response({"ok": True, "active_set": set_id})
+
+
+# ── Set export / import as ZIP (FUNK-43) ─────────────────────────────────────
+
+IMPORT_DIR = os.path.join(DATA_DIR, "import-staging")
+IMPORT_TTL_SECONDS = 3600
+set_imports = {}      # token → {"path", "created", "set", "members"}: previews waiting for commit
+
+
+def _remove_quiet(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _purge_imports():
+    """Drop previews older than an hour, and staged files no preview knows (e.g. from before a restart)."""
+    now = time.time()
+    for token, imp in list(set_imports.items()):
+        if now - imp["created"] > IMPORT_TTL_SECONDS:
+            set_imports.pop(token, None)
+            _remove_quiet(imp["path"])
+    known = {imp["path"] for imp in set_imports.values()}
+    try:
+        for name in os.listdir(IMPORT_DIR):
+            path = os.path.join(IMPORT_DIR, name)
+            if path not in known and now - os.path.getmtime(path) > IMPORT_TTL_SECONDS:
+                _remove_quiet(path)
+    except OSError:
+        pass
+
+
+def _export_copy(set_data):
+    """A normalized deep copy of a stored set, as the export writes it."""
+    import copy as _copy
+    out = _copy.deepcopy(set_data)
+    for letter_cfg in out.get("letters", {}).values():
+        for e in letter_cfg.get("entries", []):
+            _normalize_letter_entry(e)
+            _strip_legacy_sound(e)
+    for n in out.get("numbers", {}).values():
+        _normalize_number_entry(n)
+        _strip_legacy_sound(n)
+    out["track_order"] = _normalize_track_order(out.get("track_order"))
+    return out
+
+
+def _import_set_id(name, sets):
+    """A free, URL-safe set id for an imported set."""
+    base = re.sub(r"[^a-z0-9-]+", "-", _slugify(name)).strip("-") or "set"
+    sid, n = base, 2
+    while sid in sets:
+        sid, n = f"{base}-{n}", n + 1
+    return sid
+
+
+async def api_export_set(request):
+    set_id = request.match_info["set_id"]
+    stored = settings.get("sets", {}).get(set_id)
+    if stored is None:
+        return web.json_response({"error": "Set not found"}, status=404)
+    data = _export_copy(stored)               # snapshot now; the ZIP is built off the event loop
+    body = await asyncio.get_running_loop().run_in_executor(
+        None, setbundle.build_zip, set_id, data, SOUNDS_DIR, IMAGES_DIR, VERSION)
+    fname = re.sub(r"[^A-Za-z0-9._-]+", "-", set_id)[:60] or "set"
+    print(f"[sets] exported {set_id} ({len(body)} bytes)", flush=True)
+    return web.Response(body=body, content_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="funkeykid-set-{fname}.zip"'})
+
+
+async def api_import_set_preview(request):
+    """Upload a set ZIP (multipart field "file"): check it and say what importing would do."""
+    _purge_imports()
+    try:
+        reader = await request.multipart()
+        field = await reader.next()
+    except Exception:
+        return web.json_response({"error": "upload the ZIP as multipart field 'file'"}, status=400)
+    if field is None or field.name != "file":
+        return web.json_response({"error": "upload the ZIP as multipart field 'file'"}, status=400)
+    os.makedirs(IMPORT_DIR, exist_ok=True)
+    token = uuid.uuid4().hex
+    path = os.path.join(IMPORT_DIR, f"{token}.zip")
+    loop = asyncio.get_running_loop()
+    try:
+        size = 0
+        with open(path, "wb") as f:
+            while True:
+                chunk = await field.read_chunk(1 << 20)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > setbundle.MAX_UPLOAD_BYTES:
+                    raise setbundle.BundleError("the file is too large")
+                f.write(chunk)
+        set_data, members = await loop.run_in_executor(None, setbundle.read_zip, path)
+        files = await loop.run_in_executor(None, setbundle.plan, path, set_data, members, SOUNDS_DIR, IMAGES_DIR)
+    except setbundle.BundleError as e:
+        _remove_quiet(path)
+        return web.json_response({"error": str(e)}, status=400)
+    except BaseException:
+        _remove_quiet(path)
+        raise
+    set_imports[token] = {"path": path, "created": time.time(), "set": set_data, "members": members}
+    letters = set_data["letters"]
+    print(f"[sets] import preview {token[:8]}: {set_data['name']} ({len(files)} files)", flush=True)
+    return web.json_response({
+        "token": token, "name": set_data["name"], "description": set_data["description"],
+        "counts": {"letters": len(letters), "entries": sum(len(c["entries"]) for c in letters.values()),
+                   "numbers": len(set_data["numbers"])},
+        "files": files,
+    })
+
+
+async def api_import_set_commit(request):
+    """Import a previewed set as a new set. Body: {"token", "name"?, "resolutions"?, "activate"?}."""
+    try:
+        body = await _json_object(request)
+        token, name = body.get("token"), body.get("name")
+        resolutions = body.get("resolutions") or {}
+        if not isinstance(token, str):
+            raise ValueError("token missing")
+        if name is not None and (not isinstance(name, str) or len(name) > setbundle.NAME_MAX):
+            raise ValueError(f"name must be text of at most {setbundle.NAME_MAX} characters")
+        if not isinstance(resolutions, dict) or not all(isinstance(k, str) and isinstance(v, str)
+                                                         for k, v in resolutions.items()):
+            raise ValueError("resolutions must map file paths to rename, keep or overwrite")
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    imp = set_imports.pop(token, None)        # claimed now: a second commit of the same preview finds nothing
+    if imp is None:
+        return web.json_response({"error": "this preview has expired or was already imported: upload the file again"},
+                                 status=404)
+    try:
+        data, summary = await asyncio.get_running_loop().run_in_executor(
+            None, setbundle.apply, imp["path"], imp["set"], imp["members"], SOUNDS_DIR, IMAGES_DIR, resolutions)
+    except setbundle.BundleError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    finally:
+        _remove_quiet(imp["path"])
+    # no await from here on: choose the id and add the set in one step
+    if name and name.strip():
+        data["name"] = name.strip()
+    sets = settings.setdefault("sets", {})
+    sid = _import_set_id(data["name"], sets)
+    sets[sid] = data
+    activate = body.get("activate") is True
+    if activate:
+        _activate_set(sid)                    # saves
+    else:
+        save_settings()
+    print(f"[sets] imported {sid}: {len(summary['written'])} written, {len(summary['renamed'])} renamed, "
+          f"{len(summary['reused'])} reused, {len(summary['missing'])} missing", flush=True)
+    return web.json_response({"ok": True, "id": sid, "name": data["name"], "active": activate, "summary": summary})
+
+
+async def api_import_set_cancel(request):
+    try:
+        token = (await _json_object(request)).get("token")
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    imp = set_imports.pop(token, None) if isinstance(token, str) else None
+    if imp:
+        _remove_quiet(imp["path"])
+    return web.json_response({"ok": True})
 
 
 # ── Letter entries within a set ──────────────────────────────────────────────
@@ -2533,6 +2706,10 @@ def create_app():
     app.router.add_put("/api/sets/{set_id}", api_update_set)
     app.router.add_delete("/api/sets/{set_id}", api_delete_set)
     app.router.add_post("/api/sets/{set_id}/activate", api_activate_set)
+    app.router.add_get("/api/sets/{set_id}/export", api_export_set)
+    app.router.add_post("/api/sets/import/preview", api_import_set_preview)
+    app.router.add_post("/api/sets/import/commit", api_import_set_commit)
+    app.router.add_post("/api/sets/import/cancel", api_import_set_cancel)
     # Letter entries within a set
     app.router.add_get("/api/sets/{set_id}/letters/{letter}", api_get_letter)
     app.router.add_put("/api/sets/{set_id}/letters/{letter}", api_put_letter)

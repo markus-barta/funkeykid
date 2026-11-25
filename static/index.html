@@ -1990,7 +1990,9 @@ function funkeykid() {
     kbProfile: null, kbManage: false, kbSelSlot: null, kbFlashCodes: [], _kbFlashT: null, kbLoading: false,
     kbKeyEdit: { label: '', shift: '', altgr: '', fn: '', name: '', code: '', icon: '', w: 1 },
     kbIconNames: { cut: 'Schere', copy: 'Kopieren', paste: 'Einfügen', globe: 'Weltkugel', search: 'Lupe',
-                   prev: 'Zurück', play: 'Abspielen', next: 'Vor', mute: 'Ton aus', vold: 'Leiser', volu: 'Lauter', screen: 'Bildschirm' },
+                   prev: 'Zurück', play: 'Abspielen', next: 'Vor', mute: 'Ton aus', vold: 'Leiser', volu: 'Lauter', screen: 'Bildschirm',
+                   sundim: 'Helligkeit runter', sun: 'Helligkeit rauf', windows: 'Mission Control', mic: 'Mikrofon', moon: 'Mond',
+                   touchid: 'Touch ID', doc: 'Dokument', home: 'Pos1', end: 'Ende' },
     kbReload() { return this.kbQueue(() => this._reload()); },
     // Drawing, key map and profile list come from one reload and are installed together.
     async _reload() {
@@ -2091,6 +2093,16 @@ function funkeykid() {
         vold: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>',
         volu: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>',
         screen: '<rect x="3" y="4" width="18" height="12" rx="1"/><line x1="2" y1="20" x2="22" y2="20"/>',
+        // Apple keyboards (FUNK-66)
+        sundim: '<circle cx="12" cy="12" r="3"/><path d="M12 5.5v1M12 17.5v1M5.5 12h1M17.5 12h1M7.4 7.4l.7.7M15.9 15.9l.7.7M7.4 16.6l.7-.7M15.9 8.1l.7-.7"/>',
+        sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/>',
+        windows: '<rect x="3" y="5" width="7" height="6" rx="1"/><rect x="12" y="5" width="9" height="6" rx="1"/><rect x="3" y="13" width="18" height="6" rx="1"/>',
+        mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><line x1="12" y1="17.5" x2="12" y2="21"/>',
+        moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+        touchid: '<circle cx="12" cy="12" r="9"/>',
+        doc: '<rect x="5" y="3" width="14" height="18" rx="2"/><line x1="8.5" y1="7.5" x2="15.5" y2="7.5"/><rect x="8.5" y="10.5" width="7" height="3" rx="1"/><line x1="8.5" y1="17" x2="13.5" y2="17"/>',
+        home: '<line x1="5" y1="4" x2="19" y2="4"/><path d="M12 20V8M7 13l5-5 5 5"/>',
+        end: '<line x1="5" y1="20" x2="19" y2="20"/><path d="M12 4v12M7 11l5 5 5-5"/>',
       };
       const p = P[name];
       return p ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>' : '';

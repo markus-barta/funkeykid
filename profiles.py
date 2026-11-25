@@ -35,7 +35,9 @@ import keymap
 DEFAULT_PROFILE = keymap.DEFAULT_PROFILE
 
 ICONS = ("cut", "copy", "paste", "globe", "search", "prev", "play", "next",
-         "mute", "vold", "volu", "screen")
+         "mute", "vold", "volu", "screen",
+         # Apple keyboards (FUNK-66): brightness, Mission Control, dictation, Do Not Disturb, Touch ID, nav keys
+         "sundim", "sun", "windows", "mic", "moon", "touchid", "doc", "home", "end")
 LEGEND_MAX = {"label": 12, "shift": 4, "altgr": 8, "fn": 8}
 NAME_MAX = 40
 PROFILE_NAME_MAX = 40
@@ -197,33 +199,48 @@ def _us_number_row():
                _k("bksp", "BACKSPACE", "⌫", "Rücktaste", w=2)])
 
 
+def _mac_de_legends(rows):
+    """Apple's German keyboards print € on E and @ on L, and no other AltGr legends."""
+    for row in rows:
+        for key in row:
+            if key.get("slot") == "l":
+                key["altgr"] = "@"
+            elif key.get("slot") != "e":
+                key.pop("altgr", None)
+    return rows
+
+
 def _main_block(lang, mac):
-    """The four rows from the digits to the bottom letters: 15 units wide."""
+    """The four rows from the digits to the bottom letters: 15 units wide, 14.5 on Apple keyboards."""
     tab = _k("tab", "TAB", "⇥" if mac else "tab", "Tab", w=1.5)
+    bksp = 1.5 if mac else 2
     if lang == "de":
-        return [
-            _number_row("⌫", 2),
-            [tab] + _qwertz() + _ue_plus() + [_k("enter", "ENTER", "↵", "Eingabe", w=1.5)],
+        rows = [
+            _number_row("⌫", bksp),
+            [tab] + _qwertz() + _ue_plus() + [_k("enter", "ENTER", "↵", "Eingabe", w=1.0 if mac else 1.5)],
             [_k("caps", "CAPSLOCK", "⇪" if mac else "feststell", "Feststelltaste", w=1.75)] + _home_row()
-            + [_hash(), _k("enter2", "ENTER", "", "Eingabe", w=1.25)],
+            + [_hash(), _k("enter2", "ENTER", "", "Eingabe", w=0.75 if mac else 1.25)],
             [_k("lshift", "LEFTSHIFT", "⇧" if mac else "umsch", "Umschalt links", w=1.25),
              _k("lt", "102ND", "<", "Kleiner / Größer", shift=">", altgr="|")] + _bottom_letters()
-            + [_k("rshift", "RIGHTSHIFT", "⇧" if mac else "umsch", "Umschalt rechts", w=2.75)],
+            + [_k("rshift", "RIGHTSHIFT", "⇧" if mac else "umsch", "Umschalt rechts", w=2.25 if mac else 2.75)],
         ]
+        return _mac_de_legends(rows) if mac else rows
+    rows = _us_number_row()
+    rows[-1]["w"] = bksp
     return [
-        _us_number_row(),
+        rows,
         [tab] + [_letter(c) for c in "QWERTYUIOP"]
         + [_k("lbracket", "LEFTBRACE", "[", "Eckige Klammer auf", shift="{"),
            _k("rbracket", "RIGHTBRACE", "]", "Eckige Klammer zu", shift="}"),
-           _k("backslash", "BACKSLASH", "\\", "Backslash", shift="|", w=1.5)],
+           _k("backslash", "BACKSLASH", "\\", "Backslash", shift="|", w=1.0 if mac else 1.5)],
         [_k("caps", "CAPSLOCK", "⇪" if mac else "caps", "Feststelltaste", w=1.75)] + [_letter(c) for c in "ASDFGHJKL"]
         + [_k("semicolon", "SEMICOLON", ";", "Semikolon", shift=":"),
            _k("quote", "APOSTROPHE", "'", "Apostroph", shift='"'),
-           _k("enter", "ENTER", "↵", "Eingabe", w=2.25)],
+           _k("enter", "ENTER", "↵", "Eingabe", w=1.75 if mac else 2.25)],
         [_k("lshift", "LEFTSHIFT", "⇧" if mac else "shift", "Umschalt links", w=2.25)] + [_letter(c) for c in "ZXCVBNM"]
         + [_k("comma", "COMMA", ",", "Komma", shift="<"), _k("dot", "DOT", ".", "Punkt", shift=">"),
            _k("slash", "SLASH", "/", "Schrägstrich", shift="?"),
-           _k("rshift", "RIGHTSHIFT", "⇧" if mac else "shift", "Umschalt rechts", w=2.75)],
+           _k("rshift", "RIGHTSHIFT", "⇧" if mac else "shift", "Umschalt rechts", w=2.25 if mac else 2.75)],
     ]
 
 
@@ -295,56 +312,85 @@ def _pc(lang, numpad):
     return {"id": pid, "name": name, "kind": "builtin", "base": "", "note": note, "hint": "", "rows": rows}
 
 
-_MAC_HINT = ("Mac-Tastaturen senden oben je nach fn-Einstellung F-Tasten oder Helligkeit, Lautstärke … "
-             "Die Codes dort sind vermutet: im Lernmodus drücken bestätigt sie.")
+_MAC_HINT = ("Die obere Reihe sendet ohne fn Helligkeit, Mission Control, Lautstärke …, mit fn F1–F12. "
+             "Diese Codes sind vermutet: im Lernmodus drücken bestätigt sie.")
+
+# Apple function row (Magic Keyboard with Touch ID, FUNK-66): icon, guessed code (Linux hid_apple), name, suggestion
+_APPLE_F = [
+    ("sundim", "BRIGHTNESSDOWN", "Helligkeit runter", None),
+    ("sun", "BRIGHTNESSUP", "Helligkeit rauf", None),
+    ("windows", "SCALE", "Mission Control", None),
+    ("search", "SEARCH", "Lupe (Spotlight)", None),
+    ("mic", "DICTATE", "Mikrofon (Diktieren)", None),
+    ("moon", "DO_NOT_DISTURB", "Mond (Nicht stören)", None),
+    ("prev", "PREVIOUSSONG", "Zurückspulen", "prevsound"),
+    ("play", "PLAYPAUSE", "Abspielen / Pause", "replay"),
+    ("next", "NEXTSONG", "Vorspulen", "nextsound"),
+    ("mute", "MUTE", "Ton aus", "mute"),
+    ("vold", "VOLUMEDOWN", "Leiser", "voldown"),
+    ("volu", "VOLUMEUP", "Lauter", "volup"),
+]
+
+
+def _apple_f_row(numpad):
+    keys = [_k("esc", "ESC", "esc", "Escape", w=1.5)]
+    for n, (icon, code, name, sug) in enumerate(_APPLE_F, 1):
+        key = _k(f"f{n}", code, "", name, icon=icon, fn=f"F{n}", guess=True)
+        if sug:
+            key["suggest"] = _fx(sug)
+        keys.append(key)
+    keys.append(_k("touchid", "SCREENLOCK", "", "Touch ID (Sperren)", icon="touchid", guess=True))
+    if numpad:
+        keys += [{"gap": 0.25}] + _f_keys(13, 15) + [{"gap": 0.25}] + _f_keys(16, 19)
+    return {"keys": keys}
+
+
+def _apple_left_mods():
+    return [_k("fn", "FN", "fn", "fn / Globus", icon="globe", guess=True),
+            _k("lctrl", "LEFTCTRL", "control", "control", shift="⌃"),
+            _k("lalt", "LEFTALT", "option", "option", shift="⌥"),
+            _k("lmeta", "LEFTMETA", "command", "command", shift="⌘", w=1.25)]
 
 
 def _mac(lang, numpad):
+    """Apple Magic Keyboard with Touch ID, compact or with number pad (drawn from a photo, FUNK-66)."""
     main = _main_block(lang, mac=True)
-    fn = _k("fn", "FN", "fn", "fn (Mac-Tastaturen senden sie)", guess=True)
-    if not numpad:      # compact, like the Magic Keyboard
+    if not numpad:
         rows = [
-            {"h": 0.6, "keys": [_k("esc", "ESC", "esc", "Escape", w=1.5)] + _f_keys(1, 12, guess=True)
-             + [_k("eject", "EJECTCD", "⏏", "Auswerfen / Sperren", w=1.5, guess=True)]},
+            _apple_f_row(False),
             {"keys": main[0]}, {"keys": main[1]}, {"keys": main[2]}, {"keys": main[3]},
-            {"keys": [
-                fn,
-                _k("lctrl", "LEFTCTRL", "ctrl", "control"),
-                _k("lalt", "LEFTALT", "⌥", "option", altgr="option"),
-                _k("lmeta", "LEFTMETA", "⌘", "command", altgr="cmd", w=1.25),
-                _k("space", "SPACE", "", "Leertaste", w=5.5),
-                _k("rmeta", "RIGHTMETA", "⌘", "command rechts", altgr="cmd", w=1.25),
-                _k("ralt", "RIGHTALT", "⌥", "option rechts", altgr="option"),
+            {"keys": _apple_left_mods() + [
+                _k("space", "SPACE", "", "Leertaste", w=5),
+                _k("rmeta", "RIGHTMETA", "command", "command rechts", shift="⌘", w=1.25),
+                _k("ralt", "RIGHTALT", "option", "option rechts", shift="⌥"),
                 _k("left", "LEFT", "←", "Pfeil links", h=0.5, dy=0.5),
                 {"stack": [_k("up", "UP", "↑", "Pfeil hoch"), _k("down", "DOWN", "↓", "Pfeil runter")], "w": 1},
                 _k("right", "RIGHT", "→", "Pfeil rechts", h=0.5, dy=0.5),
             ]},
         ]
-    else:               # full size, like the Magic Keyboard with numeric keypad
+    else:
         rows = [
-            {"h": 0.6, "keys": [_k("esc", "ESC", "esc", "Escape"), {"gap": 1}] + _f_keys(1, 4, guess=True) + [{"gap": 0.5}]
-             + _f_keys(5, 8, guess=True) + [{"gap": 0.5}] + _f_keys(9, 12, guess=True) + [{"gap": 0.5}]
-             + _f_keys(13, 15, guess=True) + [{"gap": 0.5}] + _f_keys(16, 19, guess=True)},
-            {"before": 0.25, "keys": main[0] + [{"gap": 0.5}, fn, _k("home", "HOME", "↖", "Pos1 (home)"),
-                                                _k("pgup", "PAGEUP", "⇞", "Bild hoch")]},
-            {"keys": main[1] + [{"gap": 0.5}, _k("del", "DELETE", "⌦", "Entfernen"), _k("end", "END", "↘", "Ende (end)"),
-                                _k("pgdn", "PAGEDOWN", "⇟", "Bild runter")]},
+            _apple_f_row(True),
+            {"keys": main[0] + [{"gap": 0.25}, _k("doc", "INSERT", "", "Dokument-Taste (Einfügen)", icon="doc", guess=True),
+                                _k("home", "HOME", "", "Pos1 (home)", icon="home"),
+                                _k("pgup", "PAGEUP", "↑", "Bild hoch")]},
+            {"keys": main[1] + [{"gap": 0.25}, _k("del", "DELETE", "⌦", "Entfernen"),
+                                _k("end", "END", "", "Ende (end)", icon="end"),
+                                _k("pgdn", "PAGEDOWN", "↓", "Bild runter")]},
             {"keys": main[2]},
-            {"keys": main[3] + [{"gap": 1.5}, _k("up", "UP", "↑", "Pfeil hoch")]},
-            {"keys": [_k("lctrl", "LEFTCTRL", "ctrl", "control", w=1.5),
-                      _k("lalt", "LEFTALT", "⌥", "option", altgr="option", w=1.25),
-                      _k("lmeta", "LEFTMETA", "⌘", "command", altgr="cmd", w=1.5),
-                      _k("space", "SPACE", "", "Leertaste", w=6.5),
-                      _k("rmeta", "RIGHTMETA", "⌘", "command rechts", altgr="cmd", w=1.5),
-                      _k("ralt", "RIGHTALT", "⌥", "option rechts", altgr="option", w=1.25),
-                      _k("rctrl", "RIGHTCTRL", "ctrl", "control rechts", w=1.5),
-                      {"gap": 0.5}, _k("left", "LEFT", "←", "Pfeil links"),
-                      _k("down", "DOWN", "↓", "Pfeil runter"), _k("right", "RIGHT", "→", "Pfeil rechts")]},
+            {"keys": main[3] + [{"gap": 1.25}, _k("up", "UP", "↑", "Pfeil hoch")]},
+            {"keys": _apple_left_mods() + [
+                _k("space", "SPACE", "", "Leertaste", w=6),
+                _k("rmeta", "RIGHTMETA", "command", "command rechts", shift="⌘", w=1.5),
+                _k("ralt", "RIGHTALT", "option", "option rechts", shift="⌥", w=1.25),
+                _k("rctrl", "RIGHTCTRL", "control", "control rechts", shift="⌃", w=1.5),
+                {"gap": 0.25}, _k("left", "LEFT", "←", "Pfeil links"),
+                _k("down", "DOWN", "↓", "Pfeil runter"), _k("right", "RIGHT", "→", "Pfeil rechts")]},
         ]
-        _with_numpad(rows, 19.0, mac=True, lang=lang)
+        _with_numpad(rows, 18.0, mac=True, lang=lang)
     pid, name = _generic_meta("mac", lang, numpad)
-    note = (("Mac-Anordnung mit Ziffernblock (wie das Magic Keyboard mit Ziffernblock): F1–F19, fn, Pos1/Ende."
-             if numpad else "Mac-Anordnung (wie das Magic Keyboard) mit fn, control, option und command.")
+    note = (("Wie das Magic Keyboard mit Touch ID und Ziffernblock: F1–F19, Pos1/Ende, 🌐 fn unten links."
+             if numpad else "Wie das Magic Keyboard mit Touch ID: Medientasten oben, 🌐 fn unten links.")
             + (" US-Anordnung (ANSI)." if lang == "us" else ""))
     return {"id": pid, "name": name, "kind": "builtin", "base": "", "note": note, "hint": _MAC_HINT, "rows": rows}
 

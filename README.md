@@ -11,6 +11,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **Cycle on repeat**: pressing the same letter cycles through its enabled entries; position memory per letter.
 - **Random-sounds fallback**: unmapped keys can play a random clip from the library (opt-in).
 - **Key map** (FUNK-62): any key can be given its own sound, image + sound, a function (volume, mute, stop, next set, …), a letter's content, or nothing. This includes the keyboard's media keys, like the scissors. In learn mode (Tastatur tab) you press the key and assign it; keys pressed without any effect are listed. See DEVELOPMENT.md § Key map.
+- **Keyboard profiles** (FUNK-63): the Tastatur tab draws the keyboard (ACME BK03, PC Deutsch, Mac Deutsch) with what every key does; click a key to assign it, or press it in learn mode and it lights up. Each keyboard has its own key map. Duplicate one to relabel keys or fix the code a key sends. See DEVELOPMENT.md § Keyboard profiles.
 
 ### Multi-track audio model (v3.0.0)
 - Each entry carries a `tracks` dict keyed by kind: `FX` (sound effect), `DE` (German TTS), `EN` (English TTS). Extensible later.

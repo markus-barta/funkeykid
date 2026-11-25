@@ -19,6 +19,57 @@
     .text-2xs { font-size: 10px; line-height: 14px; }
     .max-h-70vh { max-height: 70vh; }
 
+    /* ── Drawn keyboard (FUNK-63): keys placed from profile data, sized in key units ── */
+    .kb-wrap { background: #0e1114; border: 1px solid oklch(var(--b3)); border-radius: 1rem; padding: 0.9rem; overflow-x: auto; }
+    .kb-scale { container-type: inline-size; min-width: 560px; }
+    .kb { position: relative; width: 100%; --u: calc(100cqw / var(--kb-w)); height: calc(var(--u) * var(--kb-h)); }
+    .kb.is-loading { opacity: 0.55; pointer-events: none; }
+    .kb-key { position: absolute; box-sizing: border-box; padding: 0; margin: 0; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; line-height: 1;
+      border-radius: calc(var(--u) * 0.14); background: #2a323c; border: 1px solid #3a4452;
+      box-shadow: inset 0 calc(var(--u) * -0.04) 0 rgba(0,0,0,0.35); color: #e5e7eb;
+      font-size: calc(var(--u) * 0.34); font-weight: 600; transition: background .12s, transform .08s, box-shadow .12s; }
+    .kb-key:hover { border-color: #6b7280; }
+    .kb-key:focus-visible { outline: 2px solid oklch(var(--p)); outline-offset: 2px; }
+    .kb-key.is-small .kb-label { font-size: calc(var(--u) * 0.19); font-weight: 500; }
+    .kb-key.is-mid .kb-label { font-size: calc(var(--u) * 0.25); }
+    /* short or half-height keys with a red fn legend: glyph to the left, legend to the right */
+    .kb-key.has-fn.is-short, .kb-key.has-fn.is-half { justify-content: flex-start; padding-left: calc(var(--u) * 0.14); }
+    .kb-key.is-short .kb-fn, .kb-key.is-half .kb-fn { bottom: auto; top: 50%; transform: translateY(-50%); }
+    .kb-key.is-short .kb-icon { width: calc(var(--u) * 0.3); height: calc(var(--u) * 0.3); }
+    .kb-key.is-half .kb-label { font-size: calc(var(--u) * 0.22); }
+    .kb-key.is-half .kb-sub { font-size: calc(var(--u) * 0.11); }
+    .kb-key.is-none { background: #20262d; border-style: dashed; border-color: #4b5563; color: #9aa3b1; }
+    .kb-key.is-fixed { background: #1b2026; border-color: #262d35; color: #8b93a1; }
+    .kb-key.is-sel { background: #2f3768; border: 1px solid oklch(var(--p)); box-shadow: 0 0 0 3px oklch(var(--p) / 0.45); color: #fff; }
+    .kb-key.is-flash { background: oklch(var(--p)); color: oklch(var(--pc)); transform: scale(0.94); }
+    .kb-sub { position: absolute; font-size: calc(var(--u) * 0.16); font-weight: 500; color: #9aa3b1; line-height: 1; pointer-events: none; }
+    .kb-shift { left: 9%; top: 9%; }
+    .kb-altgr { left: 9%; bottom: 13%; }
+    .kb-fn { right: 9%; bottom: 13%; color: #fb8a8a; }
+    .kb-tag { right: 9%; top: 8%; font-weight: 800; }
+    .kb-icon { display: inline-flex; width: calc(var(--u) * 0.36); height: calc(var(--u) * 0.36); }
+    .kb-icon svg { width: 100%; height: 100%; }
+    .kb-bar { position: absolute; left: 14%; right: 14%; bottom: 5%; height: calc(var(--u) * 0.05); border-radius: 2px; }
+    .act-letter .kb-bar, .kb-legend-bar.act-letter { background: #6b7280; }
+    .act-func .kb-bar, .kb-legend-bar.act-func { background: oklch(var(--wa)); }
+    .act-sound .kb-bar, .kb-legend-bar.act-sound { background: oklch(var(--a)); }
+    .act-imgsound .kb-bar, .kb-legend-bar.act-imgsound { background: oklch(var(--p)); }
+    .act-func .kb-tag { color: oklch(var(--wa)); }
+    .act-sound .kb-tag { color: oklch(var(--a)); }
+    .act-imgsound .kb-tag { color: oklch(var(--p)); }
+    .kb-legend-bar { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
+    .kb-legend-none { display: inline-block; width: 18px; height: 12px; border-radius: 3px; border: 1px dashed #6b7280; }
+    .kb-legend-fn { color: #fb8a8a; font-weight: 600; }
+    .kb-face { flex: none; width: 68px; height: 68px; box-sizing: border-box; border-radius: 12px; background: #2a323c; border: 1px solid #3a4452;
+      box-shadow: inset 0 -3px 0 rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: #e5e7eb;
+      font-size: 18px; font-weight: 700; overflow: hidden; text-align: center; }
+    .kb-icon-lg { width: 32px; height: 32px; }
+    .kb-mini-wrap { background: #0e1114; border-radius: 0.6rem; padding: 0.6rem; }
+    .kb-mini { position: relative; width: 100%; }
+    .kb-mini span { position: absolute; background: #3a4452; border-radius: 2px; }
+    .kb-mini span.is-icon { background: oklch(var(--a)); }
+
     /* ── Full-size editor modals ───────────────────────────────── */
     .fk-modal-xl { width: 95vw; max-width: 1400px; height: 90vh; max-height: 90vh; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
     .fk-modal-md { width: 95vw; max-width: 820px; max-height: 90vh; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
@@ -902,102 +953,239 @@
 
     <!-- ═══ TEST TAB ═══ -->
     <div x-show="tab === 'test'" x-cloak>
-      <!-- Key map (FUNK-62): what every key of the kids' keyboard does -->
-      <div class="card bg-base-100 shadow mb-6 max-w-3xl mx-auto">
-        <div class="card-body gap-3">
-          <div class="flex flex-wrap items-center gap-3">
-            <h2 class="card-title">Tastenbelegung</h2>
-            <span class="badge badge-ghost" x-text="'Profil: ' + (km.profile || '')"></span>
-            <div class="flex-1"></div>
-            <button type="button" class="btn btn-sm" :class="kmLearn ? 'btn-primary' : 'btn-outline'"
-                    @click="kmLearn = !kmLearn" :aria-pressed="kmLearn ? 'true' : 'false'">
-              Lernmodus <span x-text="kmLearn ? 'an' : 'aus'"></span>
-            </button>
-          </div>
-          <p class="text-sm opacity-70" x-show="kmLearn">Drück eine Taste auf der echten Tastatur: Sie wird hier ausgewählt, und du siehst, was sie sendet.</p>
-          <p class="text-sm opacity-70" x-show="!kmLearn">Jede Taste kann etwas tun. Schalte den Lernmodus ein und drück die Taste, oder wähle unten eine, die schon gedrückt wurde.</p>
-          <div class="text-sm" x-show="kmLast">
-            Zuletzt gedrückt: <code class="kbd kbd-sm" x-text="kmLast?.id"></code>
-            → <span x-text="kmLastText()"></span>
-            <button type="button" class="btn btn-xs btn-ghost" x-show="!kmLearn && kmLast?.id" @click="kmSelect(kmLast.id)">belegen</button>
-          </div>
-          <div class="flex flex-wrap items-center gap-2" x-show="(km.seen_unassigned || []).length">
-            <span class="text-sm font-semibold">Gedrückt, aber ohne Wirkung:</span>
-            <template x-for="u in km.seen_unassigned" :key="u.id">
-              <button type="button" class="btn btn-xs btn-outline border-dashed" @click="kmSelect(u.id)" x-text="u.id"></button>
-            </template>
-          </div>
-
-          <div class="rounded-box bg-base-200 p-4 flex flex-col gap-3" x-show="kmSel">
-            <div class="flex flex-wrap items-baseline gap-2">
-              <span class="text-lg font-bold">Taste <code x-text="kmSel"></code></span>
-              <span class="text-sm opacity-70" x-text="kmSelInfo()"></span>
+      <!-- Key map (FUNK-62) on a drawn keyboard, per keyboard profile (FUNK-63) -->
+      <div class="max-w-6xl mx-auto mb-6 flex flex-col gap-4">
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4 gap-2">
+            <div class="flex flex-wrap items-center gap-3">
+              <h2 class="card-title">Tastenbelegung</h2>
+              <div class="flex items-center gap-2">
+                <label for="kb-profile" class="text-sm font-semibold">Tastatur</label>
+                <select id="kb-profile" class="select select-bordered select-sm" @change="kbActivate($event.target.value)">
+                  <template x-for="p in kb.profiles" :key="p.id">
+                    <option :value="p.id" :selected="p.id === km.profile" x-text="p.name + (p.kind === 'custom' ? ' (eigene)' : '')"></option>
+                  </template>
+                </select>
+              </div>
+              <span class="badge" :class="hw.connected ? 'badge-success badge-outline' : 'badge-ghost'"
+                    x-text="hw.connected ? 'Tastatur verbunden' : 'keine Tastatur verbunden'"></span>
+              <div class="flex-1"></div>
+              <button type="button" class="btn btn-sm" :class="kmLearn ? 'btn-primary' : 'btn-outline'"
+                      @click="kmLearn = !kmLearn" :aria-pressed="kmLearn ? 'true' : 'false'">
+                Lernmodus <span x-text="kmLearn ? 'an' : 'aus'"></span>
+              </button>
+              <button type="button" class="btn btn-sm btn-ghost" @click="kbManage = !kbManage"
+                      :aria-expanded="kbManage ? 'true' : 'false'">Tastaturen verwalten</button>
             </div>
-            <div class="flex flex-wrap gap-2" role="group" aria-label="Was passiert beim Drücken?">
-              <template x-for="o in kmOptions" :key="o.id">
-                <button type="button" class="btn btn-sm" :class="kmEdit.action === o.id ? 'btn-primary' : 'btn-ghost border-base-300'"
-                        @click="kmEdit.action = o.id" :aria-pressed="kmEdit.action === o.id ? 'true' : 'false'" x-text="o.label"></button>
+            <p class="text-sm opacity-70" x-show="kbProfile?.hint" x-text="kbProfile?.hint"></p>
+            <p class="text-sm" x-show="kmLearn">Lernmodus: Drück eine Taste auf der echten Tastatur. Sie leuchtet im Bild auf, wird ausgewählt, und du siehst, was sie sendet.</p>
+            <p class="text-sm opacity-70" x-show="!kmLearn">Tipp eine Taste im Bild an, um sie zu belegen. Mit dem Lernmodus wählst du sie durch Drücken auf der echten Tastatur.</p>
+          </div>
+        </div>
+
+        <!-- Keyboard profiles: use, duplicate, rename, delete -->
+        <div class="card bg-base-100 shadow" x-show="kbManage" x-cloak>
+          <div class="card-body p-4 gap-3">
+            <h3 class="font-semibold">Tastaturen</h3>
+            <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr))">
+              <template x-for="p in kb.profiles" :key="p.id">
+                <article class="rounded-box bg-base-200 p-3 flex flex-col gap-2" :class="p.id === km.profile && 'ring-1 ring-primary'">
+                  <div class="kb-mini-wrap" aria-hidden="true">
+                    <div class="kb-mini" :style="'aspect-ratio:' + p.width + '/' + p.height">
+                      <template x-for="(s, i) in p.shape" :key="i">
+                        <span :style="kbMiniPos(p, s)" :class="s[4] ? 'is-icon' : ''"></span>
+                      </template>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-semibold" x-text="p.name"></span>
+                    <span class="badge badge-sm" x-text="p.kind === 'custom' ? 'Eigene' : 'Eingebaut'"></span>
+                    <span class="badge badge-sm badge-primary" x-show="p.id === km.profile">aktiv</span>
+                  </div>
+                  <p class="text-xs opacity-70" x-text="p.note"></p>
+                  <div class="flex flex-wrap gap-1 mt-auto">
+                    <button type="button" class="btn btn-xs btn-primary" x-show="p.id !== km.profile" @click="kbActivate(p.id)">Verwenden</button>
+                    <button type="button" class="btn btn-xs btn-outline" @click="kbDuplicate(p)">Duplizieren</button>
+                    <button type="button" class="btn btn-xs btn-ghost" x-show="p.kind === 'custom'" @click="kbRename(p)">Umbenennen</button>
+                    <button type="button" class="btn btn-xs btn-ghost text-error" x-show="p.kind === 'custom'" @click="kbDelete(p)">Löschen</button>
+                  </div>
+                </article>
               </template>
             </div>
-            <div x-show="kmEdit.action === 'default'" class="text-sm opacity-80">Die Taste macht, was sie ohne Belegung macht (siehe oben).</div>
-            <div x-show="kmEdit.action === 'none'" class="text-sm opacity-80">Die Taste bleibt still. Der Rechner sieht sie auch nicht: Die Tastatur gehört exklusiv funkeykid.</div>
-            <label class="form-control max-w-xs" x-show="kmEdit.action === 'letter'">
-              <span class="label-text">Spielt den Inhalt von</span>
-              <select class="select select-bordered select-sm" x-model="kmEdit.letter">
-                <template x-for="l in km.letters" :key="l"><option :value="l" x-text="l"></option></template>
-              </select>
-            </label>
-            <label class="form-control max-w-xs" x-show="kmEdit.action === 'func'">
-              <span class="label-text">Funktion</span>
-              <select class="select select-bordered select-sm" x-model="kmEdit.func">
-                <template x-for="fid in Object.keys(km.functions || {})" :key="fid"><option :value="fid" x-text="km.functions[fid]"></option></template>
-              </select>
-            </label>
-            <div class="flex flex-wrap gap-3 items-end" x-show="kmEdit.action === 'sound' || kmEdit.action === 'imgsound'">
-              <label class="form-control">
-                <span class="label-text">Geräusch (aus »Dateien«)</span>
-                <select class="select select-bordered select-sm max-w-xs" x-model="kmEdit.file">
-                  <template x-for="f in sounds" :key="f"><option :value="f" x-text="f"></option></template>
-                </select>
-              </label>
-              <label class="form-control w-40">
-                <span class="label-text">Lautstärke <span x-text="kmEdit.volume + '%'"></span></span>
-                <input type="range" class="range range-xs range-primary" min="10" max="200" step="10" x-model.number="kmEdit.volume">
-              </label>
+            <p class="text-xs opacity-70">Eine Tastatur ist nur eine Liste von Tasten: Position, Beschriftung und welcher Code beim Drücken ankommt. Eingebaute Tastaturen sind fest; dupliziere eine, dann kannst du jede Taste neu beschriften und ihren Code festlegen (auch per Lernmodus). Jede Tastatur hat ihre eigene Belegung.</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-4 items-start">
+          <div class="flex flex-col gap-3 min-w-0" style="flex: 999 1 640px">
+            <div class="kb-wrap">
+              <div class="kb-scale">
+                <div class="kb" :class="kbLoading && 'is-loading'" :aria-busy="kbLoading ? 'true' : 'false'" :style="kbStyle()" role="group"
+                     :aria-label="'Tastatur ' + (kbProfile?.name || '') + ': Taste antippen zum Auswählen'">
+                  <template x-for="k in (kbProfile?.keys || [])" :key="k.slot">
+                    <button type="button" class="kb-key" :class="kbKeyClass(k)" :style="kbKeyPos(k)"
+                            @click="kbPick(k)" :aria-label="kbKeyAria(k)" :aria-pressed="kbSelSlot === k.slot ? 'true' : 'false'">
+                      <span class="kb-sub kb-shift" aria-hidden="true" x-text="k.shift || ''"></span>
+                      <span class="kb-sub kb-tag" aria-hidden="true" x-text="kbTag(k)"></span>
+                      <span class="kb-icon" aria-hidden="true" x-show="k.icon" x-html="kbIcon(k.icon)"></span>
+                      <span class="kb-label" aria-hidden="true" x-show="!k.icon || k.label" x-text="k.label || ''"></span>
+                      <span class="kb-sub kb-altgr" aria-hidden="true" x-text="k.altgr || ''"></span>
+                      <span class="kb-sub kb-fn" aria-hidden="true" x-text="k.fn || ''"></span>
+                      <span class="kb-bar" aria-hidden="true"></span>
+                    </button>
+                  </template>
+                </div>
+              </div>
             </div>
-            <div class="flex flex-wrap gap-3 items-end" x-show="kmEdit.action === 'imgsound'">
-              <label class="form-control">
-                <span class="label-text">Bild auf dem Pixoo</span>
-                <select class="select select-bordered select-sm max-w-xs" x-model="kmEdit.image">
-                  <template x-for="f in images" :key="f"><option :value="f" x-text="f"></option></template>
-                </select>
-              </label>
-              <img :src="kmEdit.image ? '/images/' + kmEdit.image : ''" x-show="kmEdit.image" class="img-preview" style="width:64px;height:64px" alt="">
-              <label class="form-control">
-                <span class="label-text">Wort (optional)</span>
-                <input type="text" maxlength="24" class="input input-bordered input-sm w-40" x-model="kmEdit.word">
-              </label>
+            <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs opacity-80">
+              <span class="inline-flex items-center gap-1"><span class="kb-legend-bar act-letter"></span>Buchstabe / Ziffer (Inhalt aus dem Set)</span>
+              <span class="inline-flex items-center gap-1"><span class="kb-legend-bar act-sound"></span>♪ Geräusch</span>
+              <span class="inline-flex items-center gap-1"><span class="kb-legend-bar act-imgsound"></span>▣ Bild + Geräusch</span>
+              <span class="inline-flex items-center gap-1"><span class="kb-legend-bar act-func"></span>ƒ Funktion</span>
+              <span class="inline-flex items-center gap-1"><span class="kb-legend-none"></span>nicht belegt</span>
+              <span><span class="kb-legend-fn">rot</span> = mit fn</span>
+              <span>Zeichen oben rechts = eigene Belegung</span>
             </div>
-            <div class="flex flex-wrap gap-2">
-              <button type="button" class="btn btn-sm btn-primary" @click="kmSave()">Speichern</button>
-              <button type="button" class="btn btn-sm btn-outline" @click="kmTry()">Ausprobieren</button>
-              <button type="button" class="btn btn-sm btn-ghost" @click="kmSel = null">Schließen</button>
+
+            <div class="text-sm" x-show="kmLast">
+              Zuletzt gedrückt: <code class="kbd kbd-sm" x-text="kmLast?.id"></code>
+              → <span x-text="kmLastText()"></span>
+              <span class="badge badge-warning badge-sm" x-show="kmLast && !kbInPicture(kmLast)">nicht im Bild</span>
+              <button type="button" class="btn btn-xs btn-ghost" x-show="!kmLearn && kmLast?.id" @click="kbSelectId(kmLast.id)">belegen</button>
+            </div>
+            <div class="flex flex-wrap items-center gap-2" x-show="(km.seen_unassigned || []).length">
+              <span class="text-sm font-semibold">Gedrückt, aber ohne Wirkung:</span>
+              <template x-for="u in km.seen_unassigned" :key="u.id">
+                <button type="button" class="btn btn-xs btn-outline border-dashed" @click="kbSelectId(u.id)" x-text="kbNameFor(u.id)"></button>
+              </template>
+            </div>
+            <div x-show="Object.keys(km.map || {}).length">
+              <h3 class="font-semibold mb-1">Eigene Belegungen <span class="font-normal opacity-60" x-text="'(' + (km.profile_name || '') + ')'"></span></h3>
+              <ul class="flex flex-col gap-1">
+                <template x-for="kid in Object.keys(km.map || {})" :key="kid">
+                  <li class="flex flex-wrap items-center gap-2 text-sm">
+                    <code class="kbd kbd-sm" x-text="kid"></code>
+                    <span x-text="(km.describe || {})[kid]"></span>
+                    <button type="button" class="btn btn-xs btn-ghost" @click="kbSelectId(kid)">Bearbeiten</button>
+                    <button type="button" class="btn btn-xs btn-ghost" @click="kmReset(kid)">Zurücksetzen</button>
+                  </li>
+                </template>
+              </ul>
             </div>
           </div>
 
-          <div x-show="Object.keys(km.map || {}).length">
-            <h3 class="font-semibold mb-1">Eigene Belegungen</h3>
-            <ul class="flex flex-col gap-1">
-              <template x-for="kid in Object.keys(km.map || {})" :key="kid">
-                <li class="flex flex-wrap items-center gap-2 text-sm">
-                  <code class="kbd kbd-sm" x-text="kid"></code>
-                  <span x-text="(km.describe || {})[kid]"></span>
-                  <button type="button" class="btn btn-xs btn-ghost" @click="kmSelect(kid)">Bearbeiten</button>
-                  <button type="button" class="btn btn-xs btn-ghost" @click="kmReset(kid)">Zurücksetzen</button>
-                </li>
-              </template>
-            </ul>
-          </div>
+          <!-- Selected key -->
+          <aside class="card bg-base-100 shadow min-w-0" style="flex: 1 1 340px" aria-label="Ausgewählte Taste">
+            <div class="card-body p-4 gap-3">
+              <p class="text-sm opacity-70" x-show="!kmSel && !kbSelSlot">Noch keine Taste ausgewählt. Tipp eine Taste im Bild an oder drück sie im Lernmodus.</p>
+              <div class="flex gap-3 items-center" x-show="kmSel || kbSelSlot">
+                <div class="kb-face" aria-hidden="true">
+                  <span class="kb-icon kb-icon-lg" x-show="kbSelKey()?.icon" x-html="kbIcon(kbSelKey()?.icon)"></span>
+                  <span x-show="!kbSelKey()?.icon" x-text="kbSelKey()?.label || kmSel || ''"></span>
+                </div>
+                <div class="flex flex-col gap-1 min-w-0">
+                  <h3 class="text-lg font-bold leading-tight" x-text="kbSelKey()?.name || ('Taste ' + (kmSel || ''))"></h3>
+                  <div class="text-sm">Sendet <code class="kbd kbd-sm" x-text="kbSelCode()"></code></div>
+                  <span class="badge badge-sm self-start" x-show="kbSelBadge()"
+                        :class="(km.seen_codes || []).includes(kbSelKey()?.code) ? 'badge-success' : 'badge-warning'" x-text="kbSelBadge()"></span>
+                  <span class="badge badge-sm badge-ghost self-start" x-show="kmSel && !kbSelSlot">nicht im Bild</span>
+                </div>
+              </div>
+              <p class="text-sm rounded-box bg-base-200 p-3" x-show="kbSelFixed()" x-text="kbSelFixed()"></p>
+
+              <div class="flex flex-col gap-3" x-show="kmSel">
+                <div class="text-sm opacity-70" x-text="kmSelInfo()"></div>
+                <div class="flex flex-wrap items-center gap-2 rounded-box border border-base-300 p-3" x-show="kbSuggest()">
+                  <span class="text-sm">Vorschlag: <strong x-text="kbSuggestText()"></strong></span>
+                  <button type="button" class="btn btn-xs btn-primary" @click="kbApplySuggest()">Übernehmen</button>
+                </div>
+                <div class="flex flex-wrap gap-2" role="group" aria-label="Was passiert beim Drücken?">
+                  <template x-for="o in kmOptions" :key="o.id">
+                    <button type="button" class="btn btn-sm" :class="kmEdit.action === o.id ? 'btn-primary' : 'btn-ghost border-base-300'"
+                            @click="kmEdit.action = o.id" :aria-pressed="kmEdit.action === o.id ? 'true' : 'false'" x-text="o.label"></button>
+                  </template>
+                </div>
+                <div x-show="kmEdit.action === 'default'" class="text-sm opacity-80">Die Taste macht, was sie ohne Belegung macht (siehe oben).</div>
+                <div x-show="kmEdit.action === 'none'" class="text-sm opacity-80">Die Taste bleibt still. Der Rechner sieht sie auch nicht: Die Tastatur gehört exklusiv funkeykid.</div>
+                <label class="form-control max-w-xs" x-show="kmEdit.action === 'letter'">
+                  <span class="label-text">Spielt den Inhalt von</span>
+                  <select class="select select-bordered select-sm" x-model="kmEdit.letter">
+                    <template x-for="l in km.letters" :key="l"><option :value="l" x-text="l"></option></template>
+                  </select>
+                </label>
+                <label class="form-control max-w-xs" x-show="kmEdit.action === 'func'">
+                  <span class="label-text">Funktion</span>
+                  <select class="select select-bordered select-sm" x-model="kmEdit.func">
+                    <template x-for="fid in Object.keys(km.functions || {})" :key="fid"><option :value="fid" x-text="km.functions[fid]"></option></template>
+                  </select>
+                </label>
+                <div class="flex flex-wrap gap-3 items-end" x-show="kmEdit.action === 'sound' || kmEdit.action === 'imgsound'">
+                  <label class="form-control">
+                    <span class="label-text">Geräusch (aus »Dateien«)</span>
+                    <select class="select select-bordered select-sm max-w-xs" x-model="kmEdit.file">
+                      <template x-for="f in sounds" :key="f"><option :value="f" x-text="f"></option></template>
+                    </select>
+                  </label>
+                  <label class="form-control w-40">
+                    <span class="label-text">Lautstärke <span x-text="kmEdit.volume + '%'"></span></span>
+                    <input type="range" class="range range-xs range-primary" min="10" max="200" step="10" x-model.number="kmEdit.volume">
+                  </label>
+                </div>
+                <div class="flex flex-wrap gap-3 items-end" x-show="kmEdit.action === 'imgsound'">
+                  <label class="form-control">
+                    <span class="label-text">Bild auf dem Pixoo</span>
+                    <select class="select select-bordered select-sm max-w-xs" x-model="kmEdit.image">
+                      <template x-for="f in images" :key="f"><option :value="f" x-text="f"></option></template>
+                    </select>
+                  </label>
+                  <img :src="kmEdit.image ? '/images/' + kmEdit.image : ''" x-show="kmEdit.image" class="img-preview" style="width:64px;height:64px" alt="">
+                  <label class="form-control">
+                    <span class="label-text">Wort (optional)</span>
+                    <input type="text" maxlength="24" class="input input-bordered input-sm w-40" x-model="kmEdit.word">
+                  </label>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-sm btn-primary" @click="kmSave()">Speichern</button>
+                  <button type="button" class="btn btn-sm btn-outline" @click="kmTry()">Ausprobieren</button>
+                </div>
+                <p class="text-xs opacity-60" x-text="'Gilt für »' + (km.profile_name || '') + '« in allen Sets.'"></p>
+              </div>
+
+              <!-- Custom profiles: legends and code of the selected key -->
+              <details id="kb-key-editor" class="rounded-box bg-base-200 p-3" x-show="kbProfile?.kind === 'custom' && kbSelKey()">
+                <summary class="cursor-pointer font-semibold text-sm">Taste beschriften und Code festlegen</summary>
+                <div class="grid gap-2 mt-3" style="grid-template-columns: repeat(2, minmax(0, 1fr))">
+                  <label class="form-control"><span class="label-text text-xs">Beschriftung (Mitte)</span>
+                    <input type="text" maxlength="12" class="input input-bordered input-sm" x-model="kbKeyEdit.label"></label>
+                  <label class="form-control"><span class="label-text text-xs">Symbol</span>
+                    <select class="select select-bordered select-sm" x-model="kbKeyEdit.icon">
+                      <option value="">kein Symbol</option>
+                      <template x-for="ic in kb.icons" :key="ic"><option :value="ic" x-text="kbIconNames[ic] || ic"></option></template>
+                    </select></label>
+                  <label class="form-control"><span class="label-text text-xs">Oben links (Umschalt)</span>
+                    <input type="text" maxlength="4" class="input input-bordered input-sm" x-model="kbKeyEdit.shift"></label>
+                  <label class="form-control"><span class="label-text text-xs">Unten links (Alt Gr)</span>
+                    <input type="text" maxlength="8" class="input input-bordered input-sm" x-model="kbKeyEdit.altgr"></label>
+                  <label class="form-control"><span class="label-text text-xs">Rot (mit fn)</span>
+                    <input type="text" maxlength="8" class="input input-bordered input-sm" x-model="kbKeyEdit.fn"></label>
+                  <label class="form-control" x-show="!kbSelKey()?.stacked"><span class="label-text text-xs">Breite (Tasten)</span>
+                    <input type="number" min="0.25" max="12" step="0.05" class="input input-bordered input-sm" x-model="kbKeyEdit.w"></label>
+                  <label class="form-control col-span-2"><span class="label-text text-xs">Name</span>
+                    <input type="text" maxlength="40" class="input input-bordered input-sm" x-model="kbKeyEdit.name"></label>
+                  <label class="form-control col-span-2"><span class="label-text text-xs">Code (was die Taste sendet, z. B. CUT oder CTRL+X; leer = sendet nichts)</span>
+                    <input type="text" maxlength="60" class="input input-bordered input-sm font-mono" x-model="kbKeyEdit.code"></label>
+                </div>
+                <div class="flex flex-wrap gap-2 mt-3">
+                  <button type="button" class="btn btn-sm btn-primary" @click="kbSaveKey()">Taste speichern</button>
+                  <button type="button" class="btn btn-sm btn-outline" x-show="kmLast?.id && kmLast.id !== kbSelKey()?.code"
+                          @click="kbTakeCode()" x-text="'Code übernehmen: ' + (kmLast?.id || '')"></button>
+                </div>
+                <p class="text-xs opacity-60 mt-2">»Code übernehmen« setzt den Code der zuletzt gedrückten Taste. Die Belegung hängt am Code: ein neuer Code bringt dessen Belegung mit.</p>
+              </details>
+
+              <button type="button" class="btn btn-sm btn-ghost self-start" x-show="kmSel || kbSelSlot" @click="kmSel = null; kbSelSlot = null">Schließen</button>
+            </div>
+          </aside>
         </div>
       </div>
 
@@ -1655,18 +1843,50 @@ function funkeykid() {
 
     // Key map (FUNK-62)
     km: { profile: '', map: {}, describe: {}, functions: {}, letters: [], seen_unassigned: [] },
-    kmLearn: false, kmLast: null, kmSel: null, kmSelDefault: '',
+    kmLearn: false, kmLast: null, kmSel: null, kmSelProfile: '', kmSelDefault: '',
     kmEdit: { action: 'default', letter: 'A', func: 'volup', file: '', image: '', word: '', volume: 100 },
     kmOptions: [
       { id: 'default', label: 'Standard' }, { id: 'letter', label: 'Buchstabe / Ziffer' },
       { id: 'sound', label: 'Geräusch' }, { id: 'imgsound', label: 'Bild + Geräusch' },
       { id: 'func', label: 'Funktion' }, { id: 'none', label: 'Nichts' },
     ],
-    async loadKeymap() {
-      try { this.km = await fetch('/api/keymap').then(r => r.json()); } catch {}
+    // ── One queue for every keyboard/key-map operation that fetches and installs state ──
+    // Operations never overlap: a late response can never install over newer state, and
+    // each one starts from what the previous one left (FUNK-63 review). Dialogs run before
+    // an operation is queued; queued operations call the _private helpers, never the queue.
+    _kbQ: Promise.resolve(), _kmLoadQueued: false,
+    kbQueue(fn) {
+      const run = this._kbQ.then(fn).catch((err) => console.warn('[keyboard]', err));
+      this._kbQ = run;
+      return run;
+    },
+    loadKeymap() {
+      if (this._kmLoadQueued) return this._kbQ;        // one queued refresh is enough
+      this._kmLoadQueued = true;
+      return this.kbQueue(async () => { this._kmLoadQueued = false; await this._loadKeymap(); });
+    },
+    async _loadKeymap() {
+      const km = await fetch('/api/keymap').then(r => r.json());
+      // the active profile changed elsewhere: reload drawing and map together
+      if (this.kbProfile && km.profile !== this.kbProfile.id) return this._reload();
+      this.km = km;
+    },
+    // a key-map save or reset, bound to the profile the editor showed (409 = switched meanwhile)
+    async _keymapWrite(id, profile, opts) {
+      const res = await fetch('/api/keymap/' + encodeURIComponent(id) + '?profile=' + encodeURIComponent(profile), opts);
+      if (res.status === 409) {
+        this.showToast('Die Tastatur wurde inzwischen umgeschaltet: nicht gespeichert, Ansicht neu geladen', 'error');
+        await this._reload();
+        return null;
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { this.showToast('Nicht gespeichert: ' + (data.error || res.status), 'error'); return null; }
+      if (data.profile === this.kbProfile?.id) this.km = data;
+      return data;
     },
     async kmSelect(id) {
       this.kmSel = id;
+      const prof = this.kmSelProfile = this.km.profile;
       const a = (this.km.map || {})[id];
       this.kmEdit = Object.assign(
         { action: 'default', letter: 'A', func: 'volup', file: (this.sounds || [])[0] || '', image: (this.images || [])[0] || '', word: '', volume: 100 },
@@ -1674,7 +1894,7 @@ function funkeykid() {
       this.kmSelDefault = '';
       try {
         const r = await fetch('/api/press/' + encodeURIComponent(id) + '?dry=1', { method: 'POST' }).then(r => r.json());
-        if (this.kmSel === id) this.kmSelDefault = r.default || 'ohne Wirkung (spielt nur ein Zufallsgeräusch, wenn das in den Einstellungen an ist)';
+        if (this.kmSel === id && this.kmSelProfile === prof) this.kmSelDefault = r.default || 'ohne Wirkung (spielt nur ein Zufallsgeräusch, wenn das in den Einstellungen an ist)';
       } catch {}
     },
     kmSelInfo() {
@@ -1687,34 +1907,286 @@ function funkeykid() {
       if (d.describe) return d.describe;
       return d.default || 'ohne Wirkung';
     },
-    async kmSave() {
+    kmSave() {
       const id = this.kmSel;
-      if (!id) return;
-      const e = this.kmEdit;
-      let res;
-      if (e.action === 'default') {
-        res = await fetch('/api/keymap/' + encodeURIComponent(id), { method: 'DELETE' });
-      } else {
+      if (!id || !this.kmSelValid()) return;
+      const e = JSON.parse(JSON.stringify(this.kmEdit)), profile = this.km.profile;
+      let opts = { method: 'DELETE' };
+      if (e.action !== 'default') {
         const body = { action: e.action };
         if (e.action === 'letter') body.letter = e.letter;
         if (e.action === 'func') body.func = e.func;
         if (e.action === 'sound' || e.action === 'imgsound') { body.file = e.file; body.volume = Number(e.volume) || 100; }
         if (e.action === 'imgsound') { body.image = e.image; body.word = e.word || ''; }
-        res = await fetch('/api/keymap/' + encodeURIComponent(id), {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        opts = { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
       }
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { this.showToast('Nicht gespeichert: ' + (data.error || res.status), 'error'); return; }
-      this.km = data;
-      this.showToast('Taste ' + id + ': ' + (e.action === 'default' ? 'wieder Standard' : (data.describe || {})[id]));
+      return this.kbQueue(async () => {
+        const data = await this._keymapWrite(id, profile, opts);
+        if (data) this.showToast('Taste ' + id + ': ' + (e.action === 'default' ? 'wieder Standard' : (data.describe || {})[id]));
+      });
     },
-    async kmReset(id) {
-      const res = await fetch('/api/keymap/' + encodeURIComponent(id), { method: 'DELETE' });
-      if (res.ok) { this.km = await res.json(); if (this.kmSel === id) this.kmSelect(id); }
+    kmReset(id) {
+      const profile = this.km.profile;
+      return this.kbQueue(async () => {
+        const data = await this._keymapWrite(id, profile, { method: 'DELETE' });
+        if (data && this.kmSel === id && this.kmSelProfile === data.profile) this.kmSelect(id);
+      });
+    },
+    // the selected key belongs to the profile on screen (not to one shown before a switch)
+    kmSelValid() {
+      if (this.kmSel && this.kmSelProfile === this.km.profile && this.km.profile === this.kbProfile?.id) return true;
+      this.showToast('Die Tastatur wurde umgeschaltet: bitte die Taste neu auswählen', 'error');
+      this.kmSel = null; this.kbSelSlot = null;
+      if (this.km.profile !== this.kbProfile?.id) this.kbReload();   // map and drawing disagree: load both again
+      return false;
     },
     async kmTry() {
-      if (this.kmSel) await fetch('/api/press/' + encodeURIComponent(this.kmSel), { method: 'POST' });
+      if (this.kmSel && this.kmSelValid()) await fetch('/api/press/' + encodeURIComponent(this.kmSel), { method: 'POST' });
     },
+
+    // Keyboard profiles + drawn keyboard (FUNK-63)
+    kb: { active: '', icons: [], profiles: [] },
+    kbProfile: null, kbManage: false, kbSelSlot: null, kbFlashCodes: [], _kbFlashT: null, kbLoading: false,
+    kbKeyEdit: { label: '', shift: '', altgr: '', fn: '', name: '', code: '', icon: '', w: 1 },
+    kbIconNames: { cut: 'Schere', copy: 'Kopieren', paste: 'Einfügen', globe: 'Weltkugel', search: 'Lupe',
+                   prev: 'Zurück', play: 'Abspielen', next: 'Vor', mute: 'Ton aus', vold: 'Leiser', volu: 'Lauter', screen: 'Bildschirm' },
+    kbReload() { return this.kbQueue(() => this._reload()); },
+    // Drawing, key map and profile list come from one reload and are installed together.
+    async _reload() {
+      this.kbSelSlot = null; this.kmSel = null;
+      this.kbLoading = true;                 // the old drawing takes no clicks while the new one loads
+      try {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const [km, kb] = await Promise.all([fetch('/api/keymap').then(r => r.json()), fetch('/api/keyboards').then(r => r.json())]);
+          const p = await fetch('/api/keyboards/' + encodeURIComponent(km.profile)).then(r => r.json());
+          if (!p || !p.keys || p.id !== km.profile || kb.active !== km.profile) continue;   // switched between the requests
+          this.km = km; this.kb = kb; this.kbProfile = p;
+          this.kbSelSlot = null; this.kmSel = null;   // nothing selected on the old drawing survives
+          return;
+        }
+      } catch {
+      } finally {
+        this.kbLoading = false;
+      }
+    },
+    _applyList(data) { if (data && data.active === this.km.profile) this.kb = data; },
+    async _refreshList() { this._applyList(await fetch('/api/keyboards').then(r => r.json())); },
+    // install a profile snapshot and keep the selection consistent with it, whoever saved
+    _installProfile(p, savedSlot) {
+      this.kbProfile = p;
+      const sel = this.kbSelKey();
+      if (!sel) { if (this.kbSelSlot) { this.kbSelSlot = null; this.kmSel = null; } return; }
+      if (sel.slot === savedSlot) this.kbKeyEditFrom(sel);
+      const want = sel.code && !this.kbIsShift(sel.code) ? sel.code : null;
+      if (want !== this.kmSel) { if (want) this.kmSelect(want); else this.kmSel = null; }
+    },
+    kbIsShift(code) { return code === 'LEFTSHIFT' || code === 'RIGHTSHIFT'; },
+    kbStyle() {
+      const p = this.kbProfile;
+      return p ? `--kb-w:${p.width};--kb-h:${p.height}` : '--kb-w:15;--kb-h:6';
+    },
+    kbKeyPos(k) {
+      const g = 0.06;
+      return `left:calc(var(--u)*${k.x + g});top:calc(var(--u)*${k.y + g});width:calc(var(--u)*${k.w - 2 * g});height:calc(var(--u)*${k.h - 2 * g})`;
+    },
+    kbMiniPos(p, s) {
+      const pct = (v, total) => (v / total * 100).toFixed(3) + '%';
+      return `left:${pct(s[0] + 0.05, p.width)};top:${pct(s[1] + 0.05, p.height)};width:${pct(s[2] - 0.1, p.width)};height:${pct(s[3] - 0.1, p.height)}`;
+    },
+    // what a drawn key does now: its own entry, the plain key's entry (for a CTRL+… code), or the built-in role
+    kbEffective(k) {
+      const code = k.code;
+      if (!code || this.kbIsShift(code)) return { fixed: true, kind: null };
+      const map = this.km.map || {};
+      const a = map[code] || (code.includes('+') ? map[code.split('+').pop()] : null);
+      if (a) return { fixed: false, kind: a.action };
+      const d = (this.km.defaults || {})[code];
+      return { fixed: false, kind: d && d.kind ? d.kind : null };
+    },
+    kbKeyClass(k) {
+      const e = this.kbEffective(k);
+      const c = [];
+      if (e.fixed) c.push('is-fixed');
+      else if (!e.kind || e.kind === 'none') c.push('is-none');
+      if (e.kind && e.kind !== 'none') c.push('act-' + e.kind);
+      // words (esc, umsch, bild↑) small, short codes (F1, F10) medium, single glyphs large
+      const L = k.label || '';
+      if (L.length > 1) c.push(L.length > 3 || /^[a-zäöüß ]+$/.test(L) ? 'is-small' : 'is-mid');
+      if (k.h < 0.6) c.push('is-half');
+      else if (k.h < 0.8) c.push('is-short');
+      if (k.fn) c.push('has-fn');
+      if (this.kbSelSlot === k.slot) c.push('is-sel');
+      if (this.kbFlashCodes.includes(k.code)) c.push('is-flash');
+      return c.join(' ');
+    },
+    kbTag(k) {
+      const a = (this.km.map || {})[k.code];
+      if (!a) return '';
+      if (a.action === 'letter') return a.letter;
+      return { sound: '♪', imgsound: '▣', func: 'ƒ', none: '–' }[a.action] || '';
+    },
+    kbKeyAria(k) {
+      if (!k.code) return k.name + ': sendet nichts';
+      if (this.kbIsShift(k.code)) return k.name + ': Umschalttaste (für Favoriten)';
+      const d = (this.km.describe || {})[k.code];
+      const def = (this.km.defaults || {})[k.code];
+      return k.name + ': ' + (d || (def && def.label) || 'nicht belegt');
+    },
+    kbIcon(name) {
+      const P = {
+        cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
+        copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+        paste: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
+        globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+        search: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/>',
+        prev: '<polygon points="11 19 2 12 11 5 11 19" fill="currentColor"/><polygon points="22 19 13 12 22 5 22 19" fill="currentColor"/>',
+        play: '<polygon points="3 5 11 12 3 19 3 5" fill="currentColor"/><line x1="15" y1="5" x2="15" y2="19"/><line x1="20" y1="5" x2="20" y2="19"/>',
+        next: '<polygon points="13 19 22 12 13 5 13 19" fill="currentColor"/><polygon points="2 19 11 12 2 5 2 19" fill="currentColor"/>',
+        mute: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/>',
+        vold: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>',
+        volu: '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>',
+        screen: '<rect x="3" y="4" width="18" height="12" rx="1"/><line x1="2" y1="20" x2="22" y2="20"/>',
+      };
+      const p = P[name];
+      return p ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg>' : '';
+    },
+    kbSelKey() { return (this.kbProfile?.keys || []).find(k => k.slot === this.kbSelSlot) || null; },
+    kbSelCode() { const k = this.kbSelKey(); return k ? (k.code || '— (nichts)') : (this.kmSel || ''); },
+    kbFindKey(id) { return (this.kbProfile?.keys || []).find(k => k.code === id) || null; },
+    kbInPicture(d) { return !!(this.kbFindKey(d.id) || this.kbFindKey(d.raw)); },
+    kbNameFor(id) { const k = this.kbFindKey(id); return k ? k.name + ' (' + id + ')' : id; },
+    kbKeyEditFrom(k) {
+      this.kbKeyEdit = { label: k.label || '', shift: k.shift || '', altgr: k.altgr || '', fn: k.fn || '',
+                         name: k.name || '', code: k.code || '', icon: k.icon || '', w: k.w };
+    },
+    kbPick(k) {
+      if (this.kbLoading) return;
+      this.kbSelSlot = k.slot;
+      this.kbKeyEditFrom(k);
+      if (k.code && !this.kbIsShift(k.code)) this.kmSelect(k.code); else this.kmSel = null;
+    },
+    kbSelectId(id) {
+      if (this.kbLoading) return;
+      const k = this.kbFindKey(id);
+      this.kbSelSlot = k ? k.slot : null;
+      if (k) this.kbKeyEditFrom(k);
+      if (this.kbIsShift(id)) this.kmSel = null; else this.kmSelect(id);
+    },
+    kbFlash(d) {
+      this.kbFlashCodes = this.kbFindKey(d.id) ? [d.id] : (this.kbFindKey(d.raw) ? [d.raw] : []);
+      clearTimeout(this._kbFlashT);
+      this._kbFlashT = setTimeout(() => { this.kbFlashCodes = []; }, 450);
+    },
+    kbSelFixed() {
+      const k = this.kbSelKey();
+      if (!k) return '';
+      if (!k.code) return 'Diese Taste sendet nichts an funkeykid: Die Tastatur verarbeitet sie selbst. Mit fn erreichst du die roten Zweitbelegungen (z. B. F1 statt Schere); das sind eigene Tasten-Codes, die du im Lernmodus belegen kannst.';
+      if (this.kbIsShift(k.code)) return 'Umschalttaste: Umschalt + Ziffer spielt einen Favoriten. Sie wird deshalb nicht einzeln belegt.';
+      return '';
+    },
+    kbSelBadge() {
+      const k = this.kbSelKey();
+      if (!k || !k.guess) return '';
+      return (this.km.seen_codes || []).includes(k.code) ? 'bestätigt: wurde so gedrückt' : 'vermutet: im Lernmodus drücken bestätigt';
+    },
+    kbSuggest() {
+      const k = this.kbSelKey();
+      if (!k || !k.suggest || this.kmSel !== k.code || (this.km.map || {})[k.code]) return null;
+      const d = (this.km.defaults || {})[k.code];
+      return d && d.label ? null : k.suggest;
+    },
+    kbSuggestText() {
+      const s = this.kbSuggest();
+      if (!s) return '';
+      if (s.action === 'func') return 'Funktion »' + ((this.km.functions || {})[s.func] || s.func) + '«';
+      if (s.action === 'letter') return 'Inhalt von ' + s.letter;
+      return 'Nichts';
+    },
+    kbApplySuggest() {
+      const s = this.kbSuggest();
+      if (!s) return;
+      this.kmEdit = Object.assign({}, this.kmEdit, JSON.parse(JSON.stringify(s)));
+      return this.kmSave();
+    },
+    kbActivate(id) { return this.kbQueue(() => this._activate(id)); },
+    async _activate(id) {
+      if (!id || id === this.km.profile) return;
+      const res = await fetch('/api/keyboards/' + encodeURIComponent(id) + '/activate', { method: 'POST' });
+      await this._reload();
+      if (!res.ok) { this.showToast('Tastatur nicht umgeschaltet', 'error'); return; }
+      this.showToast('»' + (this.kbProfile?.name || id) + '« ist aktiv: Die Tastatur nutzt jetzt diese Belegung.');
+    },
+    kbDuplicate(p) {
+      const name = prompt('Name der neuen Tastatur:', p.name + ' (Kopie)');
+      if (!name) return;
+      return this.kbQueue(async () => {
+        // Copy of the active profile: same keys, same key map, so switching to it changes nothing
+        // for the kids and makes it editable. The server switches only if the source is still
+        // active when it makes the copy: another browser's choice is never overridden.
+        const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id) + '/duplicate', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, activate_if_active: true }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Nicht dupliziert: ' + (data.error || res.status), 'error'); return; }
+        if (data.activated) {
+          await this._reload();
+          this.showToast('»' + name + '« angelegt und aktiv: Jetzt kannst du jede Taste beschriften.');
+        } else {
+          this._applyList(data);
+          this.showToast('»' + name + '« angelegt. »Verwenden« schaltet darauf um.');
+        }
+      });
+    },
+    kbRename(p) {
+      const name = prompt('Neuer Name:', p.name);
+      if (!name || name === p.name) return;
+      return this.kbQueue(async () => {
+        const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Nicht umbenannt: ' + (data.error || res.status), 'error'); return; }
+        this._applyList(data);
+        if (p.id === this.km.profile) await this._reload();
+      });
+    },
+    kbDelete(p) {
+      if (!confirm('Tastatur »' + p.name + '« und ihre Belegung wirklich löschen?')) return;
+      return this.kbQueue(async () => {
+        const wasActive = p.id === this.km.profile;
+        const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Nicht gelöscht: ' + (data.error || res.status), 'error'); return; }
+        this._applyList(data);
+        if (wasActive) await this._reload();
+        this.showToast('»' + p.name + '« gelöscht' + (wasActive ? ': wieder ' + (this.kbProfile?.name || 'Standard') + ' aktiv' : ''));
+      });
+    },
+    kbSaveKey(extra) {
+      const k = this.kbSelKey();
+      if (!k || this.kbProfile?.kind !== 'custom') return;
+      const e = Object.assign({}, this.kbKeyEdit, extra || {});
+      const patch = {};
+      for (const f of ['label', 'shift', 'altgr', 'fn', 'name', 'icon']) {
+        if ((e[f] || '') !== (k[f] || '')) patch[f] = e[f] || '';
+      }
+      const code = (e.code || '').trim().toUpperCase();
+      if (code !== (k.code || '')) patch.code = code;
+      if (!k.stacked && Number(e.w) !== k.w) patch.w = Number(e.w);
+      if (!Object.keys(patch).length) { this.showToast('Nichts geändert'); return; }
+      const pid = this.kbProfile.id, slot = k.slot, name = k.name || k.slot;
+      return this.kbQueue(async () => {
+        if (this.kbProfile?.id !== pid) { this.showToast('Die Tastatur wurde umgeschaltet: Taste nicht gespeichert', 'error'); return; }
+        const res = await fetch('/api/keyboards/' + encodeURIComponent(pid) + '/keys/' + encodeURIComponent(slot), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast('Taste nicht gespeichert: ' + (data.error || res.status), 'error'); return; }
+        this.showToast('Taste »' + name + '« gespeichert');
+        // a strictly newer snapshot of the profile on screen (rev guards against any reordering)
+        if (this.kbProfile?.id === pid && data.id === pid && (data.rev || 0) > (this.kbProfile.rev || 0)) this._installProfile(data, slot);
+        await this._loadKeymap();      // built-in labels for a new code
+        await this._refreshList();     // silhouette in the profile list
+      });
+    },
+    kbTakeCode() { if (this.kmLast?.id) this.kbSaveKey({ code: this.kmLast.id }); },
 
     async init() {
       // Load version info
@@ -1729,7 +2201,7 @@ function funkeykid() {
       } catch {}
       await this.refresh();
       try { this.favorites = await fetch('/api/favorites').then(r => r.json()); } catch {}
-      await this.loadKeymap();
+      await this.kbReload();                 // key map + keyboard drawing (FUNK-62/63)
       this.connectSSE();
       this.loadDiagnostics();  // fills the keyboard picker in Settings
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
@@ -1753,7 +2225,10 @@ function funkeykid() {
         this.hw.last_key_at = d.timestamp;
         this.updateAgo();
         this.kmLast = d;                       // key map (FUNK-62)
-        if (this.kmLearn && this.tab === 'test' && d.id) this.kmSelect(d.id);
+        // only the real keyboard confirms a guessed code, not Ausprobieren or the test keys
+        if (d.id && !d.virtual && !(this.km.seen_codes || []).includes(d.id)) this.km.seen_codes = (this.km.seen_codes || []).concat([d.id]);
+        if (this.tab === 'test') this.kbFlash(d);          // the key lights up in the drawn keyboard (FUNK-63)
+        if (this.kmLearn && this.tab === 'test' && d.id) this.kbSelectId(d.id);
         if (d.unassigned) this.loadKeymap();
       });
       es.addEventListener('keypress', (e) => {
@@ -1786,10 +2261,21 @@ function funkeykid() {
         const d = JSON.parse(e.data);
         if (d.active_set === this.activeSetId) return;
         await this.refresh();
+        this.loadKeymap();                     // built-in labels follow the set's content
         const editing = (this.editingLetter || this.editingNumber) && this.editSetId && this.editSetId !== d.active_set;
         this.showToast(editing
           ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[this.editSetId]?.name || this.editSetId}".`
           : `Set "${d.name}" aktiv`);
+      });
+      es.addEventListener('keyboard_profile', (e) => {
+        // keyboard profile switched (another browser, FUNK-63): queued, so it is decided
+        // against the state the operations before it left (A→B→A ends on A)
+        const d = JSON.parse(e.data);
+        this.kbQueue(async () => {
+          if (d.profile === this.km.profile && d.profile === this.kbProfile?.id) return;
+          await this._reload();
+          this.showToast('Tastatur »' + d.name + '« ist jetzt aktiv');
+        });
       });
       es.addEventListener('gen_update', (e) => {
         const d = JSON.parse(e.data);

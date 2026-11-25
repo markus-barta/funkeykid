@@ -40,6 +40,9 @@ LAYOUTS = {
 
 # Modifiers that become part of a key id (CTRL+X); Shift stays separate (Shift+digit = favourite)
 MODIFIER_KEYS = frozenset({"LEFTCTRL", "RIGHTCTRL", "LEFTALT", "LEFTMETA", "RIGHTMETA"})
+# A press of these never starts the any-key debounce: the key they modify must
+# still get through (CTRL+X, Shift+digit = favourite), FUNK-62.
+DEBOUNCE_NEUTRAL = MODIFIER_KEYS | {"LEFTSHIFT", "RIGHTSHIFT"}
 
 RESCAN_SECONDS = 1.0            # a (re)connected keyboard is grabbed within ~1 s
 IDLE_POLL_SECONDS = 0.5         # scan interval while no node is open
@@ -559,7 +562,8 @@ class KeyboardListener:
             if now - self._last_key_time[key_name] < self.debounce_seconds:
                 return False
         self._last_key_time[key_name] = now
-        self._last_any_key_time = now
+        if key_name not in DEBOUNCE_NEUTRAL:
+            self._last_any_key_time = now
         return True
 
     def _run(self, gen):

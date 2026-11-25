@@ -873,6 +873,7 @@ def _activate_next_set():
     save_settings()
     name = settings["sets"][nxt].get("name", nxt)
     print(f"[keymap] next set → {nxt} ({name})", flush=True)
+    sse_broadcast("active_set", {"active_set": nxt, "name": name})
     sse_broadcast("keypress", {"letter": "★", "word": name, "sound": "", "image": "", "entry_index": 0, "timestamp": time.time()})
 
 
@@ -1046,10 +1047,12 @@ async def api_get_settings(request):
 async def api_put_settings(request):
     global settings
     data = await request.json()
-    # Only update top-level config keys, not sets (those have own endpoints)
+    # Only update top-level config keys, not sets (those have own endpoints).
+    # active_set changes only via /api/sets/{id}/activate or the key map: a stale
+    # browser copy must never switch the set back (FUNK-62 review).
     # audio_normalize* were missing here since FUNK-1, so the UI toggle never persisted.
     for k in ("keyboard_layout", "keyboard_device", "volume", "random_sounds_enabled",
-              "display_mode", "pixoo_ip", "debounce_seconds", "active_set", "mqtt", "ai_prompts",
+              "display_mode", "pixoo_ip", "debounce_seconds", "mqtt", "ai_prompts",
               "numbers_tts", "battery_low_threshold", "audio_normalize", "audio_normalize_lufs"):
         if k in data:
             settings[k] = data[k]
@@ -1162,6 +1165,7 @@ async def api_activate_set(request):
     cycle_index = {}
     last_letter = None
     save_settings()
+    sse_broadcast("active_set", {"active_set": set_id, "name": settings["sets"][set_id].get("name", set_id)})
     return web.json_response({"ok": True, "active_set": set_id})
 
 

@@ -96,10 +96,15 @@ def parse_key_id(kid):
     if not isinstance(kid, str) or not _KEY_ID.fullmatch(kid):
         raise KeymapError(f"invalid key id: {kid!r}")
     parts = kid.split("+")
-    mods = tuple(parts[:-1])
+    raw, mods = parts[-1], tuple(parts[:-1])
     if len(set(mods)) != len(mods) or canonical_mods(mods) != mods:
         raise KeymapError(f"modifiers must be unique and in the order {'+'.join(MODIFIER_ORDER)}: {kid!r}")
-    return parts[-1], mods
+    if raw.startswith("SHIFT_"):
+        raise KeymapError("Shift+digit is the favourite shortcut and cannot be mapped")
+    if key_id(raw, mods) != kid:
+        # e.g. KEY_CUT (→ CUT) or CTRL+LEFTCTRL (→ LEFTCTRL): an id a press can never produce
+        raise KeymapError(f"not a canonical key id (a press yields {key_id(raw, mods)!r}): {kid!r}")
+    return raw, mods
 
 
 def lookup_chain(raw, mods=()):
@@ -150,7 +155,7 @@ def validate(action):
         return {"action": "letter", "letter": letter}
     if kind == "func":
         func = action.get("func")
-        if func not in FUNCTIONS:
+        if not isinstance(func, str) or func not in FUNCTIONS:
             raise KeymapError(f"func must be one of {', '.join(FUNCTIONS)}")
         return {"action": "func", "func": func}
     out = {"action": kind, "file": _safe_file(action.get("file"), "sound"), "volume": _volume(action.get("volume"))}

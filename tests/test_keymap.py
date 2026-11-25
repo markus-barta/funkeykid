@@ -137,3 +137,42 @@ def test_listener_passes_held_modifiers(monkeypatch):
         ("CUT", "CUT", ()),
     ]
     assert km.key_id(got[1][1], got[1][2]) == "CTRL+X"
+
+
+# ── review round 1 ───────────────────────────────────────────────────────────
+
+def test_non_string_function_is_a_validation_error_not_a_crash():
+    for bad in ([], {}, 3, None):
+        with pytest.raises(km.KeymapError):
+            km.validate({"action": "func", "func": bad})
+
+
+def test_ids_a_press_can_never_produce_are_rejected():
+    for bad in ("KEY_CUT", "CTRL+LEFTCTRL", "META+RIGHTMETA", "SHIFT_1", "CTRL+SHIFT_1"):
+        with pytest.raises(km.KeymapError):
+            km.parse_key_id(bad)
+    # every id the listener produces round-trips
+    for raw, mods in (("CUT", ()), ("X", ("LEFTCTRL",)), ("X", ("LEFTMETA", "LEFTALT", "RIGHTCTRL")), ("LEFTCTRL", ())):
+        kid = km.key_id(raw, mods)
+        assert km.key_id(*km.parse_key_id(kid)) == kid
+
+
+def test_chords_and_shift_digit_survive_the_default_debounce(monkeypatch):
+    """Ctrl then X (or Shift then 1) within the 0.8 s any-key debounce: the
+    modified key must still reach the callback; two plain keys stay debounced."""
+    monkeypatch.setattr(kb, "evdev", _FakeEvdev)
+    listener = kb.KeyboardListener("ACME BK03", layout="de")          # default debounce 0.8 s
+    assert listener.debounce_seconds == 0.8
+    got = []
+    listener.on_key(lambda *args: got.append(args))
+    dev = SimpleNamespace(path="/dev/input/event7")
+    for ev in (_ev("LEFTCTRL", 1), _ev("X", 1), _ev("X", 0), _ev("LEFTCTRL", 0)):
+        listener._handle_event(dev, ev)
+    assert got == [("LEFTCTRL", "LEFTCTRL", ()), ("X", "X", ("LEFTCTRL",))]
+
+    listener2 = kb.KeyboardListener("ACME BK03", layout="de")
+    got2 = []
+    listener2.on_key(lambda *args: got2.append(args))
+    for ev in (_ev("LEFTSHIFT", 1, code=42), _ev("1", 1), _ev("1", 0), _ev("LEFTSHIFT", 0, code=42), _ev("A", 1), _ev("B", 1)):
+        listener2._handle_event(dev, ev)
+    assert [g[0] for g in got2] == ["LEFTSHIFT", "SHIFT_1"]          # A within 0.8 s of SHIFT_1 → debounced, as before

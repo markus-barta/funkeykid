@@ -1780,6 +1780,13 @@ function funkeykid() {
         this.hw.volume = d.volume;
         this.settings.volume = d.volume;
       });
+      es.addEventListener('active_set', async (e) => {
+        // set switched by the keyboard ("Nächstes Set") or another browser (FUNK-62)
+        const d = JSON.parse(e.data);
+        if (d.active_set === this.activeSetId) return;
+        await this.refresh();
+        this.showToast(`Set "${d.name}" aktiv`);
+      });
       es.addEventListener('gen_update', (e) => {
         const d = JSON.parse(e.data);
         this.genJobs[d.id] = d;

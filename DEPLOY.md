@@ -18,7 +18,7 @@ This repository owns the **image**. How hsb1 **runs** it is declared in the host
 | Keyboard isolation, Bluetooth reconnect, the keyboard name | `modules/funkeykid.nix` (see [NixOS Module](#nixos-module)) |
 | Host runbook | `hosts/hsb1/docs/RUNBOOK.md`, `hosts/hsb1/docs/FUNKEYKID.md` |
 
-The spec is written in Nix. It is rendered into the NixOS closure as `/etc/compose/hsb1/docker-compose.yml`, and `compose-hsb1.service` reconciles it at every switch. The compose project is `docker`, and the stack lock is `/run/lock/compose-hsb1.lock`.
+The spec is written in Nix. It is rendered into the NixOS closure as `/etc/compose/hsb1/docker-compose.yml`, and `compose-hsb1.service` reconciles it at boot, and on a switch only when the rendered spec (or another of its restart triggers) changed. The compose project is `docker`, and the stack lock is `/run/lock/compose-hsb1.lock`.
 
 The old hand-edited compose file and the env files in the home directory are **retired**. `~/docker/mounts/` holds runtime data only.
 

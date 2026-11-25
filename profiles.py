@@ -506,6 +506,10 @@ def _text(value, limit, what):
         return ""
     if not isinstance(value, str) or len(value) > limit or any(ord(c) < 32 for c in value):
         raise ProfileError(f"{what} must be text of at most {limit} characters")
+    try:
+        value.encode("utf-8")               # JSON allows lone surrogates; settings.json must stay UTF-8
+    except UnicodeEncodeError:
+        raise ProfileError(f"{what} is not valid Unicode") from None
     return value
 
 

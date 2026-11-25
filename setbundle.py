@@ -24,8 +24,10 @@ import hashlib
 import io
 import json
 import os
-import re
+import shutil
+import struct
 import threading
+import uuid
 import zipfile
 
 FORMAT = "funkeykid.set.v1"
@@ -57,11 +59,20 @@ class BundleError(ValueError):
 
 # ── names and fields ─────────────────────────────────────────────────────────
 
+def _utf8(value):
+    """True if the text can be written as UTF-8 (JSON allows lone surrogates like "\\ud800")."""
+    try:
+        value.encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 def safe_name(name, kind):
     """A plain file name for sounds/ or images/ (no path, no hidden file, known extension)."""
     exts = SOUND_EXT if kind == "sound" else IMAGE_EXT
     if (not isinstance(name, str) or not 1 <= len(name) <= 200 or name in (".", "..") or name.startswith(".")
-            or any(c in name for c in "/\\") or any(ord(c) < 32 for c in name)
+            or any(c in name for c in "/\\") or any(ord(c) < 32 for c in name) or not _utf8(name)
             or not name.lower().endswith(exts)):
         raise BundleError(f"invalid {kind} file name: {name!r}")
     return name
@@ -70,8 +81,8 @@ def safe_name(name, kind):
 def _text(value, limit=MAX_TEXT):
     if value is None:
         return ""
-    if not isinstance(value, str) or len(value) > limit:
-        raise BundleError("text field too long or not text")
+    if not isinstance(value, str) or len(value) > limit or not _utf8(value):
+        raise BundleError("text field too long, not text, or not valid Unicode")
     return value
 
 
@@ -240,6 +251,44 @@ def build_zip(set_id, set_data, sounds_dir, images_dir, version=""):
 
 # ── import ───────────────────────────────────────────────────────────────────
 
+MAX_CD_BYTES = MAX_MEMBERS * 600     # central directory: ~46 bytes per entry + name + extras
+
+
+def _check_central_directory(path):
+    """Refuse a ZIP whose central directory is too large *before* zipfile reads it.
+
+    zipfile allocates every entry of the central directory when it opens a
+    file; a small upload could declare a huge one. This reads only the end
+    record (and its ZIP64 variant) to learn the entry count and size.
+    """
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            tail_len = min(size, 22 + 65535)
+            f.seek(size - tail_len)
+            tail = f.read(tail_len)
+            i = tail.rfind(b"PK\x05\x06")
+            if i < 0 or len(tail) - i < 22:
+                raise BundleError("not a ZIP file")
+            entries, cd_size = struct.unpack("<HI", tail[i + 10:i + 16])
+            if entries == 0xFFFF or cd_size == 0xFFFFFFFF:          # ZIP64
+                loc = i - 20
+                if loc < 0 or tail[loc:loc + 4] != b"PK\x06\x07":
+                    raise BundleError("not a ZIP file")
+                (z64_offset,) = struct.unpack("<Q", tail[loc + 8:loc + 16])
+                if z64_offset >= size:
+                    raise BundleError("not a ZIP file")
+                f.seek(z64_offset)
+                rec = f.read(56)
+                if rec[:4] != b"PK\x06\x06" or len(rec) < 48:
+                    raise BundleError("not a ZIP file")
+                entries, cd_size = struct.unpack("<QQ", rec[32:48])
+    except OSError:
+        raise BundleError("not a ZIP file") from None
+    if entries > MAX_MEMBERS + 1 or cd_size > MAX_CD_BYTES:
+        raise BundleError(f"too many files in the ZIP (at most {MAX_MEMBERS})")
+
+
 def _member_kind(name):
     """("sound"|"image", file name) for an allowed member path, else raise."""
     folder, _, fname = name.partition("/")
@@ -250,13 +299,17 @@ def _member_kind(name):
     raise BundleError(f"unexpected file in the ZIP: {name!r}")
 
 
+def _open_zip(path):
+    _check_central_directory(path)
+    try:
+        return zipfile.ZipFile(path)
+    except (zipfile.BadZipFile, OSError, ValueError):
+        raise BundleError("not a ZIP file") from None
+
+
 def read_zip(path):
     """(cleaned set, {member path: size}) from an uploaded set ZIP. Raises BundleError."""
-    try:
-        z = zipfile.ZipFile(path)
-    except (zipfile.BadZipFile, OSError):
-        raise BundleError("not a ZIP file") from None
-    with z:
+    with _open_zip(path) as z:
         infos = z.infolist()
         if len(infos) > MAX_MEMBERS:
             raise BundleError(f"too many files in the ZIP (at most {MAX_MEMBERS})")
@@ -267,6 +320,8 @@ def read_zip(path):
             if info.flag_bits & 0x1:
                 raise BundleError("encrypted ZIP files are not supported")
             if info.filename == MANIFEST:
+                if manifest is not None:
+                    raise BundleError(f"{MANIFEST} appears twice")
                 if info.file_size > MAX_MANIFEST_BYTES:
                     raise BundleError("the set description is too large")
                 manifest = _read_member(z, info, MAX_MANIFEST_BYTES)
@@ -293,11 +348,31 @@ def read_zip(path):
 
 def _read_member(z, info, limit):
     """A member's bytes, never more than limit (the declared size can lie)."""
-    with z.open(info) as f:
-        data = f.read(limit + 1)
+    try:
+        with z.open(info) as f:
+            data = f.read(limit + 1)
+    except Exception as e:                  # bad CRC, broken deflate stream …
+        raise BundleError(f"{info.filename} is damaged") from e
     if len(data) > limit:
         raise BundleError(f"{info.filename} is too large")
     return data
+
+
+def _hash_member(z, name):
+    """sha256 of a member, read completely: this also checks its CRC and its real size."""
+    h, n = hashlib.sha256(), 0
+    try:
+        with z.open(name) as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                n += len(chunk)
+                if n > MAX_FILE_BYTES:
+                    raise BundleError(f"{name} is too large")
+                h.update(chunk)
+    except BundleError:
+        raise
+    except Exception as e:
+        raise BundleError(f"{name} is damaged") from e
+    return h.hexdigest()
 
 
 def _sha256_file(path):
@@ -314,10 +389,11 @@ def plan(path, set_data, members, sounds_dir, images_dir):
     Status: "new" (not here yet), "same" (identical file here, reused),
     "conflict" (same name, different content: needs a resolution),
     "local" (not in the ZIP but already here), "missing" (nowhere).
+    Every member is read completely, so a damaged ZIP fails here, at preview.
     """
     sounds, images = referenced_files(set_data)
     files = []
-    with zipfile.ZipFile(path) as z:
+    with _open_zip(path) as z:
         for kind, names, base, folder in (("sound", sounds, sounds_dir, "sounds"), ("image", images, images_dir, "images")):
             for name in sorted(names):
                 member = f"{folder}/{name}"
@@ -326,13 +402,10 @@ def plan(path, set_data, members, sounds_dir, images_dir):
                     files.append({"path": member, "kind": kind, "name": name,
                                   "status": "local" if os.path.isfile(here) else "missing", "size": 0})
                     continue
+                digest = _hash_member(z, member)
                 status = "new"
                 if os.path.isfile(here):
-                    h = hashlib.sha256()
-                    with z.open(member) as f:
-                        for chunk in iter(lambda: f.read(1 << 20), b""):
-                            h.update(chunk)
-                    status = "same" if h.hexdigest() == _sha256_file(here) else "conflict"
+                    status = "same" if digest == _sha256_file(here) else "conflict"
                 files.append({"path": member, "kind": kind, "name": name, "status": status, "size": members[member]})
     return files
 
@@ -347,11 +420,96 @@ def _free_name(base, name, taken):
     return candidate
 
 
-def apply(path, set_data, members, sounds_dir, images_dir, resolutions=None):
-    """Write the set's files per plan and resolutions; return (set with rewritten names, summary).
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
-    Statuses are computed again here (a file may have appeared since the
-    preview). Every write goes through a temp file and os.replace.
+
+class Transaction:
+    """What an import published, so it can be undone if the set cannot be saved.
+
+    ``commit()`` once the set is saved (drops the backups of overwritten files);
+    ``rollback()`` removes created files and puts overwritten ones back.
+    """
+
+    def __init__(self):
+        self.created = []           # files that did not exist before
+        self.replaced = []          # (file, backup) for overwritten files
+
+    def rollback(self):
+        for path in reversed(self.created):
+            _remove(path)
+        for final, backup in reversed(self.replaced):
+            try:
+                os.replace(backup, final)
+            except OSError:
+                pass
+        self.created, self.replaced = [], []
+
+    def commit(self):
+        for _, backup in self.replaced:
+            _remove(backup)
+        self.created, self.replaced = [], []
+
+
+def _stage(z, member, base):
+    """Copy a member completely into a hidden temp file beside its target (CRC and size checked)."""
+    tmp = os.path.join(base, f".import-{uuid.uuid4().hex}.tmp")
+    written = 0
+    try:
+        with z.open(member) as src, open(tmp, "wb") as dst:
+            for chunk in iter(lambda: src.read(1 << 20), b""):
+                written += len(chunk)
+                if written > MAX_FILE_BYTES:
+                    raise BundleError(f"{member} is too large")
+                dst.write(chunk)
+    except BundleError:
+        _remove(tmp)
+        raise
+    except Exception as e:
+        _remove(tmp)
+        raise BundleError(f"{member} is damaged") from e
+    return tmp
+
+
+def _create_exclusive(tmp, final):
+    """Publish tmp as final only if final does not exist (raises FileExistsError): never overwrites."""
+    try:
+        os.link(tmp, final)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        pass                                # no hard links on this file system: copy instead
+    fd = os.open(final, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    try:
+        with os.fdopen(fd, "wb") as dst, open(tmp, "rb") as src:
+            shutil.copyfileobj(src, dst)
+    except BaseException:
+        _remove(final)
+        raise
+
+
+def _backup(final):
+    backup = os.path.join(os.path.dirname(final), f".import-backup-{uuid.uuid4().hex}.bak")
+    try:
+        os.link(final, backup)
+    except OSError:
+        shutil.copy2(final, backup)
+    return backup
+
+
+def apply(path, set_data, members, sounds_dir, images_dir, resolutions=None):
+    """Write the set's files; return (set with rewritten names, summary, Transaction).
+
+    Two phases, so a failure changes nothing: every needed member is first read
+    completely into hidden temp files (CRC and size checked); only then are the
+    files published. New and renamed files are created exclusively and never
+    overwrite a file that appeared meanwhile (an identical one is reused,
+    another gets the next free name). "overwrite" keeps a backup until the
+    caller commits the transaction. Statuses are computed again here.
     """
     resolutions = resolutions or {}
     for res in resolutions.values():
@@ -360,43 +518,77 @@ def apply(path, set_data, members, sounds_dir, images_dir, resolutions=None):
     data = copy.deepcopy(set_data)
     summary = {"written": [], "reused": [], "renamed": {}, "overwritten": [], "kept": [], "missing": []}
     maps = {"sound": {}, "image": {}}
-    with _write_lock, zipfile.ZipFile(path) as z:
-        taken = set()
-        for item in plan(path, data, members, sounds_dir, images_dir):
-            base = sounds_dir if item["kind"] == "sound" else images_dir
-            if item["status"] == "missing":
-                summary["missing"].append(item["path"])
-                continue
-            if item["status"] in ("local", "same"):
-                summary["reused"].append(item["path"])
-                continue
-            target = item["name"]
-            if item["status"] == "conflict":
-                res = resolutions.get(item["path"], "rename")
-                if res == "keep":
-                    summary["kept"].append(item["path"])
-                    continue
-                if res == "rename":
-                    target = _free_name(base, item["name"], taken)
-                    maps[item["kind"]][item["name"]] = target
-                    summary["renamed"][item["path"]] = target
-                else:
+    txn = Transaction()
+    staged = []
+    with _write_lock:
+        try:
+            items = plan(path, data, members, sounds_dir, images_dir)
+            with _open_zip(path) as z:
+                for item in items:
+                    status = item["status"]
+                    if status == "missing":
+                        summary["missing"].append(item["path"])
+                        continue
+                    if status in ("local", "same"):
+                        summary["reused"].append(item["path"])
+                        continue
+                    action = "new" if status == "new" else resolutions.get(item["path"], "rename")
+                    if action == "keep":
+                        summary["kept"].append(item["path"])
+                        continue
+                    base = sounds_dir if item["kind"] == "sound" else images_dir
+                    os.makedirs(base, exist_ok=True)
+                    staged.append((item, action, _stage(z, item["path"], base), base))
+            taken = set()
+            for item, action, tmp, base in staged:
+                name = item["name"]
+                if action == "overwrite":
+                    final = os.path.join(base, name)
+                    backup = _backup(final) if os.path.exists(final) else None
+                    os.replace(tmp, final)
+                    if backup:
+                        txn.replaced.append((final, backup))
+                    else:
+                        txn.created.append(final)
                     summary["overwritten"].append(item["path"])
-            taken.add(target)
-            info = z.getinfo(item["path"])
-            os.makedirs(base, exist_ok=True)
-            tmp = os.path.join(base, f".import-{os.getpid()}-{threading.get_ident()}.tmp")
-            written = 0
-            with z.open(info) as src, open(tmp, "wb") as dst:
-                for chunk in iter(lambda: src.read(1 << 20), b""):
-                    written += len(chunk)
-                    if written > MAX_FILE_BYTES:
-                        dst.close()
-                        os.remove(tmp)
-                        raise BundleError(f"{item['path']} is too large")
-                    dst.write(chunk)
-            os.replace(tmp, os.path.join(base, target))
-            if item["status"] != "conflict" or target == item["name"]:
-                summary["written"].append(item["path"])
+                    continue
+                target = name if action == "new" else _free_name(base, name, taken)
+                while True:
+                    final = os.path.join(base, target)
+                    try:
+                        _create_exclusive(tmp, final)
+                    except FileExistsError:
+                        if target == name and _sha256_file(tmp) == _sha256_file(final):
+                            target = None           # the very same file appeared meanwhile: reuse it
+                            break
+                        target = _free_name(base, name, taken)
+                        continue
+                    txn.created.append(final)
+                    taken.add(target)
+                    break
+                if target is None:
+                    summary["reused"].append(item["path"])
+                elif target == name:
+                    summary["written"].append(item["path"])
+                else:
+                    maps[item["kind"]][name] = target
+                    summary["renamed"][item["path"]] = target
+        except BaseException:
+            txn.rollback()
+            raise
+        finally:
+            for _, _, tmp, _ in staged:
+                _remove(tmp)
     _rewrite(data, maps["sound"], maps["image"])
-    return data, summary
+    return data, summary, txn
+
+
+def purge_temp_files(*dirs):
+    """Remove temp files a crashed import left behind (call at startup, when no import runs)."""
+    for base in dirs:
+        try:
+            for name in os.listdir(base):
+                if name.startswith(".import-") and name.endswith(".tmp"):
+                    _remove(os.path.join(base, name))
+        except OSError:
+            pass

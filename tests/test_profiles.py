@@ -306,3 +306,12 @@ def test_pc_profiles_keep_their_pc_legends():
     by = {k["slot"]: k for k in pf.iter_keys(pf.BUILTIN["pc-de"])}
     assert (by["q"]["altgr"], by["m"]["altgr"], by["d7"]["altgr"]) == ("@", "µ", "{")
     assert by["f1"]["code"] == "F1" and "icon" not in by["f1"]
+
+
+def test_lone_surrogates_cannot_reach_settings():
+    """FUNK-43 review: JSON allows "\\ud800"; settings.json must stay UTF-8."""
+    c = pf.duplicate(pf.BUILTIN["acme-bk03"], "custom-k", "K")
+    with pytest.raises(pf.ProfileError):
+        pf.edit_key(c, "cut", {"label": "\ud800"})
+    with pytest.raises(pf.ProfileError):
+        pf.rename(c, name="x\udfff")

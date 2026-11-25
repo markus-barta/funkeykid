@@ -63,7 +63,9 @@ def _export(dirs, tmp_path, set_data=None):
 
 def _import(path, snd, img, resolutions=None):
     set_data, members = sb.read_zip(path)
-    return sb.apply(path, set_data, members, snd, img, resolutions)
+    data, summary, txn = sb.apply(path, set_data, members, snd, img, resolutions)
+    txn.commit()
+    return data, summary
 
 
 # ── AC4: round trip ──────────────────────────────────────────────────────────
@@ -74,7 +76,8 @@ def test_round_trip_preserves_tracks_prompts_volume_backgrounds_and_files(dirs, 
     set_data, members = sb.read_zip(path)
     plan = sb.plan(path, set_data, members, snd, img)
     assert {f["status"] for f in plan} == {"new"} and len(plan) == 8
-    imported, summary = sb.apply(path, set_data, members, snd, img)
+    imported, summary, txn = sb.apply(path, set_data, members, snd, img)
+    txn.commit()
     assert imported == sb.clean_set(_set())
     a = imported["letters"]["A"]["entries"][0]
     assert a["tracks"]["FX"] == {"file": "a_affe.mp3", "enabled": True, "prompt": "Affe kreischt", "volume": 140}
@@ -108,8 +111,10 @@ def test_conflicts_and_identical_files(dirs, tmp_path):
     status = {f["path"]: f["status"] for f in sb.plan(path, set_data, members, snd, img)}
     assert status["sounds/a_affe.mp3"] == "conflict" and status["sounds/drei.mp3"] == "same"
     assert status["images/a_affe.png"] == "conflict" and status["images/ae.png"] == "new"
-    imported, summary = sb.apply(path, set_data, members, snd, img,
-                                 {"sounds/a_affe_de.mp3": "overwrite", "images/a_affe.png": "keep"})
+    imported, summary, txn = sb.apply(path, set_data, members, snd, img,
+                                      {"sounds/a_affe_de.mp3": "overwrite", "images/a_affe.png": "keep"})
+    txn.commit()
+    assert not [f for f in os.listdir(snd) if f.startswith(".import-")]    # no temp files or backups left
     a = imported["letters"]["A"]["entries"][0]
     # default rename: stored next to the existing file, reference rewritten
     assert a["tracks"]["FX"]["file"] == "a_affe-2.mp3"
@@ -226,14 +231,121 @@ def test_duplicate_member_names_are_rejected(tmp_path):
 
 
 def test_a_member_lying_about_its_size_cannot_write_more(dirs, tmp_path, monkeypatch):
-    """The declared size can lie: writing stops at the limit while streaming."""
+    """The declared size can lie: reading stops at the limit, and nothing is written."""
     path = _export(dirs, tmp_path)
     snd, img = dirs("dst", files={})
     set_data, members = sb.read_zip(path)
     monkeypatch.setattr(sb, "MAX_FILE_BYTES", 5)        # smaller than the real member sizes
     with pytest.raises(sb.BundleError):
         sb.apply(path, set_data, members, snd, img)
-    assert not [f for f in os.listdir(snd) if f.endswith(".tmp")]
+    assert os.listdir(snd) == [] and os.listdir(img) == []
+
+
+# ── review round 1: atomic import, rollback, concurrent writers, surrogates, central directory ──
+
+def _corrupt(path, member):
+    """Flip a byte inside a stored member's data: its CRC no longer matches."""
+    with zipfile.ZipFile(path) as z:
+        info = z.getinfo(member)
+    data = bytearray(open(path, "rb").read())
+    start = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
+    data[start] ^= 0xFF
+    open(path, "wb").write(bytes(data))
+
+
+def test_a_damaged_member_fails_at_preview_and_import_changes_nothing(dirs, tmp_path):
+    path = _export(dirs, tmp_path)
+    _corrupt(path, "sounds/drei.mp3")
+    snd, img = dirs("dst", files={"sounds": {"a_affe.mp3": b"OTHER"}})
+    set_data, members = sb.read_zip(path)               # the manifest is fine
+    with pytest.raises(sb.BundleError, match="damaged"):
+        sb.plan(path, set_data, members, snd, img)       # preview reads every member
+    with pytest.raises(sb.BundleError):
+        sb.apply(path, set_data, members, snd, img, {"sounds/a_affe.mp3": "overwrite"})
+    assert sorted(os.listdir(snd)) == ["a_affe.mp3"] and open(os.path.join(snd, "a_affe.mp3"), "rb").read() == b"OTHER"
+    assert os.listdir(img) == []
+
+
+def test_rollback_restores_overwritten_and_removes_created_files(dirs, tmp_path):
+    path = _export(dirs, tmp_path)
+    snd, img = dirs("dst", files={"sounds": {"a_affe.mp3": b"OTHER"}})
+    set_data, members = sb.read_zip(path)
+    _, summary, txn = sb.apply(path, set_data, members, snd, img, {"sounds/a_affe.mp3": "overwrite"})
+    assert open(os.path.join(snd, "a_affe.mp3"), "rb").read() == b"AFFE-FX" and len(summary["written"]) == 7
+    txn.rollback()                                       # e.g. the settings could not be saved
+    assert sorted(os.listdir(snd)) == ["a_affe.mp3"] and open(os.path.join(snd, "a_affe.mp3"), "rb").read() == b"OTHER"
+    assert os.listdir(img) == []
+
+
+def test_commit_drops_backups(dirs, tmp_path):
+    path = _export(dirs, tmp_path)
+    snd, img = dirs("dst", files={"sounds": {"a_affe.mp3": b"OTHER"}})
+    set_data, members = sb.read_zip(path)
+    _, _, txn = sb.apply(path, set_data, members, snd, img, {"sounds/a_affe.mp3": "overwrite"})
+    assert [f for f in os.listdir(snd) if f.startswith(".import-backup-")]
+    txn.commit()
+    assert not [f for f in os.listdir(snd) if f.startswith(".import-")]
+
+
+def test_a_file_appearing_during_the_import_is_never_overwritten(dirs, tmp_path, monkeypatch):
+    """Planned as new, but an upload creates the same name before publishing."""
+    path = _export(dirs, tmp_path)
+    snd, img = dirs("dst", files={})
+    set_data, members = sb.read_zip(path)
+    real_stage = sb._stage
+
+    def stage_and_race(z, member, base):
+        tmp = real_stage(z, member, base)
+        if member == "sounds/a_affe.mp3":
+            open(os.path.join(base, "a_affe.mp3"), "wb").write(b"UPLOADED MEANWHILE")
+        if member == "sounds/drei.mp3":
+            open(os.path.join(base, "drei.mp3"), "wb").write(b"DREI")          # identical content
+        return tmp
+
+    monkeypatch.setattr(sb, "_stage", stage_and_race)
+    imported, summary, txn = sb.apply(path, set_data, members, snd, img)
+    txn.commit()
+    assert open(os.path.join(snd, "a_affe.mp3"), "rb").read() == b"UPLOADED MEANWHILE"
+    assert imported["letters"]["A"]["entries"][0]["tracks"]["FX"]["file"] == "a_affe-2.mp3"
+    assert open(os.path.join(snd, "a_affe-2.mp3"), "rb").read() == b"AFFE-FX"
+    assert "sounds/drei.mp3" in summary["reused"]
+
+
+@pytest.mark.parametrize("field", ["word", "description", "name"])
+def test_lone_surrogates_are_rejected(field):
+    raw = _set()
+    if field == "word":
+        raw["letters"]["A"]["entries"][0]["word"] = "\ud800"
+    else:
+        raw[field] = "x\udfff"
+    with pytest.raises(sb.BundleError):
+        sb.clean_set(raw)
+    with pytest.raises(sb.BundleError):
+        sb.safe_name("a\ud800.mp3", "sound")
+
+
+def test_a_huge_central_directory_is_refused_before_zipfile_reads_it(tmp_path, monkeypatch):
+    path = _zip(tmp_path, {f"sounds/s{i}.mp3": b"x" for i in range(10)})
+    monkeypatch.setattr(sb, "MAX_MEMBERS", 3)
+
+    def no_zipfile(*a, **kw):
+        raise AssertionError("zipfile opened before the central directory was checked")
+
+    monkeypatch.setattr(sb.zipfile, "ZipFile", no_zipfile)
+    with pytest.raises(sb.BundleError, match="too many"):
+        sb.read_zip(path)
+
+
+def test_zip64_end_records_are_understood(tmp_path, monkeypatch):
+    monkeypatch.setattr(zipfile, "ZIP_FILECOUNT_LIMIT", 2)          # makes the writer emit ZIP64 end records
+    path = _zip(tmp_path, {"sounds/a_affe.mp3": b"1", "sounds/drei.mp3": b"2", "images/ae.png": b"3"})
+    monkeypatch.setattr(zipfile, "ZIP_FILECOUNT_LIMIT", 0xFFFF)
+    assert open(path, "rb").read().find(b"PK\x06\x06") != -1
+    set_data, members = sb.read_zip(path)
+    assert len(members) == 3
+    monkeypatch.setattr(sb, "MAX_MEMBERS", 2)
+    with pytest.raises(sb.BundleError, match="too many"):
+        sb._check_central_directory(path)
 
 
 def test_encrypted_members_are_rejected(tmp_path):

@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import random
-import re
 import threading
 import time
 import uuid
@@ -1491,13 +1490,11 @@ async def api_test_key(request):
 def _raw_for_key(key_name):
     """The code a physical key sends for a (layout-translated) key name: inverse layout.
 
-    A key that sends its own name (A, 1, ENTER …) keeps it, and the main block
-    wins over the number pad: the test key "1" is the digit-row 1, not KP1.
+    The main block wins over the number pad: the test key "1" is the digit-row 1
+    (not KP1), and German "+" is the + key (RIGHTBRACE), as before FUNK-64.
     """
     from keyboard import LAYOUTS
     layout = LAYOUTS.get(_language(), {})
-    if key_name not in layout and re.fullmatch(r"[A-Z0-9_]+", key_name):
-        return key_name
     for raw, key in layout.items():
         if key == key_name and not raw.startswith("KP"):
             return raw
@@ -1664,7 +1661,7 @@ def _store_custom(prof):
 def _profile_switched():
     pid = _keymap_profile()
     sse_broadcast("keyboard_profile", {"profile": pid, "selected": _selected_shown(),
-                                       "language": _language(), "name": profiles.get(pid, _custom_profiles())["name"]})
+                                       "language": _language(), "default": _default_profile(), "name": profiles.get(pid, _custom_profiles())["name"]})
 
 
 async def api_get_keyboards(request):
@@ -1703,7 +1700,7 @@ async def api_duplicate_keyboard(request):
     if len(settings.get("keyboard_profiles") or {}) >= profiles.MAX_CUSTOM:
         return web.json_response({"error": f"at most {profiles.MAX_CUSTOM} custom keyboards: delete one first"}, status=400)
     try:
-        name = body.get("name") or f"{source['name']} (Kopie)"
+        name = body.get("name") or profiles.copy_name(source["name"])
         if not isinstance(name, str):
             raise ValueError("name must be text")
         prof = profiles.duplicate(source, profiles.new_id(name, set(custom) | set(settings.get("keyboard_profiles") or {})), name)

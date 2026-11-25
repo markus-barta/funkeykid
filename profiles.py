@@ -600,6 +600,11 @@ def new_id(name, existing):
     return pid
 
 
+def copy_name(name, suffix=" (Kopie)"):
+    """A default name for a copy that still fits the name limit."""
+    return name[:PROFILE_NAME_MAX - len(suffix)].rstrip() + suffix
+
+
 def duplicate(source, pid, name):
     """A custom copy of a profile (built-in or custom) under a new id and name."""
     name = _text(name, PROFILE_NAME_MAX, "name").strip()

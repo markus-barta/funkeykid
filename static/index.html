@@ -1016,9 +1016,8 @@
             </div>
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h3 class="font-semibold">Tastaturen</h3>
-              <label class="btn btn-sm btn-outline">Tastatur importieren (JSON)
-                <input type="file" accept="application/json,.json" class="hidden" @change="kbImport($event)">
-              </label>
+              <button type="button" class="btn btn-sm btn-outline" @click="$refs.kbImportFile.click()">Tastatur importieren (JSON)</button>
+              <input x-ref="kbImportFile" type="file" accept="application/json,.json" class="hidden" tabindex="-1" aria-hidden="true" @change="kbImport($event)">
             </div>
             <div class="grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr))">
               <template x-for="p in kb.profiles" :key="p.id">
@@ -2005,7 +2004,9 @@ function funkeykid() {
         this.kbLoading = false;
       }
     },
-    _applyList(data) { if (data && data.active === this.km.profile) this.kb = data; },
+    // A list response only updates the profile list. Language, "Standard" and the
+    // selection are installed by _reload() together with the key map they belong to.
+    _applyList(data) { if (data && Array.isArray(data.profiles)) this.kb = Object.assign({}, this.kb, { profiles: data.profiles }); },
     async _refreshList() { this._applyList(await fetch('/api/keyboards').then(r => r.json())); },
     // install a profile snapshot and keep the selection consistent with it, whoever saved
     _installProfile(p, savedSlot) {
@@ -2153,7 +2154,7 @@ function funkeykid() {
       this.showToast('»' + (this.kbProfile?.name || id) + '« ist aktiv: Die Tastatur nutzt jetzt diese Belegung.');
     },
     kbDuplicate(p) {
-      const name = prompt('Name der neuen Tastatur:', p.name + ' (Kopie)');
+      const name = prompt('Name der neuen Tastatur:', p.name.slice(0, 32).trimEnd() + ' (Kopie)');
       if (!name) return;
       return this.kbQueue(async () => {
         // Copy of the active profile: same keys, same key map, so switching to it changes nothing
@@ -2340,8 +2341,8 @@ function funkeykid() {
         // against the state the operations before it left (A→B→A ends on A)
         const d = JSON.parse(e.data);
         this.kbQueue(async () => {
-          if (d.profile === this.km.profile && d.profile === this.kbProfile?.id
-              && d.selected === this.kb.selected && d.language === this.kb.language) return;
+          if (d.profile === this.km.profile && d.profile === this.kbProfile?.id && d.selected === this.kb.selected
+              && d.language === this.kb.language && d.default === this.kb.default) return;
           await this._reload();
           this.showToast('Tastatur »' + d.name + '« ist jetzt aktiv');
         });

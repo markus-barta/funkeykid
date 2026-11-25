@@ -268,3 +268,11 @@ def test_default_kind():
     assert km.default_kind("A") == "letter" and km.default_kind("7") == "letter"
     assert km.default_kind("CUT") is None
     assert km.default_kind("LEFTBRACE", has_content=True) == "letter"
+
+
+def test_copy_name_fits_the_name_limit():
+    """Review FUNK-64: "<long name> (Kopie)" must still be a valid name."""
+    for prof in pf.BUILTIN.values():
+        name = pf.copy_name(prof["name"])
+        assert name.endswith(" (Kopie)") and len(name) <= pf.PROFILE_NAME_MAX
+        pf.duplicate(prof, "custom-c", name)

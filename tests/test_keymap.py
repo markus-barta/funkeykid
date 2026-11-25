@@ -176,3 +176,24 @@ def test_chords_and_shift_digit_survive_the_default_debounce(monkeypatch):
     for ev in (_ev("LEFTSHIFT", 1, code=42), _ev("1", 1), _ev("1", 0), _ev("LEFTSHIFT", 0, code=42), _ev("A", 1), _ev("B", 1)):
         listener2._handle_event(dev, ev)
     assert [g[0] for g in got2] == ["LEFTSHIFT", "SHIFT_1"]          # A within 0.8 s of SHIFT_1 → debounced, as before
+
+
+def test_modifier_on_main_node_counts_for_media_key_on_sibling_node(monkeypatch):
+    """Review round 3: Ctrl on the keyboard node + VolumeUp on its Consumer Control node."""
+    monkeypatch.setattr(kb, "evdev", _FakeEvdev)
+    listener = kb.KeyboardListener("ACME BK03", layout="de")
+    got = []
+    listener.on_key(lambda *args: got.append(args))
+    main, consumer = SimpleNamespace(path="/dev/input/event12"), SimpleNamespace(path="/dev/input/event13")
+    listener._handle_event(main, _ev("LEFTCTRL", 1))
+    listener._handle_event(consumer, _ev("VOLUMEUP", 1))
+    listener._handle_event(main, _ev("LEFTCTRL", 0))
+    listener._handle_event(consumer, _ev("VOLUMEUP", 0))
+    assert got == [("LEFTCTRL", "LEFTCTRL", ()), ("VOLUMEUP", "VOLUMEUP", ("LEFTCTRL",))]
+    # after the release on the main node, a later media key carries no modifier
+    quick = kb.KeyboardListener("ACME BK03", layout="de", debounce_seconds=0)
+    got2 = []
+    quick.on_key(lambda *args: got2.append(args))
+    for dev, ev in ((main, _ev("LEFTCTRL", 1)), (consumer, _ev("VOLUMEUP", 1)), (main, _ev("LEFTCTRL", 0)), (consumer, _ev("MUTE", 1))):
+        quick._handle_event(dev, ev)
+    assert got2[-2:] == [("VOLUMEUP", "VOLUMEUP", ("LEFTCTRL",)), ("MUTE", "MUTE", ())]

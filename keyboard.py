@@ -545,7 +545,10 @@ class KeyboardListener:
         self.last_key = key
         self.last_raw_key = raw
         self.last_key_at = time.time()
-        mods = tuple(sorted(m for m in self._mods_held.get(dev.path, ()) if m != raw))
+        # all nodes are the same physical keyboard: Ctrl held on the main node counts for a
+        # media key on its Consumer Control node (per-node sets keep release/disconnect exact)
+        held = set().union(*self._mods_held.values()) if self._mods_held else set()
+        mods = tuple(sorted(m for m in held if m != raw))
         if self._should_process(key) and self._callback:
             self._callback(key, raw, mods)
 

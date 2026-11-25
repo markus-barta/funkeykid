@@ -1854,7 +1854,7 @@ function funkeykid() {
     editingLetter: null,
     editEntries: [],
     editingNumber: null,
-    editNumberData: { word:'', image_subject:'', sound:'', backgrounds:[] },
+    editNumberData: { word:'', image_subject:'', sound:'', backgrounds:[], tracks:{} },   // tracks filled in init() (FUNK-61)
     _genTTS: false,
     _genBg: false,
     _suggesting: false,
@@ -2278,6 +2278,9 @@ function funkeykid() {
     },
 
     async init() {
+      // The number editor is always in the DOM (x-show): give its empty state the track
+      // objects its bindings read, before Alpine renders them (FUNK-61: ~1000 TypeErrors per load).
+      this._ensureTracks(this.editNumberData);
       // Load version info
       try {
         const v = await fetch('/api/version').then(r => r.json());

@@ -377,3 +377,21 @@ def test_clean_set_drops_unknown_fields_and_migrates_legacy_sound():
 def test_letters_are_stored_upper_case_like_the_server_does():
     raw = dict(_set(), letters={"b": {"entries": []}, "ß": {"entries": []}, "ö": {"entries": []}})
     assert sorted(sb.clean_set(raw)["letters"]) == ["B", "Ö", "ß"]
+
+
+def test_zip64_record_without_sentinels_cannot_bypass_the_check(tmp_path, monkeypatch):
+    """Review round 2: zipfile honours a ZIP64 end record even when the classic one
+    has ordinary (non-sentinel) counts. The check must read what zipfile reads."""
+    monkeypatch.setattr(zipfile, "ZIP_FILECOUNT_LIMIT", 2)
+    path = _zip(tmp_path, {f"sounds/s{i}.mp3": b"x" for i in range(10)})
+    monkeypatch.setattr(zipfile, "ZIP_FILECOUNT_LIMIT", 0xFFFF)
+    data = bytearray(open(path, "rb").read())
+    eocd = data.rfind(b"PK\x05\x06")
+    data[eocd + 8:eocd + 12] = (1).to_bytes(2, "little") * 2           # entries: 1 (no 0xFFFF sentinel)
+    data[eocd + 12:eocd + 16] = (46).to_bytes(4, "little")             # cd size: tiny (no sentinel)
+    open(path, "wb").write(bytes(data))
+    with zipfile.ZipFile(path) as z:                                    # zipfile still sees all 11 entries
+        assert len(z.infolist()) == 11
+    monkeypatch.setattr(sb, "MAX_MEMBERS", 3)
+    with pytest.raises(sb.BundleError, match="too many"):
+        sb._check_central_directory(path)

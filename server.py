@@ -1269,6 +1269,8 @@ MAX_STAGING_BYTES = 1024 * 1024 * 1024        # all staged uploads together
 DISK_RESERVE_BYTES = 512 * 1024 * 1024        # never fill a disk below this
 set_imports = {}      # token → {"path", "created", "set", "members"}: previews waiting for commit
 _uploading = {}       # token → bytes received so far
+_committing = {}      # token → staged ZIP of a commit still running (counted until it is removed)
+_import_lock = asyncio.Lock()   # one commit at a time: publish, save and commit/rollback together
 
 
 def _remove_quiet(path):
@@ -1285,7 +1287,7 @@ def _purge_imports():
         if now - imp["created"] > IMPORT_TTL_SECONDS:
             set_imports.pop(token, None)
             _remove_quiet(imp["path"])
-    known = {imp["path"] for imp in set_imports.values()}
+    known = {imp["path"] for imp in set_imports.values()} | set(_committing.values())
     try:
         for name in os.listdir(IMPORT_DIR):
             path = os.path.join(IMPORT_DIR, name)
@@ -1297,12 +1299,41 @@ def _purge_imports():
 
 def _staged_bytes():
     total = sum(_uploading.values())
-    for imp in set_imports.values():
+    for path in [imp["path"] for imp in set_imports.values()] + list(_committing.values()):
         try:
-            total += os.path.getsize(imp["path"])
+            total += os.path.getsize(path)
         except OSError:
             pass
     return total
+
+
+def _pending_imports():
+    return len(set_imports) + len(_uploading) + len(_committing)
+
+
+def _settings_file_unchanged(before):
+    """True if settings.json still holds exactly the bytes it had before a failed save."""
+    try:
+        with open(SETTINGS_PATH, "rb") as f:
+            return f.read() == before
+    except FileNotFoundError:
+        return before is None
+    except OSError:
+        return False
+
+
+def _restore_settings_file(before):
+    """Put settings.json back exactly as it was (in place: it is a single-file bind mount on hsb1)."""
+    if before is None:
+        return False
+    try:
+        with open(SETTINGS_PATH, "wb") as f:
+            f.write(before)
+            f.flush()
+            os.fsync(f.fileno())
+        return True
+    except OSError:
+        return False
 
 
 def _purge_import_dir_at_start():
@@ -1374,7 +1405,7 @@ async def api_import_set_preview(request):
     if field is None or field.name != "file":
         return web.json_response({"error": "upload the ZIP as multipart field 'file'"}, status=400)
     os.makedirs(IMPORT_DIR, exist_ok=True)
-    if len(set_imports) + len(_uploading) >= MAX_PENDING_IMPORTS:
+    if _pending_imports() >= MAX_PENDING_IMPORTS:
         return web.json_response({"error": "too many imports open at once: import or cancel one first"}, status=429)
     if shutil.disk_usage(IMPORT_DIR).free < setbundle.MAX_UPLOAD_BYTES + DISK_RESERVE_BYTES:
         return web.json_response({"error": "not enough free disk space for an import"}, status=507)
@@ -1437,25 +1468,37 @@ async def api_import_set_commit(request):
     if imp is None:
         return web.json_response({"error": "this preview has expired or was already imported: upload the file again"},
                                  status=404)
+    _committing[token] = imp["path"]          # still staged: counted and protected until removed
     try:
-        needed = sum(imp["members"].values())
-        for base in (SOUNDS_DIR, IMAGES_DIR):
-            os.makedirs(base, exist_ok=True)
-            if shutil.disk_usage(base).free < needed + DISK_RESERVE_BYTES:
-                return web.json_response({"error": "not enough free disk space for the set's files"}, status=507)
+        async with _import_lock:              # publish, save and commit/rollback as one unit
+            return await _commit_import(imp, name, resolutions, body.get("activate") is True)
+    finally:
+        _committing.pop(token, None)
+        _remove_quiet(imp["path"])
+
+
+async def _commit_import(imp, name, resolutions, activate):
+    needed = sum(imp["members"].values())
+    for base in (SOUNDS_DIR, IMAGES_DIR):
+        os.makedirs(base, exist_ok=True)
+        if shutil.disk_usage(base).free < needed + DISK_RESERVE_BYTES:
+            return web.json_response({"error": "not enough free disk space for the set's files"}, status=507)
+    try:
         data, summary, txn = await asyncio.get_running_loop().run_in_executor(
             None, setbundle.apply, imp["path"], imp["set"], imp["members"], SOUNDS_DIR, IMAGES_DIR, resolutions)
     except setbundle.BundleError as e:
         return web.json_response({"error": str(e)}, status=400)
-    finally:
-        _remove_quiet(imp["path"])
     # no await from here on: choose the id, add the set and save in one step, or undo everything
     if name and name.strip():
         data["name"] = name.strip()
     sets = settings.setdefault("sets", {})
     sid = _import_set_id(data["name"], sets)
-    activate = body.get("activate") is True
     previous_active = settings.get("active_set")
+    try:
+        with open(SETTINGS_PATH, "rb") as f:
+            before = f.read()
+    except OSError:
+        before = None
     sets[sid] = data
     try:
         if activate:
@@ -1465,9 +1508,14 @@ async def api_import_set_commit(request):
         sets.pop(sid, None)
         if activate:
             _set_active(previous_active)
-        txn.rollback()
-        print(f"[sets] import of {sid} undone: settings not saved ({e})", flush=True)
-        return web.json_response({"error": "the settings could not be saved: nothing was imported"}, status=500)
+        if _settings_file_unchanged(before) or _restore_settings_file(before):
+            txn.rollback()                    # settings.json does not name the set: its files can go
+            print(f"[sets] import of {sid} undone: settings not saved ({e})", flush=True)
+            return web.json_response({"error": "the settings could not be saved: nothing was imported"}, status=500)
+        txn.commit()                          # settings.json may name the set: keep its files
+        print(f"[sets] import of {sid} failed and settings.json could not be restored ({e})", flush=True)
+        return web.json_response({"error": "the settings could not be saved, and the previous settings could not be "
+                                           "restored: check the Sets tab after a restart"}, status=500)
     txn.commit()
     if activate:
         _announce_active(sid)

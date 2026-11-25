@@ -258,33 +258,19 @@ def _check_central_directory(path):
     """Refuse a ZIP whose central directory is too large *before* zipfile reads it.
 
     zipfile allocates every entry of the central directory when it opens a
-    file; a small upload could declare a huge one. This reads only the end
-    record (and its ZIP64 variant) to learn the entry count and size.
+    file, and a small upload can declare a huge one. This reads only the end
+    record, with zipfile's own reader (_EndRecData, ZIP64 included). The check
+    therefore sees exactly the entry count and directory size that zipfile
+    will use (FUNK-43 review).
     """
     try:
-        size = os.path.getsize(path)
         with open(path, "rb") as f:
-            tail_len = min(size, 22 + 65535)
-            f.seek(size - tail_len)
-            tail = f.read(tail_len)
-            i = tail.rfind(b"PK\x05\x06")
-            if i < 0 or len(tail) - i < 22:
-                raise BundleError("not a ZIP file")
-            entries, cd_size = struct.unpack("<HI", tail[i + 10:i + 16])
-            if entries == 0xFFFF or cd_size == 0xFFFFFFFF:          # ZIP64
-                loc = i - 20
-                if loc < 0 or tail[loc:loc + 4] != b"PK\x06\x07":
-                    raise BundleError("not a ZIP file")
-                (z64_offset,) = struct.unpack("<Q", tail[loc + 8:loc + 16])
-                if z64_offset >= size:
-                    raise BundleError("not a ZIP file")
-                f.seek(z64_offset)
-                rec = f.read(56)
-                if rec[:4] != b"PK\x06\x06" or len(rec) < 48:
-                    raise BundleError("not a ZIP file")
-                entries, cd_size = struct.unpack("<QQ", rec[32:48])
-    except OSError:
+            endrec = zipfile._EndRecData(f)
+    except (OSError, zipfile.BadZipFile, struct.error):
         raise BundleError("not a ZIP file") from None
+    if not endrec:
+        raise BundleError("not a ZIP file")
+    entries, cd_size = endrec[zipfile._ECD_ENTRIES_TOTAL], endrec[zipfile._ECD_SIZE]
     if entries > MAX_MEMBERS + 1 or cd_size > MAX_CD_BYTES:
         raise BundleError(f"too many files in the ZIP (at most {MAX_MEMBERS})")
 

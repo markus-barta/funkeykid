@@ -60,7 +60,7 @@ This is a summary of the `funkeykid` service in `hosts/hsb1/docker/compose-spec.
 | network / restart | `network_mode: host`, `restart: unless-stopped`, `privileged: true` (for `/dev/input`) |
 | environment | `TZ=Europe/Vienna`, `XDG_RUNTIME_DIR=/run/user/1001`, `PULSE_SERVER=unix:/run/user/1001/pulse/native`, `DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket`; plus `FUNKEYKID_KEYBOARD=<keyboardName>` from the configuration.nix overlay |
 | env_file (agenix) | `/run/agenix/hsb1-smarthome-env` (MQTT credentials), `/run/agenix/hsb1-funkeykid-api-env` (`ELEVENLABS_API_KEY`, `OPENROUTER_API_KEY`) |
-| volumes | `~/docker/mounts/funkeykid/{settings.json,sounds,images,ai-generated}` → `/data/…` (FUNK-67 replaces these four with one directory mount, `~/docker/mounts/funkeykid` → `/data`: then settings.json is written atomically and `archive/` persists); `/dev/input`; `/run/user/1001` (the whole runtime dir; see FAQ "No sound after reboot"); `/run/dbus`; plus the system CA bundle over certifi (OPS-430) |
+| volumes | `~/docker/mounts/funkeykid` → `/data`, one directory mount since FUNK-67 / OPS-701 (2026-11-26). Because settings.json is no longer a mount point of its own, it is written atomically (temp file + rename), and `archive/` persists; `/dev/input`; `/run/user/1001` (the whole runtime dir; see FAQ "No sound after reboot"); `/run/dbus`; plus the system CA bundle over certifi (OPS-430) |
 | labels | `com.centurylinklabs.watchtower.*`, leftovers only: watchtower is retired (OPS-125) |
 
 - **Keyboard pin:** because nixcfg sets `FUNKEYKID_KEYBOARD`, the web UI shows the keyboard as "vom Host festgelegt" and locks the device picker. udev and the container always use the same name.
@@ -75,6 +75,8 @@ This is a summary of the `funkeykid` service in `hosts/hsb1/docker/compose-spec.
 | `~/docker/mounts/funkeykid/sounds/` | Active sound files (.mp3) |
 | `~/docker/mounts/funkeykid/images/` | Active image files (.png, 64×64), also mounted into pixdcon |
 | `~/docker/mounts/funkeykid/ai-generated/` | AI-generated assets (preserved) |
+| `~/docker/mounts/funkeykid/archive/` | Files moved away with "Archivieren" (persistent since FUNK-67) |
+| `~/docker/mounts/funkeykid/import-staging/` | Set ZIP uploads waiting for commit (FUNK-43): at most 1 GiB, expire after 1 h, purged at start |
 | `/run/agenix/hsb1-smarthome-env` | MQTT credentials (agenix; never read or print it) |
 | `/run/agenix/hsb1-funkeykid-api-env` | `ELEVENLABS_API_KEY` + `OPENROUTER_API_KEY` (agenix) |
 | `/etc/compose/hsb1/docker-compose.yml` | The rendered compose file (read-only, from the closure) |
@@ -185,6 +187,8 @@ ssh mba@hsb1.lan "docker cp /tmp/fk.html funkeykid:/app/static/index.html"
 ### Settings / Sounds / Images (no deploy needed)
 
 These are volume-mounted. Edit directly on hsb1 or via web UI:
+
+funkeykid reads settings.json only at start and rewrites it from memory on every save. Prefer the web UI. A hand edit takes effect only after a restart, and a save before the restart overwrites it.
 
 ```bash
 # Edit settings

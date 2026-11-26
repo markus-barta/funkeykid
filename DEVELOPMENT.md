@@ -412,6 +412,10 @@ GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
 | Dateien | Upload/preview sounds and images, archive |
 | KI & Dienste | AI log and integration status |
 
+### UI libraries (FUNK-69)
+
+Tailwind 2.2.19, DaisyUI 4.12.24 and Alpine 3.17.5 are vendored under `static/vendor/ui/<name>-<version>/` with their licenses. Before, they came from jsDelivr on every page load (DaisyUI and Alpine unpinned), so the page broke without internet and changed with upstream releases. Each file has a `.gz` sibling that aiohttp serves when the browser accepts gzip (the CSS shrinks from ~2.9 MB to ~0.2–0.3 MB). `tests/test_vendor_ui.py` pins the sha256 of every file, checks the `.gz` siblings and licenses, and fails if `index.html` loads a script or stylesheet from another host. To update a library, follow the steps in that test's docstring.
+
 ### Phone layout (FUNK-68)
 
 The page fits a 360 px screen: nothing is wider than the viewport (checked headless at 360, 390 and 768 px on every tab and with the editors open). The navbar wraps, the status group goes below the set selector. The tab bar is a row of `role="tab"` buttons that scrolls sideways (`.fk-tabs`): it is centred when it fits, starts at the first tab when it does not, and scrolls the active tab into view. The drawn keyboard and the test keyboard (`.fk-testkb`) scroll inside their own boxes. Keyboard hints (`Esc`) are hidden below 640 px (`.kbd.fk-wide-only`: DaisyUI's `.kbd` display beats Tailwind's `hidden`). Don't hide overflow on `html`/`body`: it would clip content instead of fixing it.

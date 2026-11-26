@@ -71,6 +71,7 @@ def main():
         })
         if r.get("ok"):
             ids.append(r["job_id"])
+            snd_filename = r.get("filename") or snd_filename   # a free variant if taken (FUNK-46)
             job_map[r["job_id"]] = (digit, "sound", snd_filename)
             print(f"  [{digit}] TTS queued  → {snd_filename}")
         else:
@@ -93,6 +94,7 @@ def main():
         })
         if r.get("ok"):
             ids.append(r["job_id"])
+            img_filename = r.get("filename") or img_filename   # a free variant if taken (FUNK-46)
             job_map[r["job_id"]] = (digit, "image", img_filename)
             print(f"  [{digit}] image queued → {img_filename}")
         else:
@@ -116,14 +118,22 @@ def main():
         upd = per_digit[digit]
         new_cfg = dict(cfg)
         if upd["sound"]:
-            new_cfg["sound"] = upd["sound"]
+            _set_de_track(new_cfg, upd["sound"])
         if upd["image"]:
             new_cfg["backgrounds"] = [{"image": upd["image"], "enabled": True}]
         if upd["sound"] or upd["image"]:
             req("PUT", f"{base}/api/sets/{set_id}/numbers/{digit}", new_cfg)
-            print(f"  [{digit}] → sound={new_cfg.get('sound','')} bg={upd['image'] or '—'}")
+            print(f"  [{digit}] → DE={upd['sound'] or '—'} bg={upd['image'] or '—'}")
 
     print("\n✓ Done.")
+
+
+def _set_de_track(cfg, fname):
+    """Put a spoken number on the DE track: the server keeps tracks and drops a legacy "sound"."""
+    tracks = dict(cfg.get("tracks") or {})
+    tracks["DE"] = {**(tracks.get("DE") or {}), "file": fname, "enabled": True}
+    cfg["tracks"] = tracks
+    cfg.pop("sound", None)
 
 
 if __name__ == "__main__":

@@ -42,9 +42,33 @@ def test_every_old_mapping_is_unchanged_and_new_ones_only_give_keys_without_a_ro
     old, new = OLD_LAYOUTS[lang], kb.LAYOUTS[lang]
     for raw, key in old.items():
         assert new[raw] == key
-    for raw in set(new) - set(old):
+    for raw in set(new) - set(old) - DELIBERATE[lang]:
         assert km.default_label(raw) is None, raw          # nothing specific before
         assert km.default_label(new[raw]) is not None, raw  # a letter, a digit or Enter now
+
+
+# The only key that gave up a built-in role, on Markus's decision (FUNK-46, 2026-11-26):
+# the German ß key (MINUS) plays ß; − (SLASH) and the volume keys still lower the volume.
+DELIBERATE = {"de": {"MINUS"}, "us": set()}
+
+
+def test_sz_is_a_letter_on_german_keyboards():
+    de, us = kb.LAYOUTS["de"], kb.LAYOUTS["us"]
+    assert de["MINUS"] == "ß" and de["SLASH"] == "MINUS"
+    assert km.default_label("MINUS") == "Leiser"           # the − key, unchanged
+    assert "MINUS" not in us                               # US: the - key lowers the volume as before
+    assert km.default_label("ß") == "Buchstabe ß (Set-Inhalt)" and km.default_kind("ß") == "letter"
+    assert not km.is_unassigned("ß", "MINUS", None)
+    assert km.validate({"action": "letter", "letter": "ß"}) == {"action": "letter", "letter": "ß"}
+    assert km.validate({"action": "letter", "letter": "ẞ"}) == {"action": "letter", "letter": "ß"}
+    assert km.LETTERS[-4:] == ("Ä", "Ö", "Ü", "ß") and km.LETTER_TARGETS.count("ß") == 1
+
+
+@pytest.mark.parametrize("raw,stored", [("ß", "ß"), ("ẞ", "ß"), ("SS", "ß"), ("ss", "ß"), ("a", "A"), ("ä", "Ä"),
+                                        ("Ü", "Ü"), ("7", "7"), (None, None)])
+def test_norm_letter_keeps_sz(raw, stored):
+    assert "ß".upper() == "SS"                             # why a plain upper() is wrong
+    assert km.norm_letter(raw) == stored
 
 
 def test_de_umlauts_and_number_pad():

@@ -78,6 +78,9 @@ def main():
             print(f"    error: {r}")
             continue
         jid = r["job_id"]
+        # the server never overwrites a file: on a rerun it picks a free variant (FUNK-46),
+        # so the old background stays as it is and can be re-enabled from the UI
+        fname = r.get("filename") or fname
         # Poll until done
         for _ in range(90):
             time.sleep(2)

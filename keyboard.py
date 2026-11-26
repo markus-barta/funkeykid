@@ -45,6 +45,9 @@ LAYOUTS = {
         "LEFTBRACE": "Ü",
         "SEMICOLON": "Ö",
         "APOSTROPHE": "Ä",
+        # ß is a letter too (FUNK-46); before, the ß key also lowered the volume,
+        # which the − key (SLASH) and the volume keys still do
+        "MINUS": "ß",
     },
 }
 

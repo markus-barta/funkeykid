@@ -562,7 +562,7 @@
                                 Abspielen
                               </button>
                               <button class="btn btn-xs btn-primary gap-1 flex-1"
-                                      @click="generateTrack(entry, idx, cfg.kind, editingLetter.toLowerCase())"
+                                      @click="generateTrack(entry, idx, cfg.kind, fileSlug(editingLetter))"
                                       :disabled="!entry.word">
                                 <span x-show="entry.tracks[cfg.kind]._generating" class="loading loading-spinner loading-xs"></span>
                                 <svg x-show="!entry.tracks[cfg.kind]._generating" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
@@ -2325,7 +2325,11 @@ function funkeykid() {
     kbTakeCode() { if (this.kmLast?.id) this.kbSaveKey({ code: this.kmLast.id }); },
     // FUNK-64: language, "Standard" (PC/Mac, number pad), export/import
     letterAlphabet() {
-      return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(this.kb.language === 'de' ? ['Ä', 'Ö', 'Ü'] : []);
+      return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(this.kb.language === 'de' ? ['Ä', 'Ö', 'Ü', 'ß'] : []);
+    },
+    // file-name part of a letter or word: lower case, ä/ö/ü/ß spelled out (FUNK-46)
+    fileSlug(text) {
+      return (text || '').toLowerCase().replace(/[äöüß ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',ß:'ss',' ':'-'}[c]));
     },
     kbSetLanguage(patch) {
       return this.kbQueue(async () => {
@@ -2462,36 +2466,26 @@ function funkeykid() {
           ]).then(([snd, img]) => {
             this.sounds = snd;
             this.images = img;
-            // If letter edit modal is open, update the matching entry's track dropdown
-            if (this.editingLetter && this.editEntries) {
+            // Every job writes a file name of its own, and the code that started it put that name
+            // on its entry or track from the response (FUNK-46). So a finished job only refreshes
+            // what shows its file (thumbnail, auto-play); it never assigns a file by word, which
+            // gave one job's file to every entry with the same word.
+            if (this.editingLetter && this.editEntries && d.filename) {
               for (const entry of this.editEntries) {
-                if (entry.word === d.word && d.filename) {
-                  if (d.type === 'sound' && d.kind && entry.tracks && entry.tracks[d.kind]) {
-                    const t = entry.tracks[d.kind];
-                    t.file = d.filename;
-                    t.enabled = true;
-                    if (t._autoPlay) {
-                      t._autoPlay = false;
-                      this.previewSound(d.filename, t.volume);
-                    }
-                  }
-                  if (d.type === 'image') {
-                    entry.image = d.filename;
-                    entry._imgVer = (entry._imgVer||0) + 1;
-                  }
-                }
-              }
-            }
-            // If number edit modal is open, update its track dropdowns and bg thumbs
-            if (this.editingNumber !== null && this.editNumberData) {
-              if (d.type === 'sound' && d.kind && this.editNumberData.tracks?.[d.kind]) {
-                const t = this.editNumberData.tracks[d.kind];
-                t.file = d.filename;
-                t.enabled = true;
-                if (t._autoPlay) {
+                const t = d.type === 'sound' && d.kind && entry.tracks ? entry.tracks[d.kind] : null;
+                if (t && t.file === d.filename && t._autoPlay) {
                   t._autoPlay = false;
                   this.previewSound(d.filename, t.volume);
                 }
+                if (d.type === 'image' && entry.image === d.filename) entry._imgVer = (entry._imgVer||0) + 1;
+              }
+            }
+            // If number edit modal is open, refresh its track and background thumbs the same way
+            if (this.editingNumber !== null && this.editNumberData) {
+              const t = d.type === 'sound' && d.kind ? this.editNumberData.tracks?.[d.kind] : null;
+              if (t && t.file === d.filename && t._autoPlay) {
+                t._autoPlay = false;
+                this.previewSound(d.filename, t.volume);
               }
               for (const bg of this.editNumberData.backgrounds || []) {
                 if (bg.image === d.filename) bg._v = (bg._v||0) + 1;
@@ -2499,8 +2493,8 @@ function funkeykid() {
             }
             // Update generation wizard state
             if (this._genWizard) {
-              if (d.filename === this._genWizard.soundFilename) this._genWizard.soundDone = true;
-              if (d.filename === this._genWizard.imageFilename) {
+              if (this._genWizardJob(d, 'sound')) this._genWizard.soundDone = true;
+              if (this._genWizardJob(d, 'image')) {
                 this._genWizard.imageDone = true;
                 this._genWizard.entry._imgVer = (this._genWizard.entry._imgVer||0) + 1;
               }
@@ -2511,8 +2505,8 @@ function funkeykid() {
         } else if (d.status === 'error') {
           // Update wizard on error too
           if (this._genWizard) {
-            if (d.filename === this._genWizard.soundFilename) this._genWizard.soundError = d.error;
-            if (d.filename === this._genWizard.imageFilename) this._genWizard.imageError = d.error;
+            if (this._genWizardJob(d, 'sound')) this._genWizard.soundError = d.error;
+            if (this._genWizardJob(d, 'image')) this._genWizard.imageError = d.error;
             const w = this._genWizard;
             if ((w.soundDone || w.soundError) && (w.imageDone || w.imageError)) w.step = 3;
           }
@@ -2756,7 +2750,8 @@ function funkeykid() {
           }),
         }).then(r => r.json());
         if (r.ok) {
-          this.editNumberData.backgrounds.push({ image: filename, enabled: true, _v: 0 });
+          // the server may pick a free variant of the name (FUNK-46): use the one it writes
+          this.editNumberData.backgrounds.push({ image: r.filename || filename, enabled: true, _v: 0 });
         } else {
           this.showToast(r.error || 'Fehler', 'error');
         }
@@ -3068,7 +3063,7 @@ function funkeykid() {
         this.lastTestWord = e?.word || key;
         this.lastTestImage = e?.image || null;
       }
-      await fetch(`/api/test/${key}`, { method: 'POST' });
+      await fetch('/api/test/' + encodeURIComponent(key), { method: 'POST' });
     },
 
     // ── Files ──
@@ -3164,7 +3159,7 @@ function funkeykid() {
           // Auto-chain: fire image + all three sound tracks in parallel.
           // No auto-play (too many sounds arriving near-simultaneously).
           const newIdx = this.editEntries.length - 1;
-          const prefix = this.editingLetter.toLowerCase();
+          const prefix = this.fileSlug(this.editingLetter);
           this.generateImage(entry, newIdx);
           this.generateTrack(entry, newIdx, 'FX', prefix, { autoPlay: false });
           this.generateTrack(entry, newIdx, 'DE', prefix, { autoPlay: false });
@@ -3287,8 +3282,8 @@ function funkeykid() {
     async generateImage(entry, idx) {
       if (!entry.word) return;
       entry._genImg = true;
-      const letter = this.editingLetter.toLowerCase();
-      const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
+      const letter = this.fileSlug(this.editingLetter);
+      const slug = this.fileSlug(entry.word);
       const filename = this._nextFilename(`${letter}_${slug}`, 'png', this.images);
       const extra = entry._genExtra || '';
       const baseDesc = entry._imageDesc || entry.word;
@@ -3300,7 +3295,7 @@ function funkeykid() {
           body: JSON.stringify({ word: entry.word, description: desc, filename }),
         }).then(r => r.json());
         if (r.ok) {
-          entry.image = filename;
+          entry.image = r.filename || filename;     // the server may pick a free variant (FUNK-46)
           entry._imgVer = (entry._imgVer||0) + 1;
         } else {
           this.showToast(r.error || 'Fehler', 'error');
@@ -3320,7 +3315,7 @@ function funkeykid() {
         imagePrompt: extra ? `${imageBase}. ${extra}` : imageBase,
         oldSound: entry.sound,
         oldImage: entry.image,
-        soundFilename: null, imageFilename: null,
+        soundFilename: null, imageFilename: null, soundJob: null, imageJob: null,
         soundDone: false, imageDone: false,
         soundError: null, imageError: null,
         soundAccepted: null, imageAccepted: null,
@@ -3333,9 +3328,10 @@ function funkeykid() {
       w.soundDone = false; w.imageDone = false;
       w.soundError = null; w.imageError = null;
       w.soundAccepted = null; w.imageAccepted = null;
+      w.soundJob = null; w.imageJob = null;
       const entry = w.entry;
-      const letter = this.editingLetter.toLowerCase();
-      const slug = entry.word.toLowerCase().replace(/[äöü ]/g, c => ({ä:'ae',ö:'oe',ü:'ue',' ':'-'}[c]||c));
+      const letter = this.fileSlug(this.editingLetter);
+      const slug = this.fileSlug(entry.word);
       const soundFilename = this._nextFilename(`${letter}_${slug}`, 'mp3', this.sounds);
       const imageFilename = this._nextFilename(`${letter}_${slug}`, 'png', this.images);
       w.soundFilename = soundFilename;
@@ -3352,14 +3348,26 @@ function funkeykid() {
           body: JSON.stringify({ word: entry.word, description: w.imagePrompt, filename: imageFilename }),
         }).then(r => r.json()).catch(e => ({ error: e.message })),
       ]);
+      // the server may pick free variants of the names (FUNK-46); a job is matched by its id
       if (sndRes.error || !sndRes.ok) { w.soundError = sndRes.error || 'Fehler'; }
-      else { entry.sound = soundFilename; }
+      else { w.soundFilename = sndRes.filename || soundFilename; w.soundJob = sndRes.job_id; entry.sound = w.soundFilename; }
       if (imgRes.error || !imgRes.ok) { w.imageError = imgRes.error || 'Fehler'; }
-      else { entry.image = imageFilename; entry._imgVer = (entry._imgVer||0) + 1; }
+      else { w.imageFilename = imgRes.filename || imageFilename; w.imageJob = imgRes.job_id; entry.image = w.imageFilename; entry._imgVer = (entry._imgVer||0) + 1; }
+      // a job that ended before its response arrived
+      const sj = this.genJobs[w.soundJob], ij = this.genJobs[w.imageJob];
+      if (sj?.status === 'done') w.soundDone = true; else if (sj?.status === 'error') w.soundError = sj.error || 'Fehler';
+      if (ij?.status === 'done') w.imageDone = true; else if (ij?.status === 'error') w.imageError = ij.error || 'Fehler';
+      if ((w.soundDone || w.soundError) && (w.imageDone || w.imageError)) w.step = 3;
       entry._genSound = false;
       entry._genImg = false;
       // If both errored on API call, skip to review
       if (w.soundError && w.imageError) w.step = 3;
+    },
+    // is a gen_update about the wizard's sound or image job? Only by job id: an event that comes
+    // before the id is known is read from genJobs once the response arrives (startGenWizard)
+    _genWizardJob(d, type) {
+      const job = this._genWizard?.[type + 'Job'];
+      return !!job && d.id === job;
     },
     acceptGenResult(type) {
       if (!this._genWizard) return;

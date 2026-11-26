@@ -182,6 +182,7 @@ LAYOUTS = {
         "RIGHTBRACE": "EQUAL",  # + key
         "SLASH": "MINUS",       # - key
         "LEFTBRACE": "Ü", "SEMICOLON": "Ö", "APOSTROPHE": "Ä",   # umlauts are letters
+        "MINUS": "ß",           # ß key: a letter since FUNK-46 (was "Leiser" before)
     },
 }
 ```
@@ -252,7 +253,15 @@ A set travels as one ZIP. The logic is in `setbundle.py`, with tests in `tests/t
 
 `settings.language` replaces `settings.keyboard_layout`. A missing `language` is taken from `keyboard_layout` (`profiles.language_of`), so an existing `de` or `us` setup keeps its letter mapping. Every key that had a role before keeps it. Only keys that had no built-in role gain one: the umlaut keys (and only if the set has content for them), the pad digits and pad Enter. `PUT /api/language` writes `keyboard_layout` in step, so a rollback to an older image still finds the same layout. `PUT /api/settings` never writes `keyboard_layout` any more.
 
-Letters: for `de` the Letters tab also offers Ä, Ö and Ü.
+Letters: for `de` the Letters tab also offers Ä, Ö, Ü and ß.
+
+### ß is a letter (FUNK-46)
+
+On a German keyboard the ß key (`KEY_MINUS`) plays the set's ß content, like the umlaut keys; without content it plays a random sound if that setting is on. It is the one key that gave up a built-in role: before FUNK-46 it lowered the volume, as the − key (`KEY_SLASH`) and the volume keys still do. A key-map entry on `MINUS` still wins.
+
+Python and JavaScript turn `"ß".upper()` into `"SS"`, so letters are normalized with `keymap.norm_letter()` (upper case, ß stays ß, the capital ẞ becomes ß) on every letter route, the test key, key-map actions and set ZIP import. No German word starts with ß, so the AI suggestion asks for a word that contains one. Content stored under `SS` or `ẞ` by older versions (only the API could write it) moves to `ß` when the settings load.
+
+Since ß is spelled `ss` in slugs, "Busse" and "Buße" share one. So a generation job never writes over an existing file or another running job's file: the server takes the requested name (or `{slug}.{ext}`) when it is free, else a free variant (`b_busse_de-2.mp3` …, `_claim_media_name`), rejects names with a path, and returns the name in its response. The UI puts that name on the entry or track when the request returns; a finished job (`gen_update`) only refreshes what already shows its file (thumbnail, auto-play) and never assigns a file by word, and the generation wizard follows its own jobs by id. A new set never reuses an existing set's id (`_new_set_id`; before, "Neues Set" twice emptied the first set). Favorites that pointed at `SS`/`ẞ` move with their entries, and removing a favorite is saved (it used to come back after a restart).
 
 ---
 
@@ -283,7 +292,7 @@ Response: Binary MP3 audio (application/octet-stream)
 
 ### File Naming
 
-`{letter}_{word}.mp3` — lowercase, umlauts normalized: ä→ae, ö→oe, ü→ue
+`{letter}_{word}.mp3` — lowercase, umlauts normalized in the letter and the word: ä→ae, ö→oe, ü→ue, ß→ss
 
 ### Storage
 
@@ -612,7 +621,7 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 1. **Audio null sink**: mba (uid 1000) PipeWire has null sink. ALWAYS use kiosk (uid 1001)
 2. **Docker /dev/input**: keep it a bind mount (`/dev/input:/dev/input`), which makes BT devices connecting after container start visible within ~1 s. "Neu verbinden" restarts the listener.
 3. **pixdcon image cache**: `loadPixooImage` caches per process. Restart the driving instance (`docker restart pixdcon2-edge`) for new images
-4. **Umlaut filenames**: NEVER use ä/ö/ü in filenames → use ae/oe/ue
+4. **Umlaut filenames**: NEVER use ä/ö/ü/ß in filenames → use ae/oe/ue/ss
 5. **Hotfix volatility**: `docker cp` changes are lost at the next recreate. Always commit, push and release
 6. **Startup sounds**: 3s grace period prevents stale BT events at container restart
 7. **Small AI models**: Ignore exclusion lists — use system message + server-side validation + auto-retry

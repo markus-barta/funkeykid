@@ -292,8 +292,45 @@ def load_settings():
         _migrate_to_sets()
     _ensure_numbers_defaults()
     _migrate_to_tracks_v2()
+    _migrate_sz_letter()
     current_volume = settings.get("volume", 100)
     return settings
+
+
+def _migrate_sz_letter():
+    """Move ß content stored under "SS" (ß.upper()) or "ẞ" before FUNK-46 to "ß".
+
+    Only the API could write it there (the Letters tab had no ß card), but it
+    would be unreachable now. Entries already under ß come first; a blacklist is
+    merged. An older image ignores the "ß" key, so a rollback loses nothing.
+    """
+    active = settings.get("active_set")
+    shift = {}   # legacy key → enabled ß entries before its own in the active set (favorites index those)
+    for sid, s in (settings.get("sets") or {}).items():
+        letters = s.get("letters") if isinstance(s, dict) else None
+        if not isinstance(letters, dict):
+            continue
+        for legacy in keymap.LEGACY_SZ_KEYS:
+            if legacy not in letters:
+                continue
+            old = letters.pop(legacy) or {}
+            cur = letters.setdefault("ß", {"entries": []})
+            if sid == active:
+                shift[legacy] = sum(1 for e in cur.get("entries", []) if e.get("enabled", True))
+            cur.setdefault("entries", []).extend(old.get("entries") or [])
+            print(f"[migrate] set {sid}: {len(old.get('entries') or [])} ß entries moved from {legacy} to ß", flush=True)
+    for fav in settings.get("favorites") or []:
+        if isinstance(fav, dict) and fav.get("letter") in keymap.LEGACY_SZ_KEYS:
+            if isinstance(fav.get("entry_index"), int):
+                fav["entry_index"] += shift.get(fav["letter"], 0)
+            fav["letter"] = "ß"
+    blacklist = settings.get("blacklist")
+    if isinstance(blacklist, dict):
+        for legacy in keymap.LEGACY_SZ_KEYS:
+            if legacy in blacklist:
+                words = list(blacklist.get("ß") or [])
+                words += [w for w in (blacklist.pop(legacy) or []) if w not in words]
+                blacklist["ß"] = words
 
 
 def _migrate_to_tracks_v2():
@@ -1024,6 +1061,7 @@ def _toggle_favorite():
     for i, f in enumerate(favorites):
         if f["letter"] == last_letter and f["entry_index"] == idx:
             favorites.pop(i)
+            _save_favorites()          # a removal used to last only until the next restart
             sse_broadcast("favorites", {"favorites": favorites})
             print(f"[fav] Removed favorite: {last_letter}[{idx}]", flush=True)
             return
@@ -1202,9 +1240,18 @@ async def api_get_set(request):
 
 async def api_create_set(request):
     data = await request.json()
-    set_id = data.get("id") or _slugify(data.get("name", "new-set"))
     if "sets" not in settings:
         settings["sets"] = {}
+    # a new id never replaces an existing set: before, "Neues Set" twice (or "Maße"
+    # next to "Masse") gave the same id and silently emptied the first set
+    set_id = data.get("id")
+    if set_id is not None:
+        if not isinstance(set_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,59}", set_id):
+            return web.json_response({"error": "id: lower-case letters, digits and -"}, status=400)
+        if set_id in settings["sets"]:
+            return web.json_response({"error": f"set {set_id} exists"}, status=409)
+    else:
+        set_id = _new_set_id(data.get("name") or "new-set", settings["sets"])
     # Duplicate from existing set if specified
     source_id = data.get("duplicate_from")
     if source_id and source_id in settings["sets"]:
@@ -1386,8 +1433,8 @@ def _export_copy(set_data):
     return out
 
 
-def _import_set_id(name, sets):
-    """A free, URL-safe set id for an imported set."""
+def _new_set_id(name, sets):
+    """A free, URL-safe set id for a new or imported set."""
     base = re.sub(r"[^a-z0-9-]+", "-", _slugify(name)).strip("-") or "set"
     sid, n = base, 2
     while sid in sets:
@@ -1507,7 +1554,7 @@ async def _commit_import(imp, name, resolutions, activate):
     if name and name.strip():
         data["name"] = name.strip()
     sets = settings.setdefault("sets", {})
-    sid = _import_set_id(data["name"], sets)
+    sid = _new_set_id(data["name"], sets)
     previous_active = settings.get("active_set")
     try:
         with open(SETTINGS_PATH, "rb") as f:
@@ -1554,7 +1601,7 @@ async def api_import_set_cancel(request):
 
 async def api_get_letter(request):
     set_id = request.match_info["set_id"]
-    letter = request.match_info["letter"].upper()
+    letter = keymap.norm_letter(request.match_info["letter"])
     sets = settings.get("sets", {})
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
@@ -1578,7 +1625,7 @@ async def api_put_letter(request):
     field (auto-migrated). Always persists the new shape.
     """
     set_id = request.match_info["set_id"]
-    letter = request.match_info["letter"].upper()
+    letter = keymap.norm_letter(request.match_info["letter"])
     data = await request.json()
     sets = settings.get("sets", {})
     if set_id not in sets:
@@ -1598,7 +1645,7 @@ async def api_put_letter(request):
 async def api_add_entry(request):
     """Add a new entry to a letter."""
     set_id = request.match_info["set_id"]
-    letter = request.match_info["letter"].upper()
+    letter = keymap.norm_letter(request.match_info["letter"])
     data = await request.json()
     sets = settings.get("sets", {})
     if set_id not in sets:
@@ -1670,7 +1717,7 @@ async def api_put_number(request):
 async def api_delete_entry(request):
     """Delete an entry by index from a letter."""
     set_id = request.match_info["set_id"]
-    letter = request.match_info["letter"].upper()
+    letter = keymap.norm_letter(request.match_info["letter"])
     index = int(request.match_info["index"])
     sets = settings.get("sets", {})
     if set_id not in sets:
@@ -1802,7 +1849,7 @@ async def api_upload_image(request):
 
 
 async def api_test_key(request):
-    letter = request.match_info["letter"].upper()
+    letter = keymap.norm_letter(request.match_info["letter"])
     handle_key(letter, _raw_for_key(letter), virtual=True)
     return web.json_response({"ok": True, "letter": letter})
 
@@ -2231,6 +2278,8 @@ AI_DIR = os.path.join(DATA_DIR, "ai-generated")
 AI_SOUNDS_DIR = os.path.join(AI_DIR, "sounds")
 AI_IMAGES_ORIG_DIR = os.path.join(AI_DIR, "images-original")
 AI_IMAGES_RESIZED_DIR = os.path.join(AI_DIR, "images-resized")
+SOUND_DIRS = (SOUNDS_DIR, AI_SOUNDS_DIR)          # where a generated sound lands
+IMAGE_DIRS = (IMAGES_DIR, AI_IMAGES_ORIG_DIR, AI_IMAGES_RESIZED_DIR)
 
 
 # ── Loudness normalization (FUNK-1) ─────────────────────────────────────────
@@ -2383,7 +2432,9 @@ async def api_generate_sound(request):
     word = data.get("word", "")
     prompt = data.get("prompt", _get_sound_prompt().format(word=word))
     duration = data.get("duration", 4)
-    filename = data.get("filename", _slugify(word) + ".mp3")
+    filename = _claim_media_name(data.get("filename"), _slugify(word), "mp3", SOUND_DIRS)
+    if not filename:
+        return web.json_response({"error": "invalid filename"}, status=400)
     if not os.environ.get("ELEVENLABS_API_KEY"):
         return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
     job_id = f"snd_{uuid.uuid4().hex[:8]}"
@@ -2391,7 +2442,7 @@ async def api_generate_sound(request):
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
     threading.Thread(target=_gen_sound_worker, args=(job_id, word, prompt, duration, filename), daemon=True).start()
-    return web.json_response({"ok": True, "job_id": job_id})
+    return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
 
 
 def _gen_image_worker(job_id, word, prompt, filename, model=None):
@@ -2447,7 +2498,9 @@ async def api_generate_image(request):
     word = data.get("word", "")
     description = data.get("description", word)
     prompt = data.get("prompt", _get_image_prompt().format(description=description))
-    filename = data.get("filename", _slugify(word) + ".png")
+    filename = _claim_media_name(data.get("filename"), _slugify(word), "png", IMAGE_DIRS)
+    if not filename:
+        return web.json_response({"error": "invalid filename"}, status=400)
     model = data.get("model")
     if not os.environ.get("OPENROUTER_API_KEY"):
         return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
@@ -2456,7 +2509,7 @@ async def api_generate_image(request):
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
     threading.Thread(target=_gen_image_worker, args=(job_id, word, prompt, filename, model), daemon=True).start()
-    return web.json_response({"ok": True, "job_id": job_id})
+    return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
 
 
 def _gen_tts_worker(job_id, text, voice_id, filename):
@@ -2509,7 +2562,9 @@ async def api_generate_tts(request):
     voice_id = (data.get("voice_id")
                 or settings.get("numbers_tts", {}).get("voice_id")
                 or DEFAULT_NUMBER_VOICE_ID)
-    filename = data.get("filename") or (_slugify(text) + ".mp3")
+    filename = _claim_media_name(data.get("filename"), _slugify(text), "mp3", SOUND_DIRS)
+    if not filename:
+        return web.json_response({"error": "invalid filename"}, status=400)
     word = data.get("word", text)
     if not os.environ.get("ELEVENLABS_API_KEY"):
         return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
@@ -2518,7 +2573,7 @@ async def api_generate_tts(request):
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
     threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
-    return web.json_response({"ok": True, "job_id": job_id})
+    return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
 
 
 async def api_generate_track(request):
@@ -2545,7 +2600,9 @@ async def api_generate_track(request):
     prefix = (data.get("slug_prefix") or "").strip().lower()
     slug = _slugify(word)
     base = f"{prefix}_{slug}_{kind.lower()}" if prefix else f"{slug}_{kind.lower()}"
-    filename = data.get("filename") or (base + ".mp3")
+    filename = _claim_media_name(data.get("filename"), base, "mp3", SOUND_DIRS)
+    if not filename:
+        return web.json_response({"error": "invalid filename"}, status=400)
 
     if meta["generator"] == "sfx":
         if not os.environ.get("ELEVENLABS_API_KEY"):
@@ -2577,7 +2634,7 @@ async def api_generate_track(request):
 async def api_suggest_word(request):
     """AI-suggest a fitting German word for a letter, not already used."""
     data = await request.json()
-    letter = data.get("letter", "A").upper()
+    letter = keymap.norm_letter(data.get("letter") or "A")
 
     # Collect ALL used words for this letter (from all sets)
     used_words = set()
@@ -2621,8 +2678,14 @@ async def api_suggest_word(request):
         user_msg = user_tpl.replace("{letter}", letter).replace("{excluded}", excluded_str)
     except Exception:
         user_msg = default_user_tpl.replace("{letter}", letter).replace("{excluded}", excluded_str)
+    rule = "die mit einem bestimmten Buchstaben beginnen"
+    if letter == "ß":
+        # no German word starts with ß (FUNK-46): ask for one that contains it, whatever the template says
+        user_msg += ("\n\nWICHTIG: Kein deutsches Wort beginnt mit ß. Schlage ein Wort vor, "
+                     "in dem ein ß vorkommt (z.B. Fuß, Straße, Strauß), und das Kinder kennen.")
+        rule = "in denen ein ß vorkommt"
 
-    system_msg = f"""Du bist ein Kinderwort-Generator. Du schlägst deutsche Wörter vor die mit einem bestimmten Buchstaben beginnen.
+    system_msg = f"""Du bist ein Kinderwort-Generator. Du schlägst deutsche Wörter vor, {rule}.
 STRENG VERBOTEN sind diese Wörter — du darfst sie NIEMALS vorschlagen:
 {forbidden_lines}
 
@@ -2749,14 +2812,14 @@ async def api_integrations_status(request):
 
 async def api_get_blacklist(request):
     """Get blacklisted words for a letter."""
-    letter = request.match_info["letter"].upper()
+    letter = keymap.norm_letter(request.match_info["letter"])
     words = settings.get("blacklist", {}).get(letter, [])
     return web.json_response(words)
 
 
 async def api_put_blacklist(request):
     """Set blacklisted words for a letter."""
-    letter = request.match_info["letter"].upper()
+    letter = keymap.norm_letter(request.match_info["letter"])
     data = await request.json()
     if "blacklist" not in settings:
         settings["blacklist"] = {}
@@ -2811,8 +2874,78 @@ async def serve_ai_file(request):
     return web.FileResponse(path)
 
 
+def _free_media_name(base, ext, folders):
+    """base.ext, or base-2.ext …: a name no file in folders has, no job was given
+    since start and nothing in the settings refers to.
+
+    A generated file never replaces another one: "Busse" and "Buße" share a slug
+    since ß is spelled ss (FUNK-46), and the same word in two sets shares one too.
+    Called with no await before the job is registered.
+    """
+    # a default base comes from a word: never a path, never hidden
+    base = re.sub(r"[/\\\x00]+", "-", base).lstrip(".") or "file"
+    taken = _issued_media_names | _referenced_names()
+
+    def candidate(n):   # at most MEDIA_NAME_MAX characters, suffix and extension included
+        suffix = f"-{n}" if n > 1 else ""
+        return f"{base[:MEDIA_NAME_MAX - len(suffix) - len(ext) - 1]}{suffix}.{ext}"
+
+    n = 1
+    name = candidate(n)
+    while name in taken or any(os.path.exists(os.path.join(d, name)) for d in folders):
+        n += 1
+        name = candidate(n)
+    _issued_media_names.add(name)
+    return name
+
+
+# Every name a job was given since start, whatever became of the job: an entry may already
+# reference the name of a job that failed or is still running, so it is never given twice.
+_issued_media_names = set()
+
+
+def _referenced_names():
+    """Every string in the sets and key maps: any file name an entry, track or key refers to."""
+    out = set()
+    stack = [settings.get("sets"), settings.get("keymaps")]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, dict):
+            stack.extend(v.values())
+        elif isinstance(v, list):
+            stack.extend(v)
+        elif isinstance(v, str):
+            out.add(v)
+    return out
+
+
+MEDIA_NAME_MAX = 200     # what set export/import and key maps accept (setbundle, keymap)
+_MEDIA_NAME = re.compile(r"[^/\\\x00]{1,%d}" % MEDIA_NAME_MAX)
+
+
+def _claim_media_name(requested, base, ext, folders):
+    """The file a generation job writes, or None if ``requested`` is not a plain file name.
+
+    The requested name (the UI picks one) when it is free, else a free variant of
+    it; without one, base.ext or a free variant (see _free_media_name). A job
+    never writes over a file, another job's name or a name the settings refer
+    to: two words with one slug ("Busse", "Buße"), the same word generated twice
+    at once, or a rerun of a script. Responses carry the name: callers use it.
+    """
+    if requested:
+        if (not isinstance(requested, str) or not _MEDIA_NAME.fullmatch(requested)
+                or requested.startswith(".")):
+            return None
+        stem, dot, req_ext = requested.rpartition(".")
+        base, ext = (stem, req_ext) if dot and stem else (requested, ext)
+        if not 1 <= len(ext) <= 10:
+            return None
+    return _free_media_name(base, ext, folders)
+
+
 def _slugify(text):
-    return text.lower().replace(" ", "-").replace("&", "und").replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")[:30]
+    return (text.lower().replace(" ", "-").replace("&", "und")
+            .replace("ä", "ae").replace("ö", "oe").replace("ü", "ue").replace("ß", "ss"))[:30]
 
 
 def _reload_runtime():

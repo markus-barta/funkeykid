@@ -377,6 +377,12 @@ def test_clean_set_drops_unknown_fields_and_migrates_legacy_sound():
 def test_letters_are_stored_upper_case_like_the_server_does():
     raw = dict(_set(), letters={"b": {"entries": []}, "ß": {"entries": []}, "ö": {"entries": []}})
     assert sorted(sb.clean_set(raw)["letters"]) == ["B", "Ö", "ß"]
+    # the capital sharp s is the same letter (FUNK-46); both at once is a duplicate
+    assert list(sb.clean_set(dict(_set(), letters={"ẞ": {"entries": []}}))["letters"]) == ["ß"]
+    with pytest.raises(sb.BundleError, match="twice"):
+        sb.clean_set(dict(_set(), letters={"ß": {"entries": []}, "ẞ": {"entries": []}}))
+    # an export from before FUNK-46 kept ß content under "SS" (ß.upper())
+    assert list(sb.clean_set(dict(_set(), letters={"SS": {"entries": []}}))["letters"]) == ["ß"]
 
 
 def test_zip64_record_without_sentinels_cannot_bypass_the_check(tmp_path, monkeypatch):

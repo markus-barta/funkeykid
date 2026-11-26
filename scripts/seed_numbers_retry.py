@@ -33,6 +33,7 @@ for digit in sorted(missing):
         print(f"    error: {r}")
         continue
     jid = r["job_id"]
+    fname = r.get("filename") or fname   # the server picks a free variant if the name is taken (FUNK-46)
     # Poll until this one is done
     for _ in range(60):
         time.sleep(2)
@@ -40,7 +41,11 @@ for digit in sorted(missing):
         j = jobs.get(jid)
         if j and j["status"] in ("done","error"):
             if j["status"] == "done":
-                new_cfg = dict(cfg); new_cfg["sound"] = fname
+                # the server keeps tracks and drops a legacy "sound": put it on the DE track
+                new_cfg = dict(cfg)
+                new_cfg["tracks"] = {**(cfg.get("tracks") or {}),
+                                     "DE": {**((cfg.get("tracks") or {}).get("DE") or {}), "file": fname, "enabled": True}}
+                new_cfg.pop("sound", None)
                 req("PUT", f"{base}/api/sets/{set_id}/numbers/{digit}", new_cfg)
                 print(f"    ✓ done, wrote sound={fname}")
             else:

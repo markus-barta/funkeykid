@@ -56,8 +56,9 @@ SILENT_MODIFIERS = frozenset(MODIFIER_CODES) | {"LEFTSHIFT", "RIGHTSHIFT", "RIGH
 # stored before FUNK-63 is ignored (it can still be deleted).
 RESERVED = ("LEFTSHIFT", "RIGHTSHIFT")
 
-LETTERS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + ("Ä", "Ö", "Ü")      # keys with set content (FUNK-64: umlauts)
-LETTER_TARGETS = LETTERS + ("ß",) + tuple("0123456789")
+# keys with set content: umlauts since FUNK-64, ß since FUNK-46 (German keyboard language)
+LETTERS = tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ") + ("Ä", "Ö", "Ü", "ß")
+LETTER_TARGETS = LETTERS + tuple("0123456789")
 
 # Built-in behaviour per (layout-translated) key name, for the UI.
 DEFAULT_LABELS = {
@@ -77,8 +78,28 @@ WORD_MAX = 24
 VOLUME_MAX = 200
 
 
+LEGACY_SZ = "SS"   # ß.upper(): where ß content was stored before FUNK-46
+LEGACY_SZ_KEYS = (LEGACY_SZ, "ẞ")   # …and the capital ẞ, which upper() kept
+
+
 class KeymapError(ValueError):
     pass
+
+
+def norm_letter(value):
+    """A letter as sets store it: upper case, but ß stays ß.
+
+    ``"ß".upper()`` is ``"SS"`` in Python and JavaScript, so a plain upper()
+    would turn the ß key into a two-letter key nobody can press (FUNK-46).
+    The capital sharp s (ẞ) is stored as ß too.
+    """
+    if not isinstance(value, str):
+        return value
+    if value in ("ß", "ẞ"):
+        return "ß"
+    upper = value.upper()
+    # "SS" is what ß became before FUNK-46: no key or letter has that name
+    return "ß" if upper == LEGACY_SZ else upper
 
 
 def canonical_mods(mods):
@@ -157,9 +178,7 @@ def validate(action):
     if kind == "none":
         return {"action": "none"}
     if kind == "letter":
-        letter = action.get("letter")
-        if isinstance(letter, str) and letter not in ("ß",):
-            letter = letter.upper()
+        letter = norm_letter(action.get("letter"))
         if letter not in LETTER_TARGETS:
             raise KeymapError("letter must be A-Z, Ä, Ö, Ü, ß or a digit")
         return {"action": "letter", "letter": letter}

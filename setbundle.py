@@ -30,6 +30,8 @@ import threading
 import uuid
 import zipfile
 
+import keymap
+
 FORMAT = "funkeykid.set.v1"
 MANIFEST = "funkeykid-set.json"
 SOUND_EXT = (".mp3", ".wav", ".ogg")
@@ -138,7 +140,7 @@ def clean_set(raw):
     letters = {}
     for raw_letter, cfg in letters_in.items():
         # stored like the server stores them (upper case; ß stays ß), letters only
-        letter = raw_letter if raw_letter == "ß" else (raw_letter.upper() if isinstance(raw_letter, str) else raw_letter)
+        letter = keymap.norm_letter(raw_letter)
         if (not isinstance(letter, str) or not 1 <= len(letter) <= 2 or not letter.isalpha()
                 or not isinstance(cfg, dict)):
             raise BundleError(f"invalid letter {raw_letter!r}")

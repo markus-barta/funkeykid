@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>funkeykid</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='1' y='1' width='30' height='30' rx='4' fill='none' stroke='%23FF6600' stroke-width='3'/><text x='16' y='24' text-anchor='middle' font-family='sans-serif' font-weight='bold' font-size='22' fill='%2300CC00'>F</text></svg>">
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/daisyui@4/dist/full.min.css" rel="stylesheet">
-  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
-  <link href="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/style.css" rel="stylesheet">
+  <!-- UI libraries are vendored and pinned (FUNK-69): no CDN at runtime; see DEVELOPMENT.md -->
+  <link href="/static/vendor/ui/tailwindcss-2.2.19/tailwind.min.css" rel="stylesheet">
+  <link href="/static/vendor/ui/daisyui-4.12.24/full.min.css" rel="stylesheet">
+  <script defer src="/static/vendor/ui/alpinejs-3.17.5/cdn.min.js"></script>
   <style>
     .kbd-key { min-width: 2.5rem; min-height: 2.5rem; cursor: pointer; transition: all 0.1s; }
     /* ── Phone layout (FUNK-68): nothing wider than the screen ── */

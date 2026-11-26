@@ -31,7 +31,7 @@ json.dump({'base_image':os.environ.get('BASE_IMAGE'),'python':sys.version.split(
 open('/app/build-provenance.json','w'),indent=1)"
 
 # App code
-COPY keyboard.py keymap.py profiles.py setbundle.py display.py server.py version.py versioning.py versioning_bundle.py version.json ./
+COPY atomicwrite.py keyboard.py keymap.py profiles.py setbundle.py display.py server.py version.py versioning.py versioning_bundle.py version.json ./
 COPY static/ ./static/
 COPY settings.json /app/defaults/settings.json
 # Source evidence from the build gate (python3 scripts/source_manifest.py). Mandatory:

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+import atomicwrite
 import keymap
 import profiles
 import setbundle
@@ -398,23 +399,40 @@ def _migrate_to_sets():
 
 
 def save_settings():
-    """Write settings.json. Everything is serialized *before* the file is opened.
+    """Write settings.json. Everything is serialized *before* the file is touched.
 
-    An error while serializing then never leaves a truncated file. On hsb1
-    settings.json is a single-file bind mount, so it cannot be replaced by a
-    rename; it is rewritten in place with one write. A lone Unicode surrogate
-    from some request cannot be written as UTF-8: the file then uses ASCII
-    escapes, which json.load reads back identically (FUNK-43 review).
+    A lone Unicode surrogate from some request cannot be written as UTF-8: the
+    file then uses ASCII escapes, which json.load reads back identically
+    (FUNK-43 review). The write itself is crash-safe where the mount allows it
+    (see _write_settings_bytes, FUNK-67).
     """
-    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
-    try:
-        payload = (json.dumps(settings, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-    except UnicodeEncodeError:
-        payload = (json.dumps(settings, indent=2, ensure_ascii=True) + "\n").encode("ascii")
-    with open(SETTINGS_PATH, "wb") as f:
-        f.write(payload)
-        f.flush()
-        os.fsync(f.fileno())
+    with _settings_write_lock:              # the asyncio thread and the keyboard thread both save
+        try:
+            payload = (json.dumps(settings, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        except UnicodeEncodeError:
+            payload = (json.dumps(settings, indent=2, ensure_ascii=True) + "\n").encode("ascii")
+        _write_settings_bytes(payload)
+
+
+_settings_write_lock = threading.RLock()   # serialize + write as one step: the newest snapshot is written last
+_settings_write_mode = None     # atomicwrite.RENAME or IN_PLACE: found on the first save, logged once
+
+
+def _write_settings_bytes(payload):
+    """Replace settings.json with payload, crash-safe where the mount allows it (FUNK-67).
+
+    atomicwrite renames a fsynced temp file over it. On a single-file bind mount
+    (hsb1 before FUNK-67) that is impossible, and it is rewritten in place as
+    before; this process then stays in that mode.
+    """
+    global _settings_write_mode
+    with _settings_write_lock:
+        mode, why = atomicwrite.replace(SETTINGS_PATH, payload, in_place=_settings_write_mode == atomicwrite.IN_PLACE)
+        if mode != _settings_write_mode:
+            how = ("atomically (temp file + rename)" if mode == atomicwrite.RENAME
+                   else f"in place: it cannot be renamed over ({why.strerror if why else 'single-file mount'})")
+            print(f"[settings] settings.json is written {how}", flush=True)
+        _settings_write_mode = mode
 
 
 def get_active_set():
@@ -1323,14 +1341,11 @@ def _settings_file_unchanged(before):
 
 
 def _restore_settings_file(before):
-    """Put settings.json back exactly as it was (in place: it is a single-file bind mount on hsb1)."""
+    """Put settings.json back exactly as it was."""
     if before is None:
         return False
     try:
-        with open(SETTINGS_PATH, "wb") as f:
-            f.write(before)
-            f.flush()
-            os.fsync(f.fileno())
+        _write_settings_bytes(before)
         return True
     except OSError:
         return False
@@ -2906,6 +2921,7 @@ def main():
     os.makedirs(SOUNDS_DIR, exist_ok=True)
     os.makedirs(IMAGES_DIR, exist_ok=True)
     _purge_import_dir_at_start()             # FUNK-43: staged uploads and temp files from before a restart
+    atomicwrite.purge_temp_files(SETTINGS_PATH)   # FUNK-67: a temp file a crash left before its rename
 
     settings = load_settings()
     _load_favorites()

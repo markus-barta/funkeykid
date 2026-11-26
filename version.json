@@ -1,8 +1,8 @@
 {
-  "version": "261126125442.0.0",
+  "version": "261126200209.0.0",
   "version_scheme": "inspr-calver-3",
   "release_channel": "stable",
-  "release_sequence": 12,
+  "release_sequence": 13,
   "migration": {
     "legacy_scheme": "legacy",
     "last_legacy_version": "3.2.0",

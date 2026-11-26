@@ -38,6 +38,7 @@ FUNCTIONS = {
     "nextsound": "Nächster Ton",
     "prevletter": "Buchstabe zurück",
     "nextletter": "Buchstabe vor",
+    "quiz": "Quiz starten/stoppen",
 }
 
 ACTIONS = ("letter", "sound", "imgsound", "func", "none")

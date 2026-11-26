@@ -406,13 +406,15 @@ def save_settings():
     (FUNK-43 review). The write itself is crash-safe where the mount allows it
     (see _write_settings_bytes, FUNK-67).
     """
-    try:
-        payload = (json.dumps(settings, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-    except UnicodeEncodeError:
-        payload = (json.dumps(settings, indent=2, ensure_ascii=True) + "\n").encode("ascii")
-    _write_settings_bytes(payload)
+    with _settings_write_lock:              # the asyncio thread and the keyboard thread both save
+        try:
+            payload = (json.dumps(settings, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+        except UnicodeEncodeError:
+            payload = (json.dumps(settings, indent=2, ensure_ascii=True) + "\n").encode("ascii")
+        _write_settings_bytes(payload)
 
 
+_settings_write_lock = threading.RLock()   # serialize + write as one step: the newest snapshot is written last
 _settings_write_mode = None     # atomicwrite.RENAME or IN_PLACE: found on the first save, logged once
 
 
@@ -424,12 +426,13 @@ def _write_settings_bytes(payload):
     before; this process then stays in that mode.
     """
     global _settings_write_mode
-    mode, why = atomicwrite.replace(SETTINGS_PATH, payload, in_place=_settings_write_mode == atomicwrite.IN_PLACE)
-    if mode != _settings_write_mode:
-        how = ("atomically (temp file + rename)" if mode == atomicwrite.RENAME
-               else f"in place: it cannot be renamed over ({why.strerror if why else 'single-file mount'})")
-        print(f"[settings] settings.json is written {how}", flush=True)
-    _settings_write_mode = mode
+    with _settings_write_lock:
+        mode, why = atomicwrite.replace(SETTINGS_PATH, payload, in_place=_settings_write_mode == atomicwrite.IN_PLACE)
+        if mode != _settings_write_mode:
+            how = ("atomically (temp file + rename)" if mode == atomicwrite.RENAME
+                   else f"in place: it cannot be renamed over ({why.strerror if why else 'single-file mount'})")
+            print(f"[settings] settings.json is written {how}", flush=True)
+        _settings_write_mode = mode
 
 
 def get_active_set():

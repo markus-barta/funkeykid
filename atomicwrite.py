@@ -4,6 +4,11 @@ replace() writes a temp file beside the target, fsyncs it, renames it over
 the target and fsyncs the directory. A crash or power cut then leaves the old
 file or the new one, never a truncated one.
 
+If the directory cannot be fsynced after the rename, replace() raises: the
+new content is in place, but not yet durable, and the caller must not report
+success. Only a file system that does not support a directory fsync at all
+(EINVAL, ENOTSUP) is accepted silently.
+
 A file that is itself a bind mount (a single-file Docker volume) cannot be
 renamed over: Linux answers EBUSY (or EXDEV). replace() then rewrites it in
 place with one write and fsync, and reports that, so the caller can stay in
@@ -82,16 +87,17 @@ def _match_owner(path, fd):
         pass
 
 
+_NO_DIR_FSYNC = {errno.EINVAL, getattr(errno, "ENOTSUP", errno.EINVAL), getattr(errno, "EOPNOTSUPP", errno.EINVAL)}
+
+
 def _fsync_dir(folder):
-    """Make the rename durable (best effort: not every file system allows a directory fsync)."""
-    try:
-        fd = os.open(folder, os.O_RDONLY)
-    except OSError:
-        return
+    """Make the rename durable. Raises on failure, except where directory fsync is unsupported."""
+    fd = os.open(folder, os.O_RDONLY)
     try:
         os.fsync(fd)
-    except OSError:
-        pass
+    except OSError as e:
+        if e.errno not in _NO_DIR_FSYNC:
+            raise
     finally:
         os.close(fd)
 

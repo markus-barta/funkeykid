@@ -88,3 +88,51 @@ def test_purge_removes_only_its_own_temp_files(target):
         open(os.path.join(folder, name), "wb").close()
     assert aw.purge_temp_files(target) == 2
     assert sorted(os.listdir(folder)) == [".import-x.tmp", ".other.tmp", "settings.json", "settings.json.tmp"]
+
+
+# ── review round 1: a rename is only reported once it is durable ─────────────
+
+def test_a_failing_directory_fsync_is_reported(target, monkeypatch):
+    real_fsync = os.fsync
+    calls = []
+
+    def fsync(fd):
+        calls.append(fd)
+        if len(calls) == 2:                                  # 1: the temp file, 2: the directory
+            raise OSError(errno.EIO, "Input/output error")
+        return real_fsync(fd)
+
+    monkeypatch.setattr(aw.os, "fsync", fsync)
+    with pytest.raises(OSError) as e:
+        aw.replace(target, b'{"new": true}\n')
+    assert e.value.errno == errno.EIO
+    assert _leftovers(target) == []
+
+
+def test_a_directory_that_cannot_be_opened_is_reported(target, monkeypatch):
+    real_open = os.open
+
+    def open_(path, flags, *a):
+        if os.path.isdir(path):
+            raise OSError(errno.EMFILE, "Too many open files")
+        return real_open(path, flags, *a)
+
+    monkeypatch.setattr(aw.os, "open", open_)
+    with pytest.raises(OSError) as e:
+        aw.replace(target, b"x")
+    assert e.value.errno == errno.EMFILE
+
+
+@pytest.mark.parametrize("code", [errno.EINVAL, getattr(errno, "ENOTSUP", errno.EINVAL)])
+def test_a_file_system_without_directory_fsync_is_accepted(target, monkeypatch, code):
+    real_fsync = os.fsync
+    calls = []
+
+    def fsync(fd):
+        calls.append(fd)
+        if len(calls) == 2:
+            raise OSError(code, os.strerror(code))
+        return real_fsync(fd)
+
+    monkeypatch.setattr(aw.os, "fsync", fsync)
+    assert aw.replace(target, b"x") == (aw.RENAME, None)

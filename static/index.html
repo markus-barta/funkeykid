@@ -266,6 +266,7 @@
        x-effect="tab; $nextTick(() => $el.querySelector('.tab-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))">
     <button type="button" role="tab" class="tab" :class="tab === 'letters' && 'tab-active'" :aria-selected="tab === 'letters' ? 'true' : 'false'" @click="tab='letters'">Buchstaben</button>
     <button type="button" role="tab" class="tab" :class="tab === 'numbers' && 'tab-active'" :aria-selected="tab === 'numbers' ? 'true' : 'false'" @click="tab='numbers'">Nummern</button>
+    <button type="button" role="tab" class="tab" :class="tab === 'quiz' && 'tab-active'" :aria-selected="tab === 'quiz' ? 'true' : 'false'" @click="tab='quiz'; loadQuiz()">Quiz</button>
     <button type="button" role="tab" class="tab" :class="tab === 'sets' && 'tab-active'" :aria-selected="tab === 'sets' ? 'true' : 'false'" @click="tab='sets'">Sets</button>
     <button type="button" role="tab" class="tab" :class="tab === 'test' && 'tab-active'" :aria-selected="tab === 'test' ? 'true' : 'false'" @click="tab='test'">Tastatur</button>
     <button type="button" role="tab" class="tab" :class="tab === 'settings' && 'tab-active'" :aria-selected="tab === 'settings' ? 'true' : 'false'" @click="tab='settings'">Einstellungen</button>
@@ -900,6 +901,124 @@
         </div>
         <form method="dialog" class="modal-backdrop" @click="editingNumber=null"></form>
       </dialog>
+    </div>
+
+    <!-- ═══ QUIZ TAB (FUNK-39) ═══ -->
+    <div x-show="tab === 'quiz'" x-cloak>
+      <div class="max-w-3xl mx-auto flex flex-col gap-4">
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4 sm:p-6 gap-3">
+            <div class="flex flex-wrap items-center gap-3">
+              <h2 class="card-title">Quiz</h2>
+              <span class="badge" :class="quiz.active ? 'badge-success' : 'badge-outline'" x-text="quiz.active ? 'läuft' : 'bereit'"></span>
+              <div class="flex-1"></div>
+              <button type="button" class="btn btn-primary" x-show="!quiz.active" :disabled="quizBusy || !quizCanStart()" @click="quizStart()">Quiz starten</button>
+              <button type="button" class="btn btn-outline" x-show="quiz.active" :disabled="quizBusy || quiz.phase !== 'asking'" @click="quizRepeat()">Frage wiederholen</button>
+              <button type="button" class="btn btn-error btn-outline" x-show="quiz.active" :disabled="quizBusy" @click="quizStop()">Stoppen</button>
+            </div>
+            <!-- running -->
+            <template x-if="quiz.active && quiz.session">
+              <div class="flex flex-wrap items-center gap-x-6 gap-y-2" aria-live="polite">
+                <div class="text-2xl font-black" x-text="'Frage ' + quiz.session.asked + (quiz.session.questions ? ' von ' + quiz.session.questions : '')"></div>
+                <div class="flex gap-4 text-sm">
+                  <span class="text-success font-bold" x-text="'✓ ' + quiz.session.correct + ' richtig'"></span>
+                  <span class="opacity-70" x-text="quiz.session.wrong + ' Fehlversuche'"></span>
+                </div>
+                <div class="text-sm opacity-60" x-show="quiz.question">
+                  Gesucht: <span class="font-bold" x-text="quiz.question?.letter"></span>
+                  <span x-text="quiz.question?.word ? '(' + quiz.question.word + ')' : ''"></span>
+                  <span x-show="quiz.phase === 'feedback'" x-text="'· Rückmeldung …'"></span>
+                </div>
+              </div>
+            </template>
+            <!-- last result -->
+            <template x-if="!quiz.active && quiz.last">
+              <div class="alert" :class="quiz.last.reason === 'fertig' ? 'alert-success' : ''">
+                <span x-text="quizSummary(quiz.last)"></span>
+              </div>
+            </template>
+            <details class="text-sm opacity-80">
+              <summary class="cursor-pointer select-none">So funktioniert das Quiz</summary>
+              <p class="mt-2">Ein Wort oder Geräusch wird abgespielt, das Kind drückt den passenden Buchstaben. Richtig: ein Jingle, dann der Eintrag des Buchstabens. Falsch: ein leiser Ton und die Frage noch einmal; nach <span x-text="quiz.options.max_tries"></span> Fehlversuchen wird der Buchstabe gezeigt und gespielt. Solange das Quiz läuft, antworten die Buchstabentasten, Enter wiederholt die Frage, die Leertaste stoppt den Ton und die Lautstärke geht; alle anderen Tasten sind still. Nach 5 Minuten ohne Taste endet das Quiz von selbst. Auf der Tastatur kann eine Taste die Funktion »Quiz starten/stoppen« bekommen (Tastatur → Tastenbelegung).</p>
+            </details>
+          </div>
+        </div>
+
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4 sm:p-6 gap-4">
+            <h3 class="font-bold">Einstellungen <span class="font-normal text-sm opacity-60" x-show="quiz.active">(gelten ab dem nächsten Quiz)</span></h3>
+            <div class="flex flex-wrap items-center gap-3">
+              <span class="text-sm font-semibold w-28">Frage</span>
+              <div class="join" role="radiogroup" aria-label="Frage">
+                <template x-for="(label, id) in quiz.options.modes" :key="id">
+                  <button type="button" class="btn btn-sm join-item" role="radio" :aria-checked="quiz.config.mode === id ? 'true' : 'false'"
+                          :class="quiz.config.mode === id ? 'btn-primary' : 'btn-outline'" @click="quizSet({ mode: id })" x-text="label"></button>
+                </template>
+              </div>
+            </div>
+            <label class="flex flex-wrap items-center gap-3">
+              <span class="text-sm font-semibold w-28">Fragen pro Quiz</span>
+              <select class="select select-bordered select-sm" @change="quizSet({ questions: Number($event.target.value) })">
+                <template x-for="n in quiz.options.questions" :key="n">
+                  <option :value="n" :selected="quiz.config.questions === n" x-text="n ? n : 'endlos'"></option>
+                </template>
+              </select>
+            </label>
+            <label class="flex flex-wrap items-center gap-3">
+              <span class="text-sm font-semibold w-28">Erinnerung</span>
+              <select class="select select-bordered select-sm" @change="quizSet({ remind_seconds: Number($event.target.value) })">
+                <template x-for="n in quiz.options.remind_seconds" :key="n">
+                  <option :value="n" :selected="quiz.config.remind_seconds === n" x-text="n ? 'nach ' + n + ' s ohne Antwort wiederholen' : 'aus'"></option>
+                </template>
+              </select>
+            </label>
+            <label class="flex items-center gap-3 cursor-pointer">
+              <span class="text-sm font-semibold w-28">Hilfe</span>
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" :checked="quiz.config.hint_image" @change="quizSet({ hint_image: $event.target.checked })">
+              <span class="text-sm">Bild auf dem Pixoo zeigen</span>
+            </label>
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="text-sm font-semibold w-28">Buchstaben</span>
+                <span class="text-sm opacity-70" x-text="quizLettersLabel()"></span>
+                <button type="button" class="btn btn-xs btn-ghost" x-show="quiz.config.letters.length" @click="quizSet({ letters: [] })">alle</button>
+              </div>
+              <div class="flex flex-wrap gap-1">
+                <template x-for="l in quiz.alphabet" :key="l">
+                  <button type="button" class="btn btn-sm btn-square" :aria-pressed="quiz.config.letters.includes(l) ? 'true' : 'false'"
+                          :class="quiz.config.letters.includes(l) ? 'btn-primary' : (quiz.available[l] ? 'btn-outline' : 'btn-ghost opacity-30')"
+                          :disabled="!quiz.available[l] && !quiz.config.letters.includes(l)"
+                          :title="quiz.available[l] ? quiz.available[l] + (quiz.available[l] === 1 ? ' Eintrag' : ' Einträge') : 'kein Wort und kein Geräusch'"
+                          @click="quizToggleLetter(l)" x-text="l"></button>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4 sm:p-6 gap-2">
+            <h3 class="font-bold">Verlauf</h3>
+            <p class="text-sm opacity-60" x-show="!quiz.history.length">Noch kein Quiz gespielt.</p>
+            <div class="overflow-x-auto" x-show="quiz.history.length">
+              <table class="table table-sm">
+                <thead><tr><th>Wann</th><th>Frage</th><th>Richtig</th><th>Schwer</th><th>Ende</th></tr></thead>
+                <tbody>
+                  <template x-for="(h, i) in quiz.history" :key="i + '-' + h.started">
+                    <tr>
+                      <td class="whitespace-nowrap" x-text="quizWhen(h)"></td>
+                      <td x-text="quiz.options.modes[h.mode] || h.mode"></td>
+                      <td class="whitespace-nowrap" x-text="h.correct + ' von ' + h.answered + ' (' + h.first_try + ' beim 1. Mal)'"></td>
+                      <td x-text="(h.hard || []).join(' ') || '–'"></td>
+                      <td class="whitespace-nowrap" x-text="quizReason(h.reason)"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ═══ SETS TAB ═══ -->
@@ -1962,6 +2081,13 @@ function funkeykid() {
     integrationsLoading: false,
     favorites: [],
 
+    // ── Quiz (FUNK-39): one queue for every quiz request; state installs only from a newer rev ──
+    quiz: { boot: '', rev: -1, active: false, phase: 'idle', session: null, question: null, last: null,
+            config: { mode: 'word', questions: 10, letters: [], hint_image: true, remind_seconds: 0 },
+            history: [], alphabet: [], available: {},
+            options: { modes: {}, questions: [], remind_seconds: [], max_tries: 2 } },
+    quizBusy: false, _quizQ: Promise.resolve(), _quizEdits: 0,
+
     // Test state
     pressedKey: null,
     lastTestLetter: null, lastTestWord: null, lastTestImage: null,
@@ -1984,6 +2110,93 @@ function funkeykid() {
       const run = this._kbQ.then(fn).catch((err) => console.warn('[keyboard]', err));
       this._kbQ = run;
       return run;
+    },
+    quizQueue(fn) {
+      const run = this._quizQ.then(fn).catch((err) => console.warn('[quiz]', err));
+      this._quizQ = run;
+      return run;
+    },
+    // A snapshot (SSE) or payload (API). State only if newer: a higher rev of the same server
+    // run, or any rev of a new run (boot changes on restart). Config only while no local edit
+    // is waiting to be saved, so a late answer never undoes a newer click.
+    _quizInstall(d) {
+      if (!d || typeof d !== 'object') return false;
+      const wasActive = this.quiz.active;
+      if (typeof d.rev === 'number' && (d.boot !== this.quiz.boot || d.rev >= this.quiz.rev)) {
+        for (const k of ['boot', 'rev', 'phase', 'session', 'question', 'last']) this.quiz[k] = d[k] ?? null;
+        this.quiz.active = !!d.active;
+      }
+      for (const k of ['history', 'alphabet', 'available', 'options']) if (d[k] !== undefined) this.quiz[k] = d[k];
+      if (d.config !== undefined && this._quizEdits === 0) this.quiz.config = d.config;
+      return wasActive && !this.quiz.active;
+    },
+    async _quizRequest(method, url, body) {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' },
+                                     body: body === undefined ? undefined : JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      this._quizInstall(data);
+      if (!res.ok) this.showToast('Quiz: ' + (data.error || res.status), 'error');
+      return res.ok;
+    },
+    loadQuiz() { return this.quizQueue(() => this._quizRequest('GET', '/api/quiz')); },
+    quizSet(patch) {
+      Object.assign(this.quiz.config, patch);              // shown at once
+      this._quizEdits++;
+      return this.quizQueue(async () => {
+        // the config as it is when this save runs: a later click is never lost
+        const config = JSON.parse(JSON.stringify(this.quiz.config));
+        this._quizEdits--;
+        const ok = await this._quizRequest('PUT', '/api/quiz/config', config);
+        if (!ok && this._quizEdits === 0) await this._quizRequest('GET', '/api/quiz');   // back to what is saved
+      });
+    },
+    quizToggleLetter(l) {
+      const sel = new Set(this.quiz.config.letters);
+      sel.has(l) ? sel.delete(l) : sel.add(l);
+      return this.quizSet({ letters: this.quiz.alphabet.filter(x => sel.has(x)) });
+    },
+    _quizRun(url, body) {
+      this.quizBusy = true;
+      return this.quizQueue(async () => {
+        try { await this._quizRequest('POST', url, body); } finally { this.quizBusy = false; }
+      });
+    },
+    quizStart() {
+      this.quizBusy = true;
+      return this.quizQueue(async () => {
+        // the settings on screen when the start runs (saved with it)
+        try { await this._quizRequest('POST', '/api/quiz/start', { config: JSON.parse(JSON.stringify(this.quiz.config)) }); }
+        finally { this.quizBusy = false; }
+      });
+    },
+    quizStop() { return this._quizRun('/api/quiz/stop'); },
+    quizRepeat() { return this._quizRun('/api/quiz/repeat'); },
+    _quizEvent(snap) {
+      if (this._quizInstall(snap)) this.loadQuiz();        // a session ended: fetch the history
+    },
+    quizCanStart() {
+      const chosen = this.quiz.config.letters;
+      return Object.keys(this.quiz.available).some(l => !chosen.length || chosen.includes(l));
+    },
+    quizLettersLabel() {
+      const n = Object.keys(this.quiz.available).length;
+      const chosen = this.quiz.config.letters;
+      if (!chosen.length) return 'alle mit Wort oder Geräusch (' + n + ')';
+      return chosen.length + ' gewählt: ' + chosen.join(' ');
+    },
+    quizSummary(h) {
+      if (!h) return '';
+      const head = h.answered ? h.correct + ' von ' + h.answered + ' richtig, ' + h.first_try + ' beim ersten Mal' : 'Keine Frage beantwortet';
+      const hard = (h.hard || []).length ? ' · schwer: ' + h.hard.join(' ') : '';
+      return head + hard + ' · ' + this.quizReason(h.reason);
+    },
+    quizReason(r) {
+      return ({ fertig: 'fertig', gestoppt: 'gestoppt', inaktiv: 'nach 5 min ohne Taste beendet',
+                'keine Buchstaben': 'keine Buchstaben mehr' })[r] || r || '';
+    },
+    quizWhen(h) {
+      try { return new Date(h.started * 1000).toLocaleString('de-AT', { dateStyle: 'short', timeStyle: 'short' }); }
+      catch { return ''; }
     },
     loadKeymap() {
       if (this._kmLoadQueued) return this._kbQ;        // one queued refresh is enough
@@ -2389,6 +2602,7 @@ function funkeykid() {
       await this.refresh();
       try { this.favorites = await fetch('/api/favorites').then(r => r.json()); } catch {}
       await this.kbReload();                 // key map + keyboard drawing (FUNK-62/63)
+      this.loadQuiz();                       // FUNK-39: a quiz may already run
       this.connectSSE();
       this.loadDiagnostics();  // fills the keyboard picker in Settings
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
@@ -2399,6 +2613,8 @@ function funkeykid() {
 
     connectSSE() {
       const es = new EventSource('/api/events');
+      // every (re)connect: quiz events may have been missed, or the server restarted (FUNK-39)
+      es.onopen = () => this.loadQuiz();
       es.addEventListener('status', (e) => {
         const s = JSON.parse(e.data);
         Object.assign(this.hw, s);
@@ -2449,6 +2665,7 @@ function funkeykid() {
         if (d.active_set === this.activeSetId) return;
         await this.refresh();
         this.loadKeymap();                     // built-in labels follow the set's content
+        this.loadQuiz();                       // the quiz asks the active set's letters (FUNK-39)
         const editing = (this.editingLetter || this.editingNumber) && this.editSetId && this.editSetId !== d.active_set;
         this.showToast(editing
           ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[this.editSetId]?.name || this.editSetId}".`
@@ -2543,6 +2760,7 @@ function funkeykid() {
       es.addEventListener('favorites', (e) => {
         this.favorites = JSON.parse(e.data).favorites || [];
       });
+      es.addEventListener('quiz', (e) => this._quizEvent(JSON.parse(e.data)));
       es.onerror = () => {
         // SSE reconnects automatically, just update status
         setTimeout(() => this.pollStatus(), 2000);
@@ -2954,6 +3172,7 @@ function funkeykid() {
     async activateSet() {
       await fetch(`/api/sets/${this.activeSetId}/activate`, { method: 'POST' });
       await this.refresh();
+      this.loadQuiz();
       this.showToast(`Set "${this.sets[this.activeSetId]?.name}" aktiviert`);
     },
     async createSet() {

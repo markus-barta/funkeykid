@@ -180,9 +180,9 @@ class Display:
         prefix = self._prefix if self._prefix is not None else self._mqtt_identity()[4]
         return f"{prefix}/{suffix}"
 
-    def publish_letter(self, letter, word, image=None):
-        """Publish letter press to display(s)."""
-        color = random.choice(COLORS)
+    def publish_letter(self, letter, word, image=None, color=None):
+        """Publish letter press to display(s). ``color`` fixes the text colour (quiz, FUNK-39)."""
+        color = color or random.choice(COLORS)
         mode = self.settings.get("display_mode", "mqtt")
 
         if mode in ("mqtt", "both"):

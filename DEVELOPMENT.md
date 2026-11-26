@@ -406,11 +406,26 @@ GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
 |-----|---------|
 | Buchstaben | Letter cards (A–Z, plus Ä Ö Ü ß for German), click to edit entries |
 | Nummern | Digit cards 0–9: word, tracks, counting pictures |
+| Quiz | Start/stop a quiz, its settings, the last sessions (FUNK-39) |
 | Sets | Create, duplicate, rename, delete, activate, export/import sets |
 | Tastatur | Key map on the drawn keyboard, keyboard profiles, virtual QWERTZ keyboard for testing |
 | Einstellungen | Keyboard language, volume, display mode, random sounds, AI prompts |
 | Dateien | Upload/preview sounds and images, archive |
 | KI & Dienste | AI log and integration status |
+
+### Quiz (FUNK-39)
+
+The box plays a word (the entry's DE track) or a sound (FX), or either at random ("Gemischt"). The child presses the matching letter.
+- **Right:** the "right" jingle, then the letter's entry (its tracks in the set's order); the Pixoo shows the letter in green.
+- **Wrong:** a soft "wrong" tone and the question again. After `MAX_TRIES` (2) wrong tries the letter is revealed (orange on the Pixoo) and played; then the quiz moves on.
+- **Questions:** a random letter of the active set with an enabled entry that has a word or sound file, never the same letter twice in a row. Optionally from a chosen subset; only letters of the keyboard language (Ä Ö Ü ß on German keyboards). The Pixoo shows "?", with the entry's picture as a hint if "Hilfe" is on.
+- **Settings** (`settings["quiz"]`): question type, number of questions (5/10/20/endless), letters, hint picture, and a reminder that repeats the question after 10/20/30 s without an answer (at most twice per question; a hard time limit would only punish toddlers).
+- **End:** after its questions, on Stop, or after 5 minutes without a key press. A finished session with at least one answer is recorded in `settings["quiz_history"]` (last 20): counts, letters that needed retries ("schwer"), how it ended.
+- **Keys while a quiz runs:** letter keys and key-map letter actions answer, Enter (and the "replay" function) repeats the question, Space stops the sound, and the volume keys and functions work. Every other key stays silent, so nothing plays over the question. The key-map function `quiz` ("Quiz starten/stoppen") starts the quiz with the saved settings, or stops it. Test-keyboard presses count like real ones.
+
+The game logic is `quiz.py`, a pure state machine tested in `tests/test_quiz.py`. Playback, display, SSE (`quiz` event with a growing `rev`), history and timers are injected by `server.py`. Every phase change bumps a token, and playback-end and timer callbacks only act on the token they were made for, so a late callback never touches a newer question. For that, `play_sound_sequence` takes `on_done`, called once however the sequence ended, and stops by generation: a sequence that was cut short never plays its next track. The jingles are synthesized WAVs (`quiz.jingle_wav`), written to the temp dir at start, so the quiz needs no sound files.
+
+API: `GET /api/quiz`, `PUT /api/quiz/config`, `POST /api/quiz/start` (optional `{"config": …}`, saved), `POST /api/quiz/stop`, `POST /api/quiz/repeat`. Pixoo reward animations are FUNK-41; it hooks into `_quiz_show`.
 
 ### UI libraries (FUNK-69)
 

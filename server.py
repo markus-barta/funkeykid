@@ -6,6 +6,7 @@ import subprocess
 import random
 import shutil
 import re
+import tempfile
 import threading
 import time
 import uuid
@@ -17,6 +18,7 @@ from aiohttp import web
 import atomicwrite
 import keymap
 import profiles
+import quiz
 import setbundle
 from keyboard import KeyboardListener, is_battery_low
 from display import Display, HEARTBEAT_SECONDS
@@ -569,13 +571,21 @@ def _navigate_letter(delta):
             return
 
 
-_play_seq_abort = False
+# Every stop and every new sequence bumps the generation: a sequence plays only while its
+# generation is current. (A shared abort flag let a cut-short sequence play its next track
+# once a newer sequence had reset the flag.) FUNK-39
+_play_gen = 0
+_play_lock = threading.Lock()
 
 
 def stop_all_sounds():
-    global active_processes, _play_seq_abort
-    _play_seq_abort = True
-    for proc in active_processes[:]:
+    """Stop every sound. Returns the new generation: a sequence started right after owns it."""
+    global _play_gen
+    with _play_lock:
+        _play_gen += 1
+        gen = _play_gen
+        procs = active_processes[:]
+    for proc in procs:
         if proc.poll() is None:
             try:
                 proc.terminate()
@@ -585,29 +595,34 @@ def stop_all_sounds():
             active_processes.remove(proc)
         except ValueError:
             pass
+    return gen
 
 
-def play_sound_sequence(paths, gap_ms=120):
-    """Play sound files back-to-back in a daemon thread. Aborts on stop_all_sounds.
+def play_sound_sequence(paths, gap_ms=120, on_done=None):
+    """Play sound files back-to-back in a daemon thread. Stops when a newer sound starts.
 
     `paths` accepts either raw path strings (uses global volume) or
     (path, per_track_volume_pct) tuples — the per-track pct multiplies the
     global volume so users can trim quiet/loud clips individually.
 
     `gap_ms` is a small silence inserted between tracks so FX doesn't step on TTS.
+
+    `on_done()` (FUNK-39) is called once when the sequence has ended, however it
+    ended: played through, failed, or cut short by stop_all_sounds or a newer sound.
     """
-    global _play_seq_abort
-    stop_all_sounds()
-    if not paths:
-        return
+    # the generation comes with the stop, atomically: two sequences started at once never share one
+    gen = stop_all_sounds()
     # Normalize to list of (path, vol_pct) tuples
     norm = []
-    for p in paths:
+    for p in paths or ():
         if isinstance(p, (tuple, list)):
             norm.append((p[0], int(p[1]) if len(p) > 1 else 100))
         else:
             norm.append((p, 100))
-    _play_seq_abort = False
+    if not norm:
+        if on_done:
+            threading.Thread(target=on_done, daemon=True).start()
+        return
     env = os.environ.copy()
     try:
         subprocess.run(
@@ -618,32 +633,44 @@ def play_sound_sequence(paths, gap_ms=120):
         pass
 
     def _runner(file_list):
-        global _play_seq_abort
-        for i, (p, vol_pct) in enumerate(file_list):
-            if _play_seq_abort:
-                return
-            # global × per-track scaling. paplay --volume units: 65536 = 100%.
-            # Go up to 200% per track (131072); paplay clamps safely.
-            pa_vol = int(current_volume / 100 * vol_pct / 100 * 65536)
-            try:
-                proc = subprocess.Popen(
-                    ["paplay", f"--volume={pa_vol}", str(p)],
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    env=env,
-                )
-                active_processes.append(proc)
+        try:
+            for i, (p, vol_pct) in enumerate(file_list):
+                if _play_gen != gen:
+                    return
+                # global × per-track scaling. paplay --volume units: 65536 = 100%.
+                # Go up to 200% per track (131072); paplay clamps safely.
+                pa_vol = int(current_volume / 100 * vol_pct / 100 * 65536)
+                try:
+                    proc = subprocess.Popen(
+                        ["paplay", f"--volume={pa_vol}", str(p)],
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        env=env,
+                    )
+                except Exception as e:
+                    print(f"[sound] sequence error on {p}: {e}", flush=True)
+                    return
+                with _play_lock:
+                    current = _play_gen == gen
+                    if current:
+                        active_processes.append(proc)
+                if not current:          # stopped between start and registration
+                    proc.terminate()
+                    return
                 proc.wait()
                 try:
                     active_processes.remove(proc)
                 except ValueError:
                     pass
-            except Exception as e:
-                print(f"[sound] sequence error on {p}: {e}", flush=True)
-                return
-            if _play_seq_abort:
-                return
-            if i < len(file_list) - 1 and gap_ms > 0:
-                time.sleep(gap_ms / 1000.0)
+                if _play_gen != gen:
+                    return
+                if i < len(file_list) - 1 and gap_ms > 0:
+                    time.sleep(gap_ms / 1000.0)
+        finally:
+            if on_done:
+                try:
+                    on_done()
+                except Exception as e:
+                    print(f"[sound] on_done error: {e}", flush=True)
 
     threading.Thread(target=_runner, args=(norm,), daemon=True).start()
 
@@ -867,6 +894,9 @@ def handle_key(key_name, raw_key=None, mods=(), virtual=False):
         "default": keymap.default_label(key_name, has_content), "unassigned": unassigned,
         "virtual": virtual, "timestamp": time.time(),
     })
+    if quiz_engine.active:              # FUNK-39: the quiz owns the keyboard while it runs
+        _quiz_key(key_name, action)
+        return
     if action is not None:
         _run_keymap_action(matched, action)
         return
@@ -1021,6 +1051,7 @@ _KEYMAP_FUNCS = {
     "nextsound": lambda: _navigate_flat(+1),
     "prevletter": lambda: _navigate_letter(-1),
     "nextletter": lambda: _navigate_letter(+1),
+    "quiz": lambda: _quiz_toggle(),
 }
 
 
@@ -1048,6 +1079,155 @@ def _run_keymap_action(kid, action):
                                    "image": image, "entry_index": 0, "timestamp": time.time()})
         if display and kind == "imgsound":
             display.publish_letter("", word, image)
+
+
+# ── Quiz (FUNK-39) ───────────────────────────────────────────────────────────
+# The game logic lives in quiz.py (a pure state machine); this wires it to the
+# active set, the speakers, the Pixoo, SSE and settings.json.
+
+QUIZ_SOUNDS_DIR = os.path.join(tempfile.gettempdir(), "funkeykid-quiz")
+QUIZ_COLORS = {"question": "#FFFFFF", "right": "#00CC44", "revealed": "#FF9900", "done": "#FFCC00"}
+# built-in keys that keep a role during the quiz (layout-translated names → function)
+QUIZ_BUILTIN_KEYS = {"ENTER": "replay", "SPACE": "stop", "EQUAL": "volup", "KPPLUS": "volup",
+                     "MINUS": "voldown", "KPMINUS": "voldown"}
+
+
+def _write_quiz_jingles():
+    """The quiz's built-in jingles as WAV files (synthesized, so no assets are needed)."""
+    os.makedirs(QUIZ_SOUNDS_DIR, exist_ok=True)
+    for name in quiz.JINGLES:
+        path = os.path.join(QUIZ_SOUNDS_DIR, f"{name}.wav")
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "wb") as f:
+            f.write(quiz.jingle_wav(name))
+        os.replace(tmp, path)
+
+
+def _quiz_alphabet():
+    """The letters a quiz may ask: A–Z, and Ä Ö Ü ß on a German keyboard."""
+    return keymap.LETTERS if _language() == "de" else tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+def _quiz_clip(tracks, kind):
+    t = tracks.get(kind)
+    if not isinstance(t, dict) or not t.get("enabled", True) or not t.get("file"):
+        return None
+    path = os.path.join(SOUNDS_DIR, t["file"])
+    if not os.path.isfile(path):
+        return None
+    try:
+        vol = max(0, min(200, int(t.get("volume", 100))))
+    except (TypeError, ValueError):
+        vol = 100
+    return (path, vol)
+
+
+def _quiz_entry(e):
+    _normalize_letter_entry(e)
+    tracks = e.get("tracks") or {}
+    clips = {"word": _quiz_clip(tracks, "DE"), "sound": _quiz_clip(tracks, "FX")}
+    files = _collect_playable_files(e)
+    if not (clips["word"] or clips["sound"]) or not files:
+        return None
+    return {"word": e.get("word", ""), "image": e.get("image", ""), "clips": clips, "files": files}
+
+
+def _quiz_pool(letters):
+    """{letter: [entry]} of the active set: enabled entries with a word or sound file."""
+    allowed = set(letters or ())
+    pool = {}
+    for letter in _quiz_alphabet():
+        if allowed and letter not in allowed:
+            continue
+        entries = [x for x in (_quiz_entry(e) for e in get_enabled_entries(letter)) if x]
+        if entries:
+            pool[letter] = entries
+    return pool
+
+
+def _quiz_play(clips, on_done):
+    paths = [(os.path.join(QUIZ_SOUNDS_DIR, f"{c}.wav"), 100) if isinstance(c, str) else c for c in clips]
+    play_sound_sequence(paths, on_done=on_done)
+
+
+def _quiz_show(kind, letter, word, image):
+    # FUNK-41 adds the Pixoo reward animation here (kind == "right" / "done")
+    print(f"[quiz] {kind}: {letter} {word}".rstrip(), flush=True)
+    if display:
+        try:
+            display.publish_letter(letter, word, image or None, color=QUIZ_COLORS[kind])
+        except Exception as e:
+            print(f"[quiz] display error: {e}", flush=True)
+
+
+def _quiz_record(summary):
+    try:
+        history = settings.get("quiz_history")
+        settings["quiz_history"] = ([summary] + (history if isinstance(history, list) else []))[:quiz.HISTORY_MAX]
+        save_settings()
+    except Exception as e:      # the session is over either way
+        print(f"[quiz] history not saved: {e}", flush=True)
+
+
+def _quiz_schedule(seconds, fn, *args):
+    t = threading.Timer(seconds, fn, args)
+    t.daemon = True
+    t.start()
+    return t
+
+
+quiz_engine = quiz.Quiz(pool=_quiz_pool, play=_quiz_play, show=_quiz_show,
+                        broadcast=lambda snap: sse_broadcast("quiz", snap),
+                        record=_quiz_record, schedule=_quiz_schedule)
+
+
+def _quiz_config():
+    """The saved quiz settings, completed with defaults."""
+    try:
+        return quiz.validate_config(settings.get("quiz"), keymap.LETTERS)
+    except quiz.QuizError:
+        return dict(quiz.DEFAULT_CONFIG)
+
+
+def _quiz_toggle():
+    """Key-map function "quiz": start with the saved settings, or stop."""
+    if quiz_engine.active:
+        quiz_engine.stop()
+        return
+    try:
+        quiz_engine.start(_quiz_config())
+    except quiz.QuizError as e:
+        print(f"[quiz] not started: {e}", flush=True)
+
+
+def _quiz_key(key_name, action):
+    """A key press while the quiz runs: letters answer; Enter repeats, Space stops the
+    sound, volume keys work; every other key stays silent (no noise over the question)."""
+    quiz_engine.touch()
+    kind = (action or {}).get("action")
+    letter = None
+    if kind == "letter":
+        letter = action.get("letter")
+    elif action is None and key_name in keymap.LETTERS:
+        letter = key_name
+    if letter is not None:
+        if letter in keymap.LETTERS:
+            print(f"[quiz] answer {letter}: {quiz_engine.answer(letter)}", flush=True)
+        return
+    if kind == "func":
+        func = action.get("func")
+    elif action is None:
+        func = QUIZ_BUILTIN_KEYS.get(key_name)
+    else:
+        func = None                     # sound, picture or "none" keys: silent during the quiz
+    if func == "replay":
+        quiz_engine.repeat()
+    elif func == "stop":
+        stop_all_sounds()
+    elif func == "quiz":
+        quiz_engine.stop()
+    elif func in ("volup", "voldown", "mute"):
+        _KEYMAP_FUNCS[func]()
 
 
 def _toggle_favorite():
@@ -1866,6 +2046,73 @@ def _raw_for_key(key_name):
         if key == key_name and not raw.startswith("KP"):
             return raw
     return key_name
+
+
+# ── Quiz API (FUNK-39) ───────────────────────────────────────────────────────
+
+def _quiz_payload():
+    pool = _quiz_pool([])
+    history = settings.get("quiz_history")
+    return {
+        **quiz_engine.snapshot(),
+        "config": _quiz_config(),
+        "history": history[:quiz.HISTORY_MAX] if isinstance(history, list) else [],
+        "alphabet": list(_quiz_alphabet()),
+        "available": {letter: len(entries) for letter, entries in pool.items()},
+        "options": {"modes": quiz.MODES, "questions": list(quiz.QUESTION_COUNTS),
+                    "remind_seconds": list(quiz.REMIND_CHOICES), "max_tries": quiz.MAX_TRIES},
+    }
+
+
+async def _quiz_body(request):
+    if not request.can_read_body:
+        return {}
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise quiz.QuizError("body must be an object")
+    return data
+
+
+async def api_quiz_get(request):
+    return web.json_response(_quiz_payload())
+
+
+async def api_quiz_config(request):
+    try:
+        cfg = quiz.validate_config(await _quiz_body(request), keymap.LETTERS)
+    except (quiz.QuizError, ValueError) as e:
+        return web.json_response({"error": str(e)}, status=400)
+    settings["quiz"] = cfg
+    save_settings()
+    return web.json_response(_quiz_payload())
+
+
+async def api_quiz_start(request):
+    """Start with the settings sent along (they are saved), else the saved ones."""
+    try:
+        body = await _quiz_body(request)
+        cfg = quiz.validate_config(body["config"], keymap.LETTERS) if "config" in body else _quiz_config()
+    except (quiz.QuizError, ValueError) as e:
+        return web.json_response({"error": str(e)}, status=400)
+    if "config" in body:
+        settings["quiz"] = cfg
+        save_settings()
+    try:
+        # playback starts processes (pactl): off the event loop
+        await asyncio.get_running_loop().run_in_executor(None, quiz_engine.start, cfg)
+    except quiz.QuizError as e:
+        return web.json_response({**_quiz_payload(), "error": str(e)}, status=409)
+    return web.json_response(_quiz_payload())
+
+
+async def api_quiz_stop(request):
+    await asyncio.get_running_loop().run_in_executor(None, quiz_engine.stop)
+    return web.json_response(_quiz_payload())
+
+
+async def api_quiz_repeat(request):
+    await asyncio.get_running_loop().run_in_executor(None, quiz_engine.repeat)
+    return web.json_response(_quiz_payload())
 
 
 # ── Key map API (FUNK-62) ────────────────────────────────────────────────────
@@ -3010,6 +3257,11 @@ def create_app():
     app.router.add_get("/api/keymap", api_get_keymap)
     app.router.add_put("/api/keymap/{key_id}", api_put_keymap)
     app.router.add_delete("/api/keymap/{key_id}", api_delete_keymap)
+    app.router.add_get("/api/quiz", api_quiz_get)
+    app.router.add_put("/api/quiz/config", api_quiz_config)
+    app.router.add_post("/api/quiz/start", api_quiz_start)
+    app.router.add_post("/api/quiz/stop", api_quiz_stop)
+    app.router.add_post("/api/quiz/repeat", api_quiz_repeat)
     app.router.add_post("/api/press/{key_id}", api_press)
     app.router.add_get("/api/keyboards", api_get_keyboards)
     app.router.add_post("/api/keyboards/import", api_import_keyboard)
@@ -3054,6 +3306,10 @@ def main():
     os.makedirs(SOUNDS_DIR, exist_ok=True)
     os.makedirs(IMAGES_DIR, exist_ok=True)
     _purge_import_dir_at_start()             # FUNK-43: staged uploads and temp files from before a restart
+    try:
+        _write_quiz_jingles()                # FUNK-39
+    except OSError as e:
+        print(f"[quiz] jingles not written: {e}", flush=True)
     atomicwrite.purge_temp_files(SETTINGS_PATH)   # FUNK-67: a temp file a crash left before its rename
 
     settings = load_settings()

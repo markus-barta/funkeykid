@@ -95,8 +95,8 @@ The options are `enable` (off: hsb1 uses Docker), `keyboardName`, `hardwareIsola
 | `~/docker/mounts/funkeykid/ai-generated/sounds/` | AI-generated sounds (preserved) | ✅ |
 | `~/docker/mounts/funkeykid/ai-generated/images-original/` | Full-res AI images (512×512) | ✅ |
 | `~/docker/mounts/funkeykid/ai-generated/images-resized/` | Resized AI images (64×64) | ✅ |
-| `~/docker/mounts/funkeykid/archive/sounds/` | Archived/unused sounds | ✅ only with the `/data` directory mount (FUNK-67); with single mounts, archived files stay inside the container and are lost on recreate |
-| `~/docker/mounts/funkeykid/archive/images/` | Archived/unused images | ✅ same as above |
+| `~/docker/mounts/funkeykid/archive/sounds/` | Archived/unused sounds | ✅ since FUNK-67; `/data` is one directory mount. Before that, archived files stayed in the container and were lost on recreate |
+| `~/docker/mounts/funkeykid/archive/images/` | Archived/unused images | ✅ since FUNK-67 |
 | `~/docker/mounts/funkeykid/backup-v1.0/` | v1.0 backup (sounds + images + settings) | ✅ |
 | `/run/agenix/hsb1-funkeykid-api-env` | API keys (ElevenLabs + OpenRouter), agenix from nixcfg `secrets/` | ✅ (in nixcfg) |
 | `/run/agenix/hsb1-smarthome-env` | MQTT credentials, agenix from nixcfg `secrets/` | ✅ (in nixcfg) |
@@ -444,7 +444,7 @@ Volume changes from the physical keyboard (+/- keys) are also persisted to setti
 1. it writes `.settings.json.<random>.tmp` beside the file, with the old file's owner and mode, and fsyncs it;
 2. it renames the temp file over `settings.json` and fsyncs the directory.
 
-A crash or power cut then leaves the old file or the new one, never a truncated one. A single-file bind mount cannot be renamed over (Linux answers `EBUSY`). In that case the file is rewritten in place with one write and fsync, and the process stays in that mode. The log says once which mode is in use: `[settings] settings.json is written atomically (temp file + rename)` or `… in place: …`. Temp files a crash left behind are removed at startup. The atomic mode needs the whole data folder mounted as `/data` (see DEPLOY.md).
+A crash or power cut then leaves the old file or the new one, never a truncated one. A single-file bind mount cannot be renamed over (Linux answers `EBUSY`). In that case the file is rewritten in place with one write and fsync, and the process stays in that mode. The log says once which mode is in use: `[settings] settings.json is written atomically (temp file + rename)` or `… in place: …`. Temp files a crash left behind are removed at startup. The atomic mode needs the whole data folder mounted as `/data`, which hsb1 has done since FUNK-67 / OPS-701 (see DEPLOY.md).
 
 ### Footer
 

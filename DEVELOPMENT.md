@@ -404,11 +404,17 @@ GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
 
 | Tab | Purpose |
 |-----|---------|
-| Buchstaben | 26 letter cards, click to edit entries |
-| Sets | Create, duplicate, rename, delete, activate sets |
-| Tastatur | Virtual QWERTZ keyboard for testing |
-| Einstellungen | Keyboard language, volume, display mode, random sounds |
-| Dateien | Upload/preview sounds and images |
+| Buchstaben | Letter cards (A–Z, plus Ä Ö Ü ß for German), click to edit entries |
+| Nummern | Digit cards 0–9: word, tracks, counting pictures |
+| Sets | Create, duplicate, rename, delete, activate, export/import sets |
+| Tastatur | Key map on the drawn keyboard, keyboard profiles, virtual QWERTZ keyboard for testing |
+| Einstellungen | Keyboard language, volume, display mode, random sounds, AI prompts |
+| Dateien | Upload/preview sounds and images, archive |
+| KI & Dienste | AI log and integration status |
+
+### Phone layout (FUNK-68)
+
+The page fits a 360 px screen: nothing is wider than the viewport (checked headless at 360, 390 and 768 px on every tab and with the editors open). The navbar wraps, the status group goes below the set selector. The tab bar is a row of `role="tab"` buttons that scrolls sideways (`.fk-tabs`): it is centred when it fits, starts at the first tab when it does not, and scrolls the active tab into view. The drawn keyboard and the test keyboard (`.fk-testkb`) scroll inside their own boxes. Keyboard hints (`Esc`) are hidden below 640 px (`.kbd.fk-wide-only`: DaisyUI's `.kbd` display beats Tailwind's `hidden`). Don't hide overflow on `html`/`body`: it would clip content instead of fixing it.
 
 ### Real-Time Updates (SSE)
 

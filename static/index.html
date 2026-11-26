@@ -11,6 +11,17 @@
   <link href="https://cdn.jsdelivr.net/npm/heroicons@2.1.5/24/outline/style.css" rel="stylesheet">
   <style>
     .kbd-key { min-width: 2.5rem; min-height: 2.5rem; cursor: pointer; transition: all 0.1s; }
+    /* ── Phone layout (FUNK-68): nothing wider than the screen ── */
+    .fk-navbar { flex-wrap: wrap; row-gap: 0.25rem; }
+    .fk-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; justify-content: flex-start; }
+    .fk-tabs::-webkit-scrollbar { display: none; }
+    .fk-tabs > .tab { flex: none; white-space: nowrap; }
+    .fk-tabs > .tab:first-child { margin-left: auto; }   /* centred when it fits, scrolls from the first tab when not */
+    .fk-tabs > .tab:last-child { margin-right: auto; }
+    .fk-testkb { max-width: 100%; overflow-x: auto; padding-bottom: 0.25rem; }
+    @media (max-width: 639px) { .kbd.fk-wide-only { display: none; } }   /* keyboard hints: not on phones */
+    .fk-testkb .kbd-key { background: #2a323c; border: 1px solid #3a4452; }
+    .fk-testkb .kbd-key:active, .fk-testkb .kbd-key.pressed { background: oklch(var(--p)); color: oklch(var(--pc)); }
     .kbd-key:active, .kbd-key.pressed { transform: scale(0.92); background: oklch(var(--p)); color: oklch(var(--pc)); }
     .letter-card { transition: all 0.2s; }
     .letter-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
@@ -139,17 +150,17 @@
 <div x-data="funkeykid()" x-init="init()">
 
   <!-- Navbar -->
-  <div class="navbar bg-base-100 shadow-lg">
-    <div class="flex-1">
-      <span class="text-xl font-bold px-4">funkeykid</span>
+  <div class="navbar fk-navbar bg-base-100 shadow-lg">
+    <div class="flex-1 flex items-center">
+      <span class="text-lg sm:text-xl font-bold px-2 sm:px-4">funkeykid</span>
       <!-- Active set selector -->
-      <select class="select select-sm select-bordered ml-2" x-model="activeSetId" @change="activateSet()">
+      <select class="select select-sm select-bordered ml-2" style="max-width: 60vw; min-width: 8rem" x-model="activeSetId" @change="activateSet()">
         <template x-for="(meta, sid) in sets" :key="sid">
           <option :value="sid" x-text="meta.name"></option>
         </template>
       </select>
     </div>
-    <div class="flex-none gap-2 pr-4">
+    <div class="flex flex-wrap items-center justify-end gap-2 pr-2 sm:pr-4 ml-auto">
       <button class="flex items-center gap-1.5 btn btn-ghost btn-xs" @click="showDiag = !showDiag">
         <div class="w-2.5 h-2.5 rounded-full"
              :class="hw.connected ? 'bg-success' : hw.searching ? 'bg-warning animate-pulse' : 'bg-error'"></div>
@@ -169,7 +180,7 @@
   </div>
 
   <!-- Live status bar (always visible) -->
-  <div class="bg-base-300 px-4 py-1 flex items-center gap-4 text-xs border-b border-base-content/10">
+  <div class="bg-base-300 px-4 py-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs border-b border-base-content/10">
     <template x-if="hw.searching && !hw.connected">
       <div class="flex items-center gap-2">
         <span class="loading loading-dots loading-xs"></span>
@@ -192,7 +203,7 @@
       <span x-show="hw.connected" class="font-mono"
             :class="hw.exclusive ? 'text-success opacity-70' : 'text-error font-bold'"
             x-text="hw.exclusive ? ('Exklusiv · ' + (hw.grabbed || 0) + ((hw.grabbed || 0) === 1 ? ' Gerät' : ' Geräte')) : 'NICHT exklusiv'"></span>
-      <span class="opacity-30" x-text="hw.device_path || ''"></span>
+      <span class="opacity-30 hidden sm:inline" x-text="hw.device_path || ''"></span>
     </div>
   </div>
 
@@ -251,14 +262,15 @@
   </div>
 
   <!-- Tabs -->
-  <div class="tabs tabs-boxed justify-center my-3 mx-4">
-    <a class="tab" :class="tab === 'letters' && 'tab-active'" @click="tab='letters'">Buchstaben</a>
-    <a class="tab" :class="tab === 'numbers' && 'tab-active'" @click="tab='numbers'">Nummern</a>
-    <a class="tab" :class="tab === 'sets' && 'tab-active'" @click="tab='sets'">Sets</a>
-    <a class="tab" :class="tab === 'test' && 'tab-active'" @click="tab='test'">Tastatur</a>
-    <a class="tab" :class="tab === 'settings' && 'tab-active'" @click="tab='settings'">Einstellungen</a>
-    <a class="tab" :class="tab === 'files' && 'tab-active'" @click="tab='files'">Dateien</a>
-    <a class="tab" :class="tab === 'ailog' && 'tab-active'" @click="tab='ailog'; loadAiLog(); loadIntegrations()">KI & Dienste</a>
+  <div class="tabs tabs-boxed fk-tabs my-3 mx-2 sm:mx-4" role="tablist"
+       x-effect="tab; $nextTick(() => $el.querySelector('.tab-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))">
+    <button type="button" role="tab" class="tab" :class="tab === 'letters' && 'tab-active'" :aria-selected="tab === 'letters' ? 'true' : 'false'" @click="tab='letters'">Buchstaben</button>
+    <button type="button" role="tab" class="tab" :class="tab === 'numbers' && 'tab-active'" :aria-selected="tab === 'numbers' ? 'true' : 'false'" @click="tab='numbers'">Nummern</button>
+    <button type="button" role="tab" class="tab" :class="tab === 'sets' && 'tab-active'" :aria-selected="tab === 'sets' ? 'true' : 'false'" @click="tab='sets'">Sets</button>
+    <button type="button" role="tab" class="tab" :class="tab === 'test' && 'tab-active'" :aria-selected="tab === 'test' ? 'true' : 'false'" @click="tab='test'">Tastatur</button>
+    <button type="button" role="tab" class="tab" :class="tab === 'settings' && 'tab-active'" :aria-selected="tab === 'settings' ? 'true' : 'false'" @click="tab='settings'">Einstellungen</button>
+    <button type="button" role="tab" class="tab" :class="tab === 'files' && 'tab-active'" :aria-selected="tab === 'files' ? 'true' : 'false'" @click="tab='files'">Dateien</button>
+    <button type="button" role="tab" class="tab" :class="tab === 'ailog' && 'tab-active'" :aria-selected="tab === 'ailog' ? 'true' : 'false'" @click="tab='ailog'; loadAiLog(); loadIntegrations()">KI & Dienste</button>
   </div>
 
   <div class="container mx-auto px-4 pb-8">
@@ -299,8 +311,8 @@
         <div class="modal-box fk-modal-xl" x-show="editingLetter">
 
           <!-- ── Top bar (full-width) ── -->
-          <div class="flex items-center gap-3 px-5 py-3 border-b border-base-content/5 flex-shrink-0">
-            <h3 class="font-bold text-lg">Einträge bearbeiten</h3>
+          <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-base-content/5 flex-shrink-0">
+            <h3 class="font-bold text-lg hidden sm:block">Einträge bearbeiten</h3>
 
             <!-- Letter nav -->
             <div class="flex items-center gap-1 ml-2">
@@ -324,7 +336,7 @@
             </div>
 
             <div class="flex-1"></div>
-            <kbd class="kbd kbd-sm opacity-60" title="Schließen">Esc</kbd>
+            <kbd class="kbd kbd-sm opacity-60 fk-wide-only" title="Schließen">Esc</kbd>
             <button class="btn btn-sm btn-circle btn-ghost" @click="editingLetter=null" title="Schließen">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
             </button>
@@ -756,7 +768,7 @@
           <!-- Top bar -->
           <div class="flex items-center gap-3 px-5 py-3 border-b border-base-content/5 flex-shrink-0">
             <h3 class="font-bold text-lg flex-1">Ziffer bearbeiten</h3>
-            <kbd class="kbd kbd-sm opacity-60">Esc</kbd>
+            <kbd class="kbd kbd-sm opacity-60 fk-wide-only">Esc</kbd>
             <button class="btn btn-sm btn-circle btn-ghost" @click="editingNumber=null" title="Schließen">
               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
             </button>
@@ -1038,9 +1050,9 @@
           <div class="card-body p-4 gap-2">
             <div class="flex flex-wrap items-center gap-3">
               <h2 class="card-title">Tastenbelegung</h2>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 min-w-0 max-w-full">
                 <label for="kb-profile" class="text-sm font-semibold">Tastatur</label>
-                <select id="kb-profile" class="select select-bordered select-sm" @change="kbActivate($event.target.value)">
+                <select id="kb-profile" class="select select-bordered select-sm min-w-0" style="max-width: 100%" @change="kbActivate($event.target.value)">
                   <option value="default" :selected="kb.selected === 'default'" x-text="'Standard: ' + (kb.default_name || '')"></option>
                   <optgroup label="Eingebaut">
                     <template x-for="p in kb.profiles.filter(p => p.kind !== 'custom')" :key="p.id">
@@ -1303,7 +1315,7 @@
       </div>
 
       <div class="text-center mb-4 opacity-60">Klicke Tasten — spielt Sound + zeigt Bild</div>
-      <div class="flex flex-col items-center gap-1">
+      <div class="fk-testkb"><div class="flex flex-col items-center gap-1" style="min-width: max-content; margin: 0 auto">
         <!-- Number row -->
         <div class="flex gap-1">
           <template x-for="k in '1234567890'.split('')" :key="'n'+k">
@@ -1364,7 +1376,7 @@
           <button class="btn btn-sm kbd-key" :class="pressedKey==='RIGHT' && 'pressed'"
                   @click="testKey('RIGHT')" title="Nächster Sound">▶</button>
         </div>
-      </div>
+      </div></div>
       <div class="flex justify-center mt-6 gap-6" x-show="lastTestLetter">
         <div class="card bg-base-100 shadow p-4 text-center">
           <div class="text-6xl font-black" x-text="lastTestLetter" :style="'color:' + randomColor(lastTestLetter)"></div>
@@ -1536,7 +1548,7 @@
     <!-- ═══ FILES TAB ═══ -->
     <div x-show="tab === 'files'" x-cloak x-data="{ fileFilter: '', fileTab: 'sounds', archiveOpen: false, archiveData: null }">
       <!-- Sub-tabs: Sounds / Images -->
-      <div class="flex items-center gap-3 mb-4">
+      <div class="flex flex-wrap items-center gap-3 mb-4">
         <div class="tabs tabs-boxed tabs-sm">
           <a class="tab" :class="fileTab === 'sounds' && 'tab-active'" @click="fileTab='sounds'">
             Sounds <span class="badge badge-xs ml-1" x-text="filteredSounds(fileFilter).length"></span>
@@ -1545,7 +1557,7 @@
             Bilder <span class="badge badge-xs ml-1" x-text="filteredImages(fileFilter).length"></span>
           </a>
         </div>
-        <input type="text" class="input input-sm input-bordered flex-1" x-model="fileFilter"
+        <input type="text" class="input input-sm input-bordered flex-1 min-w-0" style="min-width: 8rem" x-model="fileFilter"
                placeholder="Suchen...">
         <button class="btn btn-sm btn-ghost opacity-40" @click="archiveOpen = !archiveOpen; if (!archiveData) fetch('/api/archive').then(r=>r.json()).then(d => archiveData = d)">
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m16.875 0h-17.25M10 11.25h4"/></svg>

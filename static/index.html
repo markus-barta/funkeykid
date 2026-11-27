@@ -143,6 +143,70 @@
       background: oklch(var(--b2));
     }
     .fk-order-row.is-off { opacity: 0.5; }
+
+    /* ── Übersicht (FUNK-42): tiles with a tone, a 30-day bar chart, a QWERTZ heat map ── */
+    .dash-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
+    @media (min-width: 640px) { .dash-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (min-width: 1024px) { .dash-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } .dash-tiles .dash-val { font-size: 1.6rem; } }
+    .dash-tile { position: relative; overflow: hidden; border-radius: 1rem; padding: 0.95rem 1.05rem 1rem;
+      background: radial-gradient(140% 120% at 0% 0%, color-mix(in oklab, var(--tone) 20%, transparent), transparent 60%), oklch(var(--b1));
+      border: 1px solid color-mix(in oklab, var(--tone) 26%, transparent); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+    .dash-ic { width: 2.1rem; height: 2.1rem; border-radius: 0.65rem; display: grid; place-items: center; flex: none;
+      color: var(--tone); background: color-mix(in oklab, var(--tone) 16%, transparent); }
+    .dash-ic svg { width: 1.15rem; height: 1.15rem; }
+    .dash-val { margin-top: 0.35rem; font-size: clamp(1.4rem, 4.6vw, 2rem); font-weight: 800; line-height: 1.1;
+      color: #f3f4f6; font-variant-numeric: tabular-nums; white-space: nowrap; letter-spacing: -0.01em; }
+    .dash-meter { height: 5px; border-radius: 3px; margin-top: 0.6rem; background: rgba(255,255,255,.08); overflow: hidden; }
+    .dash-meter > i { display: block; height: 100%; border-radius: 3px; background: var(--tone); transition: width .5s ease; }
+    .dash-live { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; font-weight: 700; color: #34d399; }
+    .dash-live > i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 0 rgba(52,211,153,.6); }
+    @media (prefers-reduced-motion: no-preference) { .dash-live > i { animation: dash-pulse 1.8s ease-out infinite; } }
+    @keyframes dash-pulse { 0% { box-shadow: 0 0 0 0 rgba(52,211,153,.6); } 80%, 100% { box-shadow: 0 0 0 0.5rem rgba(52,211,153,0); } }
+    .dash-plot { position: relative; height: 12.5rem; margin-left: 2.4rem; }
+    .dash-gl { position: absolute; left: 0; right: 0; border-top: 1px dashed rgba(255,255,255,.08); pointer-events: none; }
+    .dash-gl > span { position: absolute; right: calc(100% + 0.4rem); top: -0.55rem; font-size: 0.7rem; opacity: .5; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .dash-bars { position: absolute; inset: 0; display: flex; align-items: stretch; gap: 3px; border-bottom: 1px solid rgba(255,255,255,.14); }
+    .dash-bar { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 0; border: 0;
+      background: none; cursor: pointer; border-radius: 4px 4px 0 0; }
+    .dash-bar > i { display: flex; flex-direction: column; justify-content: flex-end; width: 100%; border-radius: 5px 5px 1px 1px;
+      background: #3a4452; min-height: 2px; overflow: hidden; transition: height .45s cubic-bezier(.2,.8,.2,1), filter .15s; }
+    .dash-bar.is-zero > i { background: rgba(255,255,255,.07); }
+    .dash-bar > i > b { display: block; width: 100%; background: rgba(255,255,255,.18); }
+    .dash-bar.is-in > i { background: linear-gradient(180deg, var(--c1), var(--c2)); }
+    .dash-bar.is-in > i > b { background: var(--c3); }
+    .dash-bar.is-today > i { box-shadow: 0 0 0 2px var(--c1); }
+    .dash-bar.is-hover > i, .dash-bar:focus-visible > i { filter: brightness(1.25); }
+    .dash-bar:focus-visible { outline: 2px solid oklch(var(--p)); outline-offset: 1px; }
+    .dash-x { display: flex; gap: 3px; margin-left: 2.4rem; margin-top: 0.35rem; font-size: 0.7rem; opacity: .55; }
+    .dash-x > span { flex: 1 1 0; min-width: 0; text-align: center; white-space: nowrap; overflow: visible; }
+    .dash-kb { container-type: inline-size; padding: 0.75rem 0.8rem 0.65rem; border-radius: 1rem; background: linear-gradient(180deg, #12161b, #0c0f12);
+      border: 1px solid oklch(var(--b3)); box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 6px 18px rgba(0,0,0,.25); }
+    .dash-kr { --u: calc(100cqw / 12.8); display: flex; gap: calc(var(--u) * 0.1); margin-bottom: calc(var(--u) * 0.1); }
+    .dash-k { position: relative; flex: none; width: var(--u); height: var(--u); padding: 0 0 calc(var(--u) * 0.12); display: flex; align-items: center; justify-content: center;
+      border-radius: calc(var(--u) * 0.2); border: 1px solid rgba(255,255,255,.09); background: #232a33; color: #d1d5db;
+      font-size: calc(var(--u) * 0.4); font-weight: 800; line-height: 1; cursor: pointer;
+      box-shadow: inset 0 calc(var(--u) * -0.07) 0 rgba(0,0,0,.32); transition: background-color .4s, color .4s, transform .1s; }
+    .dash-k:hover { transform: translateY(-1px); }
+    .dash-k:focus-visible { outline: 2px solid oklch(var(--p)); outline-offset: 2px; }
+    .dash-k.is-sel { outline: 2px solid #fdba74; outline-offset: 2px; }
+    .dash-k > small { position: absolute; left: 0; right: 0; bottom: 7%; font-size: calc(var(--u) * 0.24); font-weight: 700; opacity: .8; }
+    .dash-k.is-learned::after { content: ""; position: absolute; top: 10%; right: 10%; width: calc(var(--u) * 0.15); height: calc(var(--u) * 0.15);
+      border-radius: 50%; background: #34d399; box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
+    @container (max-width: 26rem) { .dash-k > small { display: none; } }
+    .dash-legend { width: 5.5rem; height: 0.45rem; border-radius: 1rem; background: linear-gradient(90deg, #232a33, #f97316); }
+    .dash-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: #34d399; }
+    .dash-show-sm { display: none; }
+    .dash-cap { display: inline-grid; place-items: center; min-width: 1.9rem; height: 1.9rem; padding: 0 0.3rem; border-radius: 0.45rem;
+      background: #2a323c; border: 1px solid #3a4452; box-shadow: inset 0 -2px 0 rgba(0,0,0,.3); font-weight: 800; color: #f3f4f6; }
+    .dash-mbar { height: 0.45rem; border-radius: 1rem; background: rgba(255,255,255,.06); }
+    .dash-mbar > i { display: block; height: 100%; border-radius: 1rem; background: linear-gradient(90deg, #fb923c, #f97316); transition: width .45s ease; }
+    .dash-table td, .dash-table th { padding-top: 0.35rem; padding-bottom: 0.35rem; }
+    .dash-sessions > li { padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .dash-sessions > li:last-child { border-bottom: 0; }
+    .dash-empty { border-radius: 1rem; padding: 1rem 1.15rem; border: 1px dashed rgba(249,115,22,.45);
+      background: linear-gradient(90deg, rgba(249,115,22,.10), transparent 70%); }
+    @media (max-width: 639px) { .dash-hide-sm { display: none; } .dash-show-sm { display: inline-block; } .dash-plot { height: 10rem; margin-left: 2rem; } .dash-x { margin-left: 2rem; }
+      .dash-table td, .dash-table th { padding-left: 0.35rem; padding-right: 0.35rem; } .dash-kb { padding: 0.5rem 0.4rem 0.4rem; } }
   </style>
 </head>
 <body class="min-h-screen bg-base-200">
@@ -267,6 +331,7 @@
     <button type="button" role="tab" class="tab" :class="tab === 'letters' && 'tab-active'" :aria-selected="tab === 'letters' ? 'true' : 'false'" @click="tab='letters'">Buchstaben</button>
     <button type="button" role="tab" class="tab" :class="tab === 'numbers' && 'tab-active'" :aria-selected="tab === 'numbers' ? 'true' : 'false'" @click="tab='numbers'">Nummern</button>
     <button type="button" role="tab" class="tab" :class="tab === 'quiz' && 'tab-active'" :aria-selected="tab === 'quiz' ? 'true' : 'false'" @click="tab='quiz'; loadQuiz()">Quiz</button>
+    <button type="button" role="tab" class="tab" :class="tab === 'overview' && 'tab-active'" :aria-selected="tab === 'overview' ? 'true' : 'false'" @click="tab='overview'; loadDashboard()">Übersicht</button>
     <button type="button" role="tab" class="tab" :class="tab === 'sets' && 'tab-active'" :aria-selected="tab === 'sets' ? 'true' : 'false'" @click="tab='sets'">Sets</button>
     <button type="button" role="tab" class="tab" :class="tab === 'test' && 'tab-active'" :aria-selected="tab === 'test' ? 'true' : 'false'" @click="tab='test'">Tastatur</button>
     <button type="button" role="tab" class="tab" :class="tab === 'settings' && 'tab-active'" :aria-selected="tab === 'settings' ? 'true' : 'false'" @click="tab='settings'">Einstellungen</button>
@@ -1023,6 +1088,167 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- ═══ ÜBERSICHT TAB (FUNK-42): what the child played, from the progress counters ═══ -->
+    <div x-show="tab === 'overview'" x-cloak>
+      <div class="max-w-6xl mx-auto flex flex-col gap-4">
+        <div class="flex flex-wrap items-end gap-3 px-1">
+          <div class="mr-auto">
+            <h2 class="text-2xl font-black">Übersicht</h2>
+            <div class="text-sm opacity-70 flex flex-wrap items-center gap-x-3">
+              <span x-text="dash ? 'Gezählt seit ' + progDate(dash.since) : 'Lade …'"></span>
+              <span class="dash-live" x-show="dashLive()"><i></i>spielt gerade</span>
+            </div>
+          </div>
+          <div class="join" role="radiogroup" aria-label="Zeitraum">
+            <template x-for="r in dashRanges" :key="r.id">
+              <button type="button" class="btn btn-sm join-item" role="radio" :aria-checked="dashRange === r.id ? 'true' : 'false'"
+                      :class="dashRange === r.id ? 'btn-primary' : 'bg-base-100'" @click="dashRange = r.id; dashHover = -1" x-text="r.label"></button>
+            </template>
+          </div>
+        </div>
+
+        <div class="alert alert-error" x-show="dashError" x-text="'Übersicht: ' + dashError"></div>
+        <div class="dash-empty" x-show="dash && dashEmpty()">
+          <div class="font-bold">Noch nichts gezählt</div>
+          <div class="text-sm opacity-80">Sobald auf der Tastatur gespielt wird, füllt sich diese Übersicht, live und ohne Neuladen. Die Testtasten hier auf der Seite zählen nicht.</div>
+        </div>
+
+        <div class="dash-tiles">
+          <template x-for="t in dashTiles()" :key="t.id">
+            <div class="dash-tile" :style="'--tone:' + t.tone">
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-sm font-semibold opacity-80" x-text="t.label"></span>
+                <span class="dash-ic" x-html="dashIcons[t.id]"></span>
+              </div>
+              <div class="dash-val" x-text="t.value"></div>
+              <div class="text-xs opacity-60 mt-0.5" x-text="t.sub"></div>
+              <div class="dash-meter" x-show="t.part !== undefined"><i :style="'width:' + Math.round((t.part || 0) * 100) + '%'"></i></div>
+            </div>
+          </template>
+        </div>
+
+        <div class="grid gap-4 lg:grid-cols-2">
+          <div class="card bg-base-100 shadow min-w-0">
+            <div class="card-body p-4 sm:p-5 gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <h3 class="font-bold mr-auto">Die letzten 30 Tage</h3>
+                <div class="join" role="radiogroup" aria-label="Was der Verlauf zeigt">
+                  <template x-for="m in dashMetrics" :key="m.id">
+                    <button type="button" class="btn btn-xs join-item" role="radio" :aria-checked="dashMetric === m.id ? 'true' : 'false'"
+                            :class="dashMetric === m.id ? 'btn-neutral' : 'btn-ghost'" @click="dashMetric = m.id" x-text="m.label"></button>
+                  </template>
+                </div>
+              </div>
+              <div class="text-sm font-semibold" style="min-height: 1.25rem" aria-live="polite" x-text="dashReadout()"></div>
+              <div class="dash-plot mt-1" @mouseleave="dashHover = -1" :style="dashMetricVars()">
+                <template x-for="g in dashGrid()" :key="g.pct">
+                  <div class="dash-gl" :style="'bottom:' + g.pct + '%'"><span x-text="g.label"></span></div>
+                </template>
+                <div class="dash-bars">
+                  <template x-for="(b, i) in dashBars()" :key="b.day">
+                    <button type="button" class="dash-bar" :aria-label="b.title"
+                            :class="{ 'is-in': b.inRange, 'is-today': b.today, 'is-zero': !b.value, 'is-hover': dashHover === i }"
+                            @mouseenter="dashHover = i" @focus="dashHover = i" @click="dashHover = i">
+                      <i :style="'height:' + b.h + '%'"><b :style="'height:' + b.part + '%'"></b></i>
+                    </button>
+                  </template>
+                </div>
+              </div>
+              <div class="dash-x" aria-hidden="true">
+                <template x-for="b in dashBars()" :key="b.day"><span x-text="b.tick"></span></template>
+              </div>
+            </div>
+          </div>
+
+          <div class="card bg-base-100 shadow min-w-0">
+            <div class="card-body p-4 sm:p-5 gap-3">
+              <div class="flex items-baseline gap-2">
+                <h3 class="font-bold mr-auto">Welche Tasten?</h3>
+                <span class="text-xs opacity-60" x-text="dashRangeLabel()"></span>
+              </div>
+              <div class="dash-kb" role="group" aria-label="Tastatur: wie oft jede Taste gedrückt wurde">
+                <template x-for="(row, ri) in dashRows" :key="ri">
+                  <div class="dash-kr" :style="'padding-left: calc(var(--u) * ' + dashRowShift[ri] + ')'">
+                    <template x-for="k in row" :key="k">
+                      <button type="button" class="dash-k" :class="{ 'is-sel': dashKey === k, 'is-learned': dashLearned(k) }"
+                              :style="dashKeyStyle(k)" :title="dashKeyLine(k)" :aria-label="dashKeyLine(k)"
+                              @click="dashKey = dashKey === k ? '' : k">
+                        <span x-text="k"></span><small x-text="dashCount(k) || ''"></small>
+                      </button>
+                    </template>
+                  </div>
+                </template>
+              </div>
+              <div class="text-sm" style="min-height: 2.5rem" x-text="dashKey ? dashKeyLine(dashKey) : 'Tippe auf eine Taste für die Zahlen dazu.'"></div>
+              <div class="flex flex-wrap items-center gap-2 text-xs opacity-70">
+                <span>selten</span><span class="dash-legend"></span><span>oft gedrückt</span>
+                <span class="ml-auto inline-flex items-center gap-1.5"><span class="dash-dot"></span>gelernt</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid gap-4 lg:grid-cols-2">
+          <div class="card bg-base-100 shadow min-w-0">
+            <div class="card-body p-4 sm:p-5 gap-2">
+              <div class="flex items-center gap-2">
+                <h3 class="font-bold mr-auto" x-text="dashAll ? 'Alle Tasten' : 'Am meisten gedrückt'"></h3>
+                <button type="button" class="btn btn-xs btn-ghost" @click="dashAll = !dashAll" x-text="dashAll ? 'Nur die Top 10' : 'Alle 40 zeigen'"></button>
+              </div>
+              <div class="overflow-x-auto" x-show="dashTop().length">
+                <table class="table table-sm dash-table">
+                  <thead><tr><th class="w-8 dash-hide-sm">#</th><th>Taste</th><th class="text-right">Gedrückt</th><th class="dash-hide-sm w-1/3"></th>
+                    <th class="text-right">Quiz</th><th class="text-right">1. Versuch</th><th></th></tr></thead>
+                  <tbody>
+                    <template x-for="(row, i) in dashTop()" :key="row.k">
+                      <tr>
+                        <td class="opacity-50 tabular-nums dash-hide-sm" x-text="i + 1"></td>
+                        <td><span class="dash-cap" x-text="row.k"></span></td>
+                        <td class="text-right tabular-nums font-semibold" x-text="row.presses"></td>
+                        <td class="dash-hide-sm"><div class="dash-mbar"><i :style="'width:' + row.w + '%'"></i></div></td>
+                        <td class="text-right tabular-nums whitespace-nowrap" x-text="row.asked ? row.right + '/' + row.asked : '–'"></td>
+                        <td class="text-right tabular-nums whitespace-nowrap" x-text="row.asked ? row.pct + ' %' : '–'"></td>
+                        <td><span class="badge badge-success badge-sm dash-hide-sm" x-show="row.learned">gelernt</span><span class="dash-dot dash-show-sm" x-show="row.learned" title="gelernt" aria-label="gelernt"></span></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+              <div class="text-sm opacity-60 py-3 text-center" x-show="!dashTop().length" x-text="'Im Zeitraum »' + dashRangeLabel() + '« wurde noch keine Taste gedrückt.'"></div>
+            </div>
+          </div>
+
+          <div class="card bg-base-100 shadow min-w-0">
+            <div class="card-body p-4 sm:p-5 gap-2">
+              <h3 class="font-bold">Letzte Sitzungen</h3>
+              <ul class="dash-sessions">
+                <template x-for="x in (dash ? dash.recent : [])" :key="x.id">
+                  <li>
+                    <div class="flex flex-wrap items-baseline gap-x-2">
+                      <span class="font-semibold" x-text="dashDay(x.day)"></span>
+                      <span class="opacity-70 tabular-nums" x-text="dashTime(x.start) + '–' + dashTime(x.end)"></span>
+                      <span class="dash-live ml-auto" x-show="dashRunning(x)"><i></i>läuft</span>
+                    </div>
+                    <div class="text-xs opacity-60" x-text="dashSessionLine(x)"></div>
+                  </li>
+                </template>
+              </ul>
+              <div class="text-sm opacity-60" x-show="dash && !dash.recent.length">Noch keine Sitzung.</div>
+              <div class="flex flex-wrap gap-2 mt-2">
+                <a class="btn btn-sm btn-outline gap-1.5" href="/api/progress/sessions.csv" download>
+                  <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Sitzungen (CSV)</a>
+                <a class="btn btn-sm btn-outline gap-1.5" href="/api/progress/letters.csv" download>
+                  <svg viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Tasten (CSV)</a>
+              </div>
+              <p class="text-xs opacity-50">Sitzungen der letzten 90 Tage und die Summen jeder Taste, mit Semikolon getrennt: öffnen sich in Excel und Numbers.</p>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-xs opacity-50 px-1">Nur die echte Tastatur zählt, die Testtasten auf dieser Seite nicht. Eine Sitzung endet nach 5 Minuten ohne Taste; Spielzeit ist die Zeit von der ersten bis zur letzten Taste jeder Sitzung. Tage bleiben 30 Tage gespeichert, Sitzungen 90.</p>
       </div>
     </div>
 
@@ -2124,6 +2350,22 @@ function funkeykid() {
     prog: { boot: '', rev: -1, today: '', since: '', mastery: 3, mastery_choices: [], days_kept: 30,
             letters: {}, max_presses: 0 },
     progBusy: false, _progQ: Promise.resolve(), _progEdits: 0, _progMastery: 3,
+    // Übersicht (FUNK-42): the /api/dashboard snapshot, and what the tab shows of it
+    dash: null, dashError: '', dashRange: '7', dashMetric: 'presses', dashAll: false, dashHover: -1, dashKey: '',
+    dashNow: performance.now(), _dashQ: Promise.resolve(), _dashBusy: false, _dashAgain: false, _dashTimer: null,
+    dashRanges: [{ id: '1', label: 'Heute' }, { id: '7', label: '7 Tage' }, { id: '30', label: '30 Tage' }],
+    dashMetrics: [{ id: 'presses', label: 'Tasten' }, { id: 'play', label: 'Spielzeit' }, { id: 'quiz', label: 'Quiz' }],
+    dashRows: [['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'ß'], ['Q', 'W', 'E', 'R', 'T', 'Z', 'U', 'I', 'O', 'P', 'Ü'],
+               ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'Ö', 'Ä'], ['Y', 'X', 'C', 'V', 'B', 'N', 'M']],
+    dashRowShift: [0, 0.5, 0.75, 1.25],              // the QWERTZ stagger, in key widths
+    dashIcons: {
+      presses: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M7.5 14h9"/></svg>',
+      play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+      quiz: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.4 4.6-5.2"/></svg>',
+      learned: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>',
+      days: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+      favorite: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19.5s-7-4.3-8.6-8.7A4.4 4.4 0 0 1 12 7.6a4.4 4.4 0 0 1 8.6 3.2C19 15.2 12 19.5 12 19.5z"/></svg>',
+    },
 
     // Test state
     pressedKey: null,
@@ -2308,6 +2550,184 @@ function funkeykid() {
     progLearnedSummary() {
       const learned = Object.keys(this.prog.letters).filter(k => this.prog.letters[k].learned);
       return learned.length ? `Gelernt (${learned.length}): ${learned.join(', ')}` : 'Noch kein Buchstabe gelernt.';
+    },
+    // ── Übersicht (FUNK-42): read-only. One request at a time; a change while it runs asks for
+    // exactly one more (only while the tab is open), and only newer snapshots are installed.
+    _dashValid(d) {
+      return !!(d && typeof d === 'object' && typeof d.rev === 'number' && Array.isArray(d.days) && d.days.length
+                && d.ranges && d.ranges['1'] && d.ranges['7'] && d.ranges['30'] && Array.isArray(d.recent)
+                && Array.isArray(d.keys) && Array.isArray(d.learned));
+    },
+    // only if newer: a higher rev, or a new server run (the server bumps rev on every day change);
+    // the same rev from an earlier day is a late answer from before midnight
+    _dashInstall(d) {
+      const cur = this.dash;
+      if (cur && d.boot === cur.boot && (d.rev < cur.rev || (d.rev === cur.rev && d.today < cur.today))) return;
+      d._at = performance.now();                           // when it arrived: "idle" counts on from here
+      this.dashNow = d._at;
+      this.dash = d;
+    },
+    async _dashFetch() {
+      let res, data = null;
+      try { res = await fetch('/api/dashboard'); }
+      catch (err) { this.dashError = 'keine Verbindung'; return; }
+      try { data = await res.json(); } catch (err) { data = null; }   // the body can fail too
+      if (res.ok && this._dashValid(data)) { this._dashInstall(data); this.dashError = ''; }
+      else this.dashError = data?.error || (res.ok ? 'keine gültige Antwort' : 'Fehler ' + res.status);
+    },
+    loadDashboard() {
+      if (this._dashBusy) { this._dashAgain = true; return this._dashQ; }
+      this._dashBusy = true;
+      this._dashQ = (async () => {
+        try {
+          do { this._dashAgain = false; await this._dashFetch(); } while (this._dashAgain && this.tab === 'overview');
+        } catch (err) { console.warn('[dashboard]', err); }
+        finally { this._dashBusy = false; this._dashAgain = false; }
+      })();
+      return this._dashQ;
+    },
+    // the counts changed (SSE "progress", also at midnight): while the tab is open, one fetch per burst
+    dashSchedule() {
+      if (this.tab !== 'overview' || this._dashTimer) return;
+      this._dashTimer = setTimeout(() => { this._dashTimer = null; this.loadDashboard(); }, 700);
+    },
+    dashR() { return this.dash ? this.dash.ranges[this.dashRange] : null; },
+    dashRangeLabel() { return { '1': 'heute', '7': 'letzte 7 Tage', '30': 'letzte 30 Tage' }[this.dashRange]; },
+    dashEmpty() {
+      const r = this.dash?.ranges['30'];
+      return !!r && !r.keys && !r.presses && !r.asked && !this.dash.recent.length;
+    },
+    dashNum(n) { return Number(n || 0).toLocaleString('de-AT'); },
+    dashDur(sec) {
+      if (!sec) return '0 min';
+      const m = Math.round(sec / 60);
+      if (m < 1) return '< 1 min';
+      return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min';
+    },
+    // by the server's clock: seconds since the last key when the snapshot was made, counted on
+    // with this page's monotonic clock, so a phone with a wrong clock still gets it right
+    dashLive() {
+      const d = this.dash;
+      return !!(d && typeof d.idle === 'number' && d.idle + Math.max(0, this.dashNow - d._at) / 1000 <= d.session_gap);
+    },
+    dashRunning(x) { return !!(this.dash && this.dash.recent.length && this.dash.recent[0].id === x.id && this.dashLive()); },
+    dashTiles() {
+      const d = this.dash, r = this.dashR();
+      if (!d || !r) return [];
+      const n = Number(this.dashRange), yesterday = d.days[d.days.length - 2];
+      const top = Object.entries(r.letters).sort((a, b) => b[1].presses - a[1].presses)[0];
+      const fav = top && top[1].presses ? top : null;
+      return [
+        { id: 'presses', tone: '#fb923c', label: 'Tastendrücke', value: this.dashNum(r.presses),
+          sub: n === 1 ? 'gestern ' + this.dashNum(yesterday ? yesterday.presses : 0)
+                       : (r.active_days ? 'Ø ' + this.dashNum(Math.round(r.presses / r.active_days)) + ' pro Spieltag' : 'noch keine') },
+        { id: 'play', tone: '#38bdf8', label: 'Spielzeit', value: this.dashDur(r.seconds),
+          sub: r.sessions === 1 ? '1 Sitzung' : r.sessions + ' Sitzungen' },
+        { id: 'quiz', tone: '#a78bfa', label: 'Quiz', value: r.asked ? Math.round(100 * r.first / r.asked) + ' %' : '–',
+          sub: r.asked ? r.first + ' von ' + r.asked + ' beim 1. Versuch' : 'keine Quizfragen',
+          part: r.asked ? r.first / r.asked : 0 },
+        { id: 'learned', tone: '#34d399', label: 'Gelernt', value: d.learned.length + ' von ' + d.keys.length,
+          sub: 'ab ' + d.mastery + '× richtig in Folge', part: d.keys.length ? d.learned.length / d.keys.length : 0 },
+        { id: 'days', tone: '#fbbf24', label: 'Spieltage', value: r.active_days + ' von ' + n,
+          sub: n === 1 ? (r.active_days ? 'heute gespielt' : 'heute noch nicht') : 'Tage mit Tasten', part: r.active_days / n },
+        { id: 'favorite', tone: '#f472b6', label: 'Lieblingstaste', value: fav ? fav[0] : '–',
+          sub: fav ? fav[1].presses + '× gedrückt' : 'noch keine' },
+      ];
+    },
+    dashMetricVars() {
+      return { presses: '--c1:#fdba74;--c2:#f97316;--c3:#f97316', play: '--c1:#7dd3fc;--c2:#0ea5e9;--c3:#0ea5e9',
+               quiz: '--c1:rgba(167,139,250,.5);--c2:rgba(167,139,250,.32);--c3:#a78bfa' }[this.dashMetric];
+    },
+    _dashValue(x) { return this.dashMetric === 'play' ? x.seconds / 60 : this.dashMetric === 'quiz' ? x.asked : x.presses; },
+    // a round top for the axis: 1, 2 or 5 times a power of ten
+    _dashMax() {
+      const v = Math.max(1, ...(this.dash ? this.dash.days : []).map((x) => this._dashValue(x)));
+      const e = 10 ** Math.floor(Math.log10(v));
+      return [1, 2, 5, 10].map((m) => m * e).find((m) => m >= v);
+    },
+    dashGrid() {
+      if (!this.dash || !this.dash.days.some((x) => this._dashValue(x) > 0)) return [];   // no axis over an empty chart
+      const max = this._dashMax(), unit = this.dashMetric === 'play' ? ' min' : '';
+      const lines = [{ pct: 100, label: this.dashNum(max) + unit }];
+      if (Number.isInteger(max / 2)) lines.push({ pct: 50, label: this.dashNum(max / 2) + unit });
+      return lines;
+    },
+    dashBars() {
+      const d = this.dash;
+      if (!d) return [];
+      const max = this._dashMax(), n = Number(this.dashRange), len = d.days.length;
+      return d.days.map((x, i) => {
+        const v = this._dashValue(x), back = len - 1 - i;
+        return {
+          day: x.day, value: v, h: v ? Math.max(2, Math.round(100 * v / max)) : 0,
+          part: this.dashMetric === 'quiz' && x.asked ? Math.round(100 * x.first / x.asked) : 0,
+          inRange: back < n, today: back === 0,
+          tick: back % 7 === 0 ? (back === 0 ? 'heute' : this.dashDayShort(x.day)) : '',
+          title: this.dashDayLine(x),
+        };
+      });
+    },
+    dashDayLine(x) {
+      const parts = [this.dashNum(x.presses) + ' Buchstaben & Ziffern', this.dashDur(x.seconds) + ' Spielzeit'];
+      if (x.asked) parts.push('Quiz ' + x.first + '/' + x.asked + ' beim 1. Versuch');
+      return this.dashDay(x.day) + ': ' + parts.join(' · ');
+    },
+    dashReadout() {
+      const d = this.dash, r = this.dashR();
+      if (!d || !r) return '';
+      if (this.dashHover >= 0 && d.days[this.dashHover]) return this.dashDayLine(d.days[this.dashHover]);
+      const label = { '1': 'Heute', '7': 'Letzte 7 Tage', '30': 'Letzte 30 Tage' }[this.dashRange];
+      if (this.dashMetric === 'play') return label + ': ' + this.dashDur(r.seconds) + ' in ' + (r.sessions === 1 ? '1 Sitzung' : r.sessions + ' Sitzungen');
+      if (this.dashMetric === 'quiz') return label + ': ' + (r.asked ? r.first + ' von ' + r.asked + ' Quizfragen beim 1. Versuch richtig' : 'keine Quizfragen');
+      return label + ': ' + this.dashNum(r.presses) + ' Buchstaben & Ziffern gedrückt';
+    },
+    dashDay(iso) {
+      const t = new Date(iso + 'T12:00:00');
+      if (this.dash) {
+        if (iso === this.dash.today) return 'Heute';
+        const y = new Date(this.dash.today + 'T12:00:00');
+        y.setDate(y.getDate() - 1);
+        if (t.toDateString() === y.toDateString()) return 'Gestern';
+      }
+      return ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][t.getDay()] + ' ' + t.getDate() + '.' + (t.getMonth() + 1) + '.';
+    },
+    dashDayShort(iso) {
+      const t = new Date(iso + 'T12:00:00');
+      return t.getDate() + '.' + (t.getMonth() + 1) + '.';
+    },
+    dashTime(sec) { return new Date(sec * 1000).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }); },
+    dashSessionLine(x) {
+      const parts = [this.dashDur(x.seconds), x.keys === 1 ? '1 Taste' : this.dashNum(x.keys) + ' Tasten'];
+      if (x.asked) parts.push('Quiz ' + x.first + '/' + x.asked);
+      return parts.join(' · ');
+    },
+    dashCount(k) { const r = this.dashR(); return (r && r.letters[k] && r.letters[k].presses) || 0; },
+    dashLearned(k) { return !!this.dash && this.dash.learned.includes(k); },
+    // the key's colour: from dark to full orange by presses in the period, on a log scale
+    dashKeyStyle(k) {
+      const r = this.dashR(), p = this.dashCount(k);
+      if (!r || !p) return '';
+      const max = Math.max(1, ...Object.values(r.letters).map((x) => x.presses));
+      const pct = Math.round(18 + 72 * Math.log1p(p) / Math.log1p(max));
+      return `background-color: color-mix(in oklab, #f97316 ${pct}%, #232a33); color: ${pct > 58 ? '#1c0d02' : '#f3f4f6'};`
+           + ` border-color: color-mix(in oklab, #fdba74 ${pct}%, transparent)`;
+    },
+    dashKeyLine(k) {
+      const r = this.dashR(), c = (r && r.letters[k]) || { presses: 0, asked: 0, right: 0, first: 0 };
+      const parts = [k + ': ' + this.dashNum(c.presses) + '× gedrückt (' + this.dashRangeLabel() + ')'];
+      if (c.asked) parts.push('Quiz ' + c.right + '/' + c.asked + ', ' + Math.round(100 * c.first / c.asked) + ' % beim 1. Versuch');
+      if (this.dashLearned(k)) parts.push('gelernt');
+      return parts.join(' · ');
+    },
+    dashTop() {
+      const d = this.dash, r = this.dashR();
+      if (!d || !r) return [];
+      const rows = d.keys.map((k, i) => ({ k, i, ...(r.letters[k] || { presses: 0, asked: 0, right: 0, first: 0 }) }));
+      rows.sort((a, b) => b.presses - a.presses || b.asked - a.asked || a.i - b.i);
+      const max = Math.max(1, rows.length ? rows[0].presses : 0);
+      const list = this.dashAll ? rows : rows.filter((x) => x.presses || x.asked).slice(0, 10);
+      return list.map((x) => ({ ...x, w: Math.round(100 * x.presses / max), pct: x.asked ? Math.round(100 * x.first / x.asked) : 0,
+                                learned: d.learned.includes(x.k) }));
     },
     quizCanStart() {
       const chosen = this.quiz.config.letters;
@@ -2745,12 +3165,13 @@ function funkeykid() {
       setInterval(() => this.pollStatus(), 10000);
       // Update "ago" text every second
       setInterval(() => this.updateAgo(), 1000);
+      setInterval(() => { this.dashNow = performance.now(); }, 10000);   // "spielt gerade" (FUNK-42)
     },
 
     connectSSE() {
       const es = new EventSource('/api/events');
       // every (re)connect: quiz and progress events may have been missed, or the server restarted
-      es.onopen = () => { this.loadQuiz(); this.loadProgress(); };
+      es.onopen = () => { this.loadQuiz(); this.loadProgress(); if (this.tab === 'overview') this.loadDashboard(); };
       es.addEventListener('status', (e) => {
         const s = JSON.parse(e.data);
         Object.assign(this.hw, s);
@@ -2897,7 +3318,7 @@ function funkeykid() {
         this.favorites = JSON.parse(e.data).favorites || [];
       });
       es.addEventListener('quiz', (e) => this._quizEvent(JSON.parse(e.data)));
-      es.addEventListener('progress', (e) => this._progInstall(JSON.parse(e.data)));
+      es.addEventListener('progress', (e) => { this._progInstall(JSON.parse(e.data)); this.dashSchedule(); });
       es.onerror = () => {
         // SSE reconnects automatically, just update status
         setTimeout(() => this.pollStatus(), 2000);

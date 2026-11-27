@@ -49,11 +49,14 @@ def test_real_letter_and_digit_presses_count(lp):
         server.handle_key(key, raw)
     assert presses(lp) == {"A": 1, "ß": 1, "7": 1}
     assert lp.played == ["A", "ß", "7", "ENTER", "SPACE", "SHIFT_3", "RIGHT"]    # every key still plays
+    (session,) = lp.export()[1]["sessions"]                                       # FUNK-42: every real key plays on
+    assert (session["keys"], session["presses"]) == (7, 3)
 
 
 def test_test_keys_on_the_parent_page_do_not_count(lp):
     server.handle_key("A", "A", virtual=True)
-    assert presses(lp) == {} and lp.played == ["A"]
+    server.handle_key("ENTER", "ENTER", virtual=True)
+    assert presses(lp) == {} and lp.played == ["A", "ENTER"] and lp.export()[1]["sessions"] == []
 
 
 @pytest.mark.parametrize("action,want", [
@@ -86,6 +89,7 @@ def test_presses_during_the_quiz_are_answers_not_presses(lp, monkeypatch):
     server.handle_key("A", "A")
     server.handle_key("B", "B", virtual=True)
     assert presses(lp) == {} and answers == [("A", "keyboard"), ("B", "test")]
+    assert [x["keys"] for x in lp.export()[1]["sessions"]] == [1]                 # the real answer plays on
 
 
 def test_quiz_results_count_from_the_real_keyboard_only(lp):
@@ -102,6 +106,7 @@ def test_a_broken_counter_never_breaks_a_key(lp, monkeypatch):
         raise RuntimeError("boom")
     monkeypatch.setattr(lp, "press", boom)
     monkeypatch.setattr(lp, "quiz_result", boom)
+    monkeypatch.setattr(lp, "key", boom)
     server.handle_key("A", "A")
     server._progress_quiz_result("A", True, True, "keyboard")
     assert lp.played == ["A"]
@@ -148,6 +153,23 @@ def test_the_loop_pushes_changes_and_new_days_and_saves_every_10_s(lp, monkeypat
     assert saves == [1]                                # saved already: no write
     server._progress_tick(state, "2026-11-28", 126.0)
     assert sent == [("progress", 1), ("progress", 1)]  # a new day: the page's "heute" starts again
+
+
+def test_the_loop_rolls_the_day_while_nobody_plays(monkeypatch, tmp_path):
+    day = {"d": "2026-11-27"}
+    p = progress.Progress(keymap.LETTER_TARGETS, today=lambda: day["d"])
+    monkeypatch.setattr(server, "letter_progress", p)
+    monkeypatch.setattr(server, "_progress_saved_rev", 0)
+    monkeypatch.setattr(server, "settings", {"progress": {}})
+    monkeypatch.setattr(server, "SETTINGS_PATH", str(tmp_path / "settings.json"))
+    sent = []
+    monkeypatch.setattr(server, "sse_broadcast", lambda event, data: sent.append((event, data["rev"], data["today"])))
+    state = {"sent": p.rev, "day": "2026-11-27", "saved_at": 0.0}
+    server._progress_tick(state, "2026-11-27", 1.0)
+    assert sent == []
+    day["d"] = "2026-11-28"
+    server._progress_tick(state, "2026-11-28", 20.0)
+    assert sent == [("progress", 1, "2026-11-28")] and server._progress_saved_rev == 1
 
 
 def test_start_loads_the_saved_counters(lp, monkeypatch):
@@ -236,3 +258,27 @@ def test_api_reset_clears_and_saves_at_once(lp, tmp_path):
     assert status == 200 and body["letters"] == {} and body["mastery"] == 4
     saved = json.loads((tmp_path / "settings.json").read_text())["progress"]
     assert saved["letters"] == {} and saved["mastery"] == 4
+
+
+def test_api_dashboard(lp):
+    server.handle_key("A", "A")
+    status, body = call(server.api_dashboard_get)
+    assert status == 200 and body["boot"] == lp.boot and body["rev"] == lp.rev
+    assert body["ranges"]["1"]["presses"] == 1 and body["ranges"]["1"]["keys"] == 1
+    assert body["days"][-1]["day"] == "2026-11-27" and len(body["recent"]) == 1
+
+
+@pytest.mark.parametrize("handler,name,head", [
+    (server.api_progress_sessions_csv, "sitzungen", "beginn;ende;minuten;"),
+    (server.api_progress_letters_csv, "tasten", "taste;gedrueckt;"),
+])
+def test_csv_downloads(lp, handler, name, head):
+    server.handle_key("Ü", "Ü")
+    resp = asyncio.run(handler(Req()))
+    assert resp.status == 200 and resp.content_type == "text/csv" and resp.charset == "utf-8"
+    disposition = resp.headers["Content-Disposition"]
+    assert disposition.startswith(f'attachment; filename="funkeykid-{name}-') and disposition.endswith('.csv"')
+    assert resp.headers["Cache-Control"] == "no-store"
+    text = resp.body.decode("utf-8")
+    assert text.startswith("\ufeff" + head) and text.endswith("\r\n")
+    assert len(text.split("\r\n")) == (3 if name == "sitzungen" else len(keymap.LETTER_TARGETS) + 2)

@@ -895,6 +895,8 @@ def handle_key(key_name, raw_key=None, mods=(), virtual=False):
         "default": keymap.default_label(key_name, has_content), "unassigned": unassigned,
         "virtual": virtual, "timestamp": time.time(),
     })
+    if not virtual:                     # FUNK-42: any real key keeps the play session going
+        _progress_key()
     if quiz_engine.active:              # FUNK-39: the quiz owns the keyboard while it runs
         _quiz_key(key_name, action, virtual)
         return
@@ -1096,6 +1098,14 @@ letter_progress = progress.Progress(keymap.LETTER_TARGETS)
 _progress_saved_rev = 0       # the rev that settings.json holds
 
 
+def _progress_key():
+    """A key from the real keyboard, counted or not: the play session goes on (FUNK-42)."""
+    try:
+        letter_progress.key()
+    except Exception as e:          # counting must never break a key press
+        print(f"[progress] key not counted: {e}", flush=True)
+
+
 def _progress_press(key_name, action):
     """Count a press outside the quiz: its letter or digit (a key-map letter key counts for
     the letter it plays). Other keys are not counted."""
@@ -1142,6 +1152,7 @@ def _progress_tick(state, day, now):
     """One round of the progress loop. Push a change to the parent page (SSE "progress"),
     also a new day, so an open page does not keep yesterday's "heute"; save at most every
     PROGRESS_SAVE_SECONDS. ``state`` carries what was sent and when it was saved."""
+    letter_progress.roll_day()          # also while nobody plays: drop past days, new rev for the new day
     rev = letter_progress.rev
     if rev != state["sent"] or day != state["day"]:
         state["sent"], state["day"] = rev, day
@@ -2211,6 +2222,27 @@ async def api_quiz_repeat(request):
 
 async def api_progress_get(request):
     return web.json_response(letter_progress.snapshot())
+
+
+async def api_dashboard_get(request):
+    """The parent dashboard (FUNK-42): days, periods, latest sessions."""
+    return web.json_response(letter_progress.dashboard())
+
+
+def _csv_response(text, name):
+    """A CSV download: UTF-8 with a byte-order mark, so spreadsheet apps read the umlauts."""
+    filename = f"funkeykid-{name}-{time.strftime('%Y-%m-%d')}.csv"
+    return web.Response(body=("\ufeff" + text).encode("utf-8"), content_type="text/csv", charset="utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                                 "Cache-Control": "no-store"})
+
+
+async def api_progress_sessions_csv(request):
+    return _csv_response(letter_progress.sessions_csv(), "sitzungen")
+
+
+async def api_progress_letters_csv(request):
+    return _csv_response(letter_progress.letters_csv(), "tasten")
 
 
 async def _progress_saved_snapshot():
@@ -3386,6 +3418,9 @@ def create_app():
     app.router.add_post("/api/quiz/stop", api_quiz_stop)
     app.router.add_post("/api/quiz/repeat", api_quiz_repeat)
     app.router.add_get("/api/progress", api_progress_get)
+    app.router.add_get("/api/dashboard", api_dashboard_get)
+    app.router.add_get("/api/progress/sessions.csv", api_progress_sessions_csv)
+    app.router.add_get("/api/progress/letters.csv", api_progress_letters_csv)
     app.router.add_put("/api/progress/config", api_progress_config)
     app.router.add_post("/api/progress/reset", api_progress_reset)
     app.router.add_post("/api/press/{key_id}", api_press)

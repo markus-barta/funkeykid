@@ -95,7 +95,7 @@ def pick_clip(entry, mode, rng):
 class Quiz:
     """The quiz engine. All public methods are thread-safe."""
 
-    def __init__(self, *, pool, play, show, broadcast, record, schedule,
+    def __init__(self, *, pool, play, show, broadcast, record, schedule, result=None,
                  now=time.monotonic, wall=time.time, rng=None):
         # pool(letters) -> {letter: [entry]}: entries with a clip, of the given letters (all if empty).
         #   entry = {"word", "image", "clips": {"word": clip|None, "sound": clip|None}, "files": [clip]}
@@ -103,7 +103,10 @@ class Quiz:
         #   [] stops all sound. on_done() once the sequence has ended, however it ended.
         # show(kind, letter, word, image): kind = question | right | revealed | done
         # broadcast(snapshot), record(summary), schedule(seconds, fn, *args)
+        # result(letter, right, first_try, origin): a question ended, answered or revealed
+        #   (FUNK-40 progress); origin is what the caller passed to answer(). Must not raise.
         self._pool, self._play, self._show = pool, play, show
+        self._result = result or (lambda *a: None)
         self._broadcast, self._record, self._schedule = broadcast, record, schedule
         self._now, self._wall = now, wall
         self._rng = rng or random.Random()
@@ -193,8 +196,9 @@ class Quiz:
                 self.token += 1
                 self._ask()
 
-    def answer(self, letter):
-        """The child pressed a letter. Returns "right", "wrong", "revealed" or None (not asking)."""
+    def answer(self, letter, origin=None):
+        """The child pressed a letter. Returns "right", "wrong", "revealed" or None (not asking).
+        ``origin`` (e.g. the real keyboard or a test key) is handed on to ``result``."""
         with self._lock:
             self._last_activity = self._now()
             if self.phase != "asking":
@@ -206,6 +210,7 @@ class Quiz:
                 stats["right"] += 1
                 if q["tries"] == 0:
                     s["first_try"] += 1
+                self._result(q["letter"], True, q["tries"] == 0, origin)
                 self._set_phase("feedback")
                 self._show("right", q["letter"], q["word"], q["image"])
                 self._play(["right"] + q["files"], self._done_cb(self._after_feedback))
@@ -218,6 +223,7 @@ class Quiz:
                 self._play(["wrong", q["clip"]], self._done_cb(self._after_retry))
                 return "wrong"
             s["revealed"] += 1
+            self._result(q["letter"], False, False, origin)
             self._set_phase("feedback")
             self._show("revealed", q["letter"], q["word"], q["image"])
             self._play(["wrong"] + q["files"], self._done_cb(self._after_feedback))

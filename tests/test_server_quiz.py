@@ -13,18 +13,21 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest  # noqa: E402
 
 pytest.importorskip("aiohttp")
+import keymap  # noqa: E402
+import progress  # noqa: E402
 import server  # noqa: E402
 
 
 class FakeQuiz:
     def __init__(self):
-        self.active, self.calls = True, []
+        self.active, self.calls, self.origins = True, [], []
 
     def touch(self):
         self.calls.append("touch")
 
-    def answer(self, letter):
+    def answer(self, letter, origin=None):
         self.calls.append(("answer", letter))
+        self.origins.append(origin)
         return "right"
 
     def repeat(self):
@@ -45,6 +48,7 @@ def fq(monkeypatch):
     monkeypatch.setattr(server, "change_volume", volume.append)
     monkeypatch.setattr(server, "stop_all_sounds", lambda: stopped.append(1))
     monkeypatch.setattr(server, "_active_keymap", lambda: {})
+    monkeypatch.setattr(server, "letter_progress", progress.Progress(keymap.LETTER_TARGETS))
     q.played, q.volume, q.stopped = played, volume, stopped
     return q
 
@@ -58,6 +62,7 @@ def test_keys_during_the_quiz(fq, key, raw, want):
     server.handle_key(key, raw)
     assert fq.calls == ["touch"] + want
     assert fq.played == []                          # nothing else plays over the question
+    assert fq.origins == ["keyboard"] * len(fq.origins)
 
 
 def test_space_stops_sound_and_volume_keys_work(fq):

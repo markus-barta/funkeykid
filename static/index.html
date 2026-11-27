@@ -280,17 +280,20 @@
     <div x-show="tab === 'letters'" x-cloak>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
         <template x-for="letter in letterAlphabet()" :key="letter">
-          <div class="card bg-base-100 shadow letter-card" @click="editLetter(letter)">
+          <div class="card bg-base-100 shadow letter-card" @click="editLetter(letter)"
+               :style="progTint(letter)" :title="progTitle(letter)">
             <div class="card-body p-3">
               <div class="flex items-start gap-2">
                 <span class="text-3xl font-black" x-text="letter"
                       :style="'color:' + randomColor(letter)"></span>
+                <span class="badge badge-success badge-sm mt-1" x-show="progLearned(letter)">gelernt</span>
                 <img :src="'/images/' + firstEntry(letter)?.image"
                      class="img-preview ml-auto" loading="lazy"
                      @error="$el.style.display='none'" @load="$el.style.display='block'">
               </div>
               <div class="text-sm opacity-70 mt-1"
                    x-text="getEntries(letter).map(e => (e.enabled ? '' : '(') + e.word + (e.enabled ? '' : ')')).join(', ')"></div>
+              <div class="text-xs opacity-60 mt-1" x-show="prog.letters[letter]" x-text="progLine(letter)"></div>
               <div class="flex items-center justify-between mt-1">
                 <div class="text-xs opacity-40"
                      x-text="getEntries(letter).filter(e=>e.enabled).length + '/' + getEntries(letter).length + ' aktiv'"></div>
@@ -738,7 +741,8 @@
       </div>
       <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
         <template x-for="digit in ['0','1','2','3','4','5','6','7','8','9']" :key="digit">
-          <div class="card bg-base-100 shadow letter-card" @click="editNumber(digit)">
+          <div class="card bg-base-100 shadow letter-card" @click="editNumber(digit)"
+               :style="progTint(digit)" :title="progTitle(digit)">
             <div class="card-body p-3">
               <div class="flex items-start gap-2">
                 <span class="text-3xl font-black" x-text="digit"
@@ -748,6 +752,7 @@
                      x-show="firstNumberBg(digit)">
               </div>
               <div class="text-sm opacity-70 mt-1" x-text="getNumber(digit)?.word || '—'"></div>
+              <div class="text-xs opacity-60 mt-1" x-show="prog.letters[digit]" x-text="progLine(digit)"></div>
               <div class="flex items-center justify-between mt-1">
                 <div class="text-xs opacity-40"
                      x-text="(getNumber(digit)?.backgrounds || []).filter(b=>b.enabled).length + '/' + (getNumber(digit)?.backgrounds || []).length + ' Bg'"></div>
@@ -1662,6 +1667,33 @@
           <div class="text-xs opacity-40 mt-4 text-center">Änderungen werden automatisch gespeichert</div>
         </div>
       </div>
+
+      <!-- Progress per letter (FUNK-40) -->
+      <div class="card bg-base-100 shadow max-w-xl mx-auto mt-4">
+        <div class="card-body">
+          <h2 class="card-title">Fortschritt</h2>
+          <p class="text-sm opacity-70">
+            Je Buchstabe und Ziffer: wie oft die Taste gedrückt wurde und wie das Quiz lief.
+            Es zählt nur die echte Tastatur, nicht die Testtasten hier.
+            Je kräftiger die Farbe einer Karte, desto öfter wurde die Taste gedrückt.
+          </p>
+          <div class="text-xs opacity-60" x-show="prog.since" x-text="'Gezählt seit ' + progDate(prog.since)"></div>
+          <div class="form-control mt-2">
+            <label class="label" for="settings-mastery"><span class="label-text">„gelernt“ ab so vielen richtigen Quiz-Antworten in Folge</span></label>
+            <select id="settings-mastery" class="select select-bordered w-32"
+                    @change="progSetMastery(Number($event.target.value))">
+              <template x-for="n in prog.mastery_choices" :key="n">
+                <option :value="n" :selected="n === prog.mastery" x-text="n"></option>
+              </template>
+            </select>
+            <span class="text-xs opacity-60 mt-1">Nur Antworten beim ersten Versuch zählen; ein Fehler fängt wieder bei null an.</span>
+          </div>
+          <div class="text-sm mt-2" x-text="progLearnedSummary()"></div>
+          <div class="card-actions justify-end mt-2">
+            <button type="button" class="btn btn-sm btn-outline btn-error" :disabled="progBusy" @click="progReset()">Fortschritt zurücksetzen …</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ═══ FILES TAB ═══ -->
@@ -2088,6 +2120,11 @@ function funkeykid() {
             options: { modes: {}, questions: [], remind_seconds: [], max_tries: 2 } },
     quizBusy: false, _quizQ: Promise.resolve(), _quizEdits: 0,
 
+    // ── Progress per letter (FUNK-40): same pattern as the quiz: one queue, newer rev wins ──
+    prog: { boot: '', rev: -1, today: '', since: '', mastery: 3, mastery_choices: [], days_kept: 30,
+            letters: {}, max_presses: 0 },
+    progBusy: false, _progQ: Promise.resolve(), _progEdits: 0, _progMastery: 3,
+
     // Test state
     pressedKey: null,
     lastTestLetter: null, lastTestWord: null, lastTestImage: null,
@@ -2173,6 +2210,104 @@ function funkeykid() {
     quizRepeat() { return this._quizRun('/api/quiz/repeat'); },
     _quizEvent(snap) {
       if (this._quizInstall(snap)) this.loadQuiz();        // a session ended: fetch the history
+    },
+    progQueue(fn) {
+      const run = this._progQ.then(fn).catch((err) => console.warn('[progress]', err));
+      this._progQ = run;
+      return run;
+    },
+    // A snapshot (SSE) or answer (API): only if newer (a higher rev, or a new server run). The
+    // "gelernt" setting is shown only while no change of it is being saved; the server's newest
+    // value is kept aside and shown once the last change is done.
+    _progInstall(d) {
+      if (!d || typeof d !== 'object' || typeof d.rev !== 'number') return;
+      // same run: an older rev, or the same rev from an earlier day (a late answer after midnight), is stale
+      if (d.boot === this.prog.boot && (d.rev < this.prog.rev || (d.rev === this.prog.rev && d.today < this.prog.today))) return;
+      const mastery = this.prog.mastery;
+      Object.assign(this.prog, d);
+      this._progMastery = d.mastery;
+      if (this._progEdits > 0) this.prog.mastery = mastery;
+    },
+    // false on any failure, also when the server cannot be reached: callers then recover
+    async _progRequest(method, url, body) {
+      let res;
+      try {
+        res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' },
+                                 body: body === undefined ? undefined : JSON.stringify(body) });
+      } catch (err) {
+        this.showToast('Fortschritt: keine Verbindung', 'error');
+        return false;
+      }
+      let data = null;
+      try { data = await res.json(); } catch (err) { data = null; }   // the body can fail too
+      if (res.ok && data && typeof data.rev === 'number') {
+        this._progInstall(data);
+        return true;
+      }
+      this.showToast('Fortschritt: ' + (data?.error || (res.ok ? 'keine gültige Antwort' : res.status)), 'error');
+      return false;
+    },
+    loadProgress() { return this.progQueue(() => this._progRequest('GET', '/api/progress')); },
+    progSetMastery(n) {
+      this.prog.mastery = n;                               // shown at once
+      this._progEdits++;
+      return this.progQueue(async () => {
+        const mastery = this.prog.mastery;                 // the value when this save runs
+        let ok = false;
+        try { ok = await this._progRequest('PUT', '/api/progress/config', { mastery }); }
+        finally { this._progEdits--; }
+        if (this._progEdits > 0) return;                   // a newer change follows
+        if (!ok) await this._progRequest('GET', '/api/progress');
+        if (this._progEdits > 0) return;                   // changed again while reloading: that one wins
+        this.prog.mastery = this._progMastery;             // what the server holds now
+      });
+    },
+    progReset() {
+      if (!confirm('Den Fortschritt aller Buchstaben und Ziffern löschen? Tastendrücke, Quiz-Antworten und „gelernt“ fangen wieder bei null an.')) return;
+      this.progBusy = true;
+      return this.progQueue(async () => {
+        try {
+          if (await this._progRequest('POST', '/api/progress/reset')) this.showToast('Fortschritt zurückgesetzt');
+        } finally { this.progBusy = false; }
+      });
+    },
+    progLearned(k) {
+      const r = this.prog.letters[k];
+      return !!(r && r.learned);
+    },
+    // the card's background: faint to vivid by presses, on a log scale against the most pressed key
+    progTint(k) {
+      const p = this.prog.letters[k]?.presses || 0, max = this.prog.max_presses || 0;
+      if (!p || !max) return '';
+      const a = (0.06 + 0.30 * Math.log1p(p) / Math.log1p(max)).toFixed(3);
+      return `background-image: linear-gradient(rgba(249,115,22,${a}), rgba(249,115,22,${a}))`;
+    },
+    progLine(k) {
+      const r = this.prog.letters[k];
+      if (!r) return '';
+      const parts = [r.presses + '× gedrückt'];
+      if (r.today.presses) parts.push('heute ' + r.today.presses + '×');
+      if (r.asked) parts.push('Quiz ' + r.right + '/' + r.asked);
+      return parts.join(' · ');
+    },
+    progTitle(k) {
+      const r = this.prog.letters[k];
+      if (!r) return '';
+      const lines = [`${k}: ${r.presses}× gedrückt (heute ${r.today.presses}×, 7 Tage ${r.week.presses}×)`];
+      if (r.asked) {
+        lines.push(`Quiz: ${r.asked} ${r.asked === 1 ? 'Frage' : 'Fragen'}, ${r.right} richtig, ${r.first} beim ersten Versuch`);
+        lines.push(r.learned ? 'gelernt' : `in Folge richtig: ${r.streak} von ${this.prog.mastery}`);
+      }
+      if (r.last) lines.push('zuletzt ' + this.progDate(r.last));
+      return lines.join('\n');
+    },
+    progDate(iso) {
+      const [y, m, d] = String(iso || '').split('-');
+      return d ? `${Number(d)}.${Number(m)}.${y}` : '';
+    },
+    progLearnedSummary() {
+      const learned = Object.keys(this.prog.letters).filter(k => this.prog.letters[k].learned);
+      return learned.length ? `Gelernt (${learned.length}): ${learned.join(', ')}` : 'Noch kein Buchstabe gelernt.';
     },
     quizCanStart() {
       const chosen = this.quiz.config.letters;
@@ -2603,6 +2738,7 @@ function funkeykid() {
       try { this.favorites = await fetch('/api/favorites').then(r => r.json()); } catch {}
       await this.kbReload();                 // key map + keyboard drawing (FUNK-62/63)
       this.loadQuiz();                       // FUNK-39: a quiz may already run
+      this.loadProgress();                   // FUNK-40
       this.connectSSE();
       this.loadDiagnostics();  // fills the keyboard picker in Settings
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
@@ -2613,8 +2749,8 @@ function funkeykid() {
 
     connectSSE() {
       const es = new EventSource('/api/events');
-      // every (re)connect: quiz events may have been missed, or the server restarted (FUNK-39)
-      es.onopen = () => this.loadQuiz();
+      // every (re)connect: quiz and progress events may have been missed, or the server restarted
+      es.onopen = () => { this.loadQuiz(); this.loadProgress(); };
       es.addEventListener('status', (e) => {
         const s = JSON.parse(e.data);
         Object.assign(this.hw, s);
@@ -2761,6 +2897,7 @@ function funkeykid() {
         this.favorites = JSON.parse(e.data).favorites || [];
       });
       es.addEventListener('quiz', (e) => this._quizEvent(JSON.parse(e.data)));
+      es.addEventListener('progress', (e) => this._progInstall(JSON.parse(e.data)));
       es.onerror = () => {
         // SSE reconnects automatically, just update status
         setTimeout(() => this.pollStatus(), 2000);

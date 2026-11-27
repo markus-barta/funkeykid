@@ -33,7 +33,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install test dependencies
-        run: pip install pytest paho-mqtt
+        # aiohttp (pinned as in requirements.lock): without it every server test was skipped (FUNK-73)
+        run: pip install pytest paho-mqtt aiohttp==3.14.5 pillow==13.0.0
       - name: Verify versioning bundle (pins + git-tracked) and version record
         run: |
           python3 versioning_bundle.py

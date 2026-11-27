@@ -14,6 +14,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **Keyboard profiles** (FUNK-63): the Tastatur tab draws the keyboard (ACME BK03, PC Deutsch, Mac Deutsch) with what every key does; click a key to assign it, or press it in learn mode and it lights up. Each keyboard has its own key map. Duplicate one to relabel keys or fix the code a key sends. See DEVELOPMENT.md § Keyboard profiles.
 - **Language and number pad** (FUNK-64): the keyboard language (Deutsch or English US) decides the letters: Z/Y, and Ü/Ö/Ä/ß as letters for German (the ß key plays ß since FUNK-46; − and the volume keys change the volume). "Standard" means a PC or Mac keyboard of that language, with or without a number pad, and the pad digits play the numbers. Keyboards and their key maps can be exported and imported as JSON files.
 - **Quiz** (FUNK-39): the box plays a word or a sound, the child presses its letter. Right: a jingle and the letter's entry; wrong: the question again, and after two tries the letter is shown. Start it in the Quiz tab or from a key ("Quiz starten/stoppen"). Each session is summarized; the last 20 are kept. See DEVELOPMENT.md § Quiz.
+- **Progress per letter** (FUNK-40): each letter and digit card shows how often its key was pressed (the card gets more orange the more it was pressed), and how the quiz went. A letter is "gelernt" after a configurable number of quiz answers in a row that were right on the first try (default 3). Only the real keyboard counts. Settings → Fortschritt sets the number and resets everything. See DEVELOPMENT.md § Progress per letter.
 - **Set export / import** (FUNK-43): a set travels as one ZIP with all its sounds and pictures, for backups, siblings or another device. Importing shows a preview first, and if a file with the same name but other content already exists, you choose per file: rename, keep or overwrite.
 
 ### Multi-track audio model (v3.0.0)
@@ -81,7 +82,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 
 ```
 /data/
-├── settings.json            # All config: sets, letters, numbers, track_order, AI prompts, voices
+├── settings.json            # All config: sets, letters, numbers, track_order, AI prompts, voices, quiz, progress
 ├── sounds/                  # Active mp3s (normalized, served to paplay + browser preview)
 ├── images/                  # Active 64×64 pngs (served to pixdcon + letters UI)
 ├── ai-generated/

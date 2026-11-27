@@ -404,12 +404,12 @@ GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
 
 | Tab | Purpose |
 |-----|---------|
-| Buchstaben | Letter cards (A–Z, plus Ä Ö Ü ß for German), click to edit entries |
-| Nummern | Digit cards 0–9: word, tracks, counting pictures |
+| Buchstaben | Letter cards (A–Z, plus Ä Ö Ü ß for German), click to edit entries; progress tint and "gelernt" badge (FUNK-40) |
+| Nummern | Digit cards 0–9: word, tracks, counting pictures; progress tint |
 | Quiz | Start/stop a quiz, its settings, the last sessions (FUNK-39) |
 | Sets | Create, duplicate, rename, delete, activate, export/import sets |
 | Tastatur | Key map on the drawn keyboard, keyboard profiles, virtual QWERTZ keyboard for testing |
-| Einstellungen | Keyboard language, volume, display mode, random sounds, AI prompts |
+| Einstellungen | Keyboard language, volume, display mode, random sounds, AI prompts; Fortschritt: "gelernt" threshold and reset (FUNK-40) |
 | Dateien | Upload/preview sounds and images, archive |
 | KI & Dienste | AI log and integration status |
 
@@ -421,11 +421,34 @@ The box plays a word (the entry's DE track) or a sound (FX), or either at random
 - **Questions:** a random letter of the active set with an enabled entry that has a word or sound file, never the same letter twice in a row. Optionally from a chosen subset; only letters of the keyboard language (Ä Ö Ü ß on German keyboards). The Pixoo shows "?", with the entry's picture as a hint if "Hilfe" is on.
 - **Settings** (`settings["quiz"]`): question type, number of questions (5/10/20/endless), letters, hint picture, and a reminder that repeats the question after 10/20/30 s without an answer (at most twice per question; a hard time limit would only punish toddlers).
 - **End:** after its questions, on Stop, or after 5 minutes without a key press. A finished session with at least one answer is recorded in `settings["quiz_history"]` (last 20): counts, letters that needed retries ("schwer"), how it ended.
-- **Keys while a quiz runs:** letter keys and key-map letter actions answer, Enter (and the "replay" function) repeats the question, Space stops the sound, and the volume keys and functions work. Every other key stays silent, so nothing plays over the question. The key-map function `quiz` ("Quiz starten/stoppen") starts the quiz with the saved settings, or stops it. Test-keyboard presses count like real ones.
+- **Keys while a quiz runs:** letter keys and key-map letter actions answer, Enter (and the "replay" function) repeats the question, Space stops the sound, and the volume keys and functions work. Every other key stays silent, so nothing plays over the question. The key-map function `quiz` ("Quiz starten/stoppen") starts the quiz with the saved settings, or stops it. Test-keyboard presses answer like real ones, but only real ones count for the progress (FUNK-40).
 
 The game logic is `quiz.py`, a pure state machine tested in `tests/test_quiz.py`. Playback, display, SSE (`quiz` event with a growing `rev`), history and timers are injected by `server.py`. Every phase change bumps a token, and playback-end and timer callbacks only act on the token they were made for, so a late callback never touches a newer question. For that, `play_sound_sequence` takes `on_done`, called once however the sequence ended, and stops by generation: a sequence that was cut short never plays its next track. The jingles are synthesized WAVs (`quiz.jingle_wav`), written to the temp dir at start, so the quiz needs no sound files.
 
 API: `GET /api/quiz`, `PUT /api/quiz/config`, `POST /api/quiz/start` (optional `{"config": …}`, saved), `POST /api/quiz/stop`, `POST /api/quiz/repeat`. Pixoo reward animations are FUNK-41; it hooks into `_quiz_show`.
+
+### Progress per letter (FUNK-40)
+
+What is counted, per letter and digit:
+- **Presses:** the key pressed outside the quiz. A key-map key counts for the letter it plays.
+- **Quiz:** questions about the letter that ended, right on any try, right on the first try, and the streak of first-try answers in a row. A question that was revealed after the last wrong try breaks the streak; a question the quiz was stopped in does not count.
+
+Only the real keyboard counts: the test keys on the parent page (`/api/test`, `/api/press`, test answers in a quiz) do not.
+
+A letter is **gelernt** while its streak is at least the setting (1–10, default 3). A lucky guess does not make it, and a letter the child no longer knows loses the badge again.
+
+The cards show this:
+- the tint goes from faint to vivid orange on a log scale, against the most pressed key;
+- a line says "12× gedrückt · heute 3× · Quiz 4/5";
+- the tooltip adds the last 7 days, first tries, the streak and the last day.
+
+Settings → Fortschritt sets the threshold and resets everything after a confirmation. The threshold stays after a reset.
+
+`progress.py` holds the counters: pure, with its own lock, tested in `tests/test_progress.py`. They are stored in `settings["progress"]`: totals per letter, plus per-day counts (`p`/`a`/`r`/`f`, zeros left out) for the last 30 days. The days run on the container's clock (CET on hsb1).
+
+`server.py` exports them into settings at most every 10 s while keys are pressed, and at once on a parent change. Export and write run under the settings write lock, and the exported copy is never changed in place, so another save never writes half an update. A restart loses at most the last 10 s of presses. SSE sends a `progress` event (the snapshot, with `boot` and `rev`) at most once a second.
+
+API: `GET /api/progress`, `PUT /api/progress/config` (`{"mastery": n}`), `POST /api/progress/reset`.
 
 ### UI libraries (FUNK-69)
 
@@ -446,6 +469,8 @@ The UI uses Server-Sent Events (`/api/events`) for instant updates:
 | `connection` | Full keyboard status (see `/api/status`) | Keyboard connect/disconnect (toast) |
 | `volume` | `{volume}` | Volume change via +/- keys |
 | `status` | Full status object | Initial connection; exclusive/grab or battery changes |
+| `quiz` | Quiz snapshot (`boot`, `rev`, phase, question, …) | Every quiz state change (FUNK-39) |
+| `progress` | Progress snapshot (see `/api/progress`) | Counts changed, at most once a second (FUNK-40) |
 
 `/api/status` keyboard fields: `connected`, `exclusive`, `grabbed`, `nodes[{path,name,grabbed}]`,
 `device_name`, `device_path`, `battery_level`, `battery_low`, `battery_low_threshold`,

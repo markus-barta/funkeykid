@@ -27,10 +27,12 @@ class Rig:
         self.pool_data = pool if pool is not None else {"A": [entry("affe")], "B": [entry("ball")],
                                                         "C": [entry("clown")]}
         self.played, self.shown, self.snaps, self.records, self.timers = [], [], [], [], []
+        self.results = []
         self.t = 1000.0
         self.quiz = qz.Quiz(pool=self.pool, play=self.play, show=lambda *a: self.shown.append(a),
                             broadcast=self.snaps.append, record=self.records.append,
                             schedule=lambda d, fn, *a: self.timers.append((d, fn, a)),
+                            result=lambda *a: self.results.append(a),
                             now=lambda: self.t, wall=lambda: self.t, rng=random.Random(seed))
 
     def pool(self, letters):
@@ -404,3 +406,44 @@ def test_repeat_voids_the_cut_short_playback_and_its_reminder():
     assert not any(fn.__name__ == "_on_remind" for _, fn, _ in r.timers)
     r.done()                                            # the replay ends
     assert sum(fn.__name__ == "_on_remind" for _, fn, _ in r.timers) == 1
+
+
+# ── progress hook (FUNK-40) ──────────────────────────────────────────────────
+
+def test_each_ended_question_is_reported_once_with_its_origin():
+    r = Rig()
+    r.start(questions=0)
+    first = r.target
+    assert r.quiz.answer(first, "keyboard") == "right"                 # right on the first try
+    r.done(); r.fire("next_if")
+    second = r.target
+    assert r.quiz.answer(r.wrong_letter(), "keyboard") == "wrong"      # a wrong try is not an end
+    assert r.results == [(first, True, True, "keyboard")]
+    r.done()
+    assert r.quiz.answer(second, "test") == "right"                    # right on the second try
+    r.done(); r.fire("next_if")
+    third = r.target
+    r.quiz.answer(r.wrong_letter())
+    r.done()
+    assert r.quiz.answer(r.wrong_letter()) == "revealed"
+    r.done(); r.fire("next_if")
+    r.quiz.stop()                                                      # a stopped question is not reported
+    assert r.results == [(first, True, True, "keyboard"), (second, True, False, "test"),
+                         (third, False, False, None)]
+
+
+def test_answers_outside_a_question_are_not_reported():
+    r = Rig()
+    assert r.quiz.answer("A", "keyboard") is None
+    r.start()
+    r.quiz.answer(r.target, "keyboard")
+    r.quiz.answer(r.target, "keyboard")                               # feedback phase: ignored
+    assert len(r.results) == 1
+
+
+def test_without_a_result_hook_the_quiz_still_runs():
+    r = Rig()
+    r.quiz._result = qz.Quiz(pool=r.pool, play=r.play, show=print, broadcast=print, record=print,
+                             schedule=print)._result
+    r.start()
+    assert r.quiz.answer(r.target) == "right"

@@ -18,6 +18,7 @@ from aiohttp import web
 import atomicwrite
 import keymap
 import profiles
+import progress
 import quiz
 import setbundle
 from keyboard import KeyboardListener, is_battery_low
@@ -895,8 +896,10 @@ def handle_key(key_name, raw_key=None, mods=(), virtual=False):
         "virtual": virtual, "timestamp": time.time(),
     })
     if quiz_engine.active:              # FUNK-39: the quiz owns the keyboard while it runs
-        _quiz_key(key_name, action)
+        _quiz_key(key_name, action, virtual)
         return
+    if not virtual:                     # FUNK-40: the child's presses; test keys do not count
+        _progress_press(key_name, action)
     if action is not None:
         _run_keymap_action(matched, action)
         return
@@ -1081,6 +1084,90 @@ def _run_keymap_action(kid, action):
             display.publish_letter("", word, image)
 
 
+# ── Progress per letter (FUNK-40) ────────────────────────────────────────────
+# The counters live in progress.py (pure, own lock). This feeds them presses and
+# quiz results from the real keyboard, keeps settings["progress"] in step and
+# pushes changes to the parent page.
+
+PROGRESS_SAVE_SECONDS = 10    # counts reach settings.json at most this long after a press
+PROGRESS_SSE_SECONDS = 1      # the parent page gets changes at most this often
+
+letter_progress = progress.Progress(keymap.LETTER_TARGETS)
+_progress_saved_rev = 0       # the rev that settings.json holds
+
+
+def _progress_press(key_name, action):
+    """Count a press outside the quiz: its letter or digit (a key-map letter key counts for
+    the letter it plays). Other keys are not counted."""
+    if action is None:
+        letter = key_name
+    elif action.get("action") == "letter":
+        letter = action.get("letter")
+    else:
+        return
+    try:
+        letter_progress.press(letter)
+    except Exception as e:          # counting must never break a key press
+        print(f"[progress] press not counted: {e}", flush=True)
+
+
+def _progress_quiz_result(letter, right, first_try, origin):
+    """quiz.Quiz result hook: a question ended. Only answers from the real keyboard count."""
+    if origin != "keyboard":
+        return
+    try:
+        letter_progress.quiz_result(letter, right, first_try)
+    except Exception as e:
+        print(f"[progress] quiz result not counted: {e}", flush=True)
+
+
+def _progress_save():
+    """Write the counters to settings.json if they changed since the last write.
+
+    Export, assign and write happen under the settings write lock, so of two
+    writers the later one always writes the newer counts. Returns True if written.
+    """
+    global _progress_saved_rev
+    with _settings_write_lock:
+        rev, data = letter_progress.export()
+        if rev == _progress_saved_rev:
+            return False
+        settings["progress"] = data
+        save_settings()
+        _progress_saved_rev = rev
+        return True
+
+
+def _progress_tick(state, day, now):
+    """One round of the progress loop. Push a change to the parent page (SSE "progress"),
+    also a new day, so an open page does not keep yesterday's "heute"; save at most every
+    PROGRESS_SAVE_SECONDS. ``state`` carries what was sent and when it was saved."""
+    rev = letter_progress.rev
+    if rev != state["sent"] or day != state["day"]:
+        state["sent"], state["day"] = rev, day
+        sse_broadcast("progress", letter_progress.snapshot())
+    if rev != _progress_saved_rev and now - state["saved_at"] >= PROGRESS_SAVE_SECONDS:
+        state["saved_at"] = now
+        _progress_save()
+
+
+def _progress_loop():
+    state = {"sent": letter_progress.rev, "day": time.strftime("%Y-%m-%d"), "saved_at": time.monotonic()}
+    while True:
+        time.sleep(PROGRESS_SSE_SECONDS)
+        try:
+            _progress_tick(state, time.strftime("%Y-%m-%d"), time.monotonic())
+        except Exception as e:      # a full disk must not end the loop: the next round retries
+            print(f"[progress] not saved: {e}", flush=True)
+
+
+def _progress_start():
+    """At start: take over the saved counters and start the loop."""
+    letter_progress.load(settings.get("progress"))
+    settings["progress"] = letter_progress.export()[1]     # the key exists from now on (only replaced, never added)
+    threading.Thread(target=_progress_loop, daemon=True, name="progress").start()
+
+
 # ── Quiz (FUNK-39) ───────────────────────────────────────────────────────────
 # The game logic lives in quiz.py (a pure state machine); this wires it to the
 # active set, the speakers, the Pixoo, SSE and settings.json.
@@ -1178,7 +1265,7 @@ def _quiz_schedule(seconds, fn, *args):
 
 quiz_engine = quiz.Quiz(pool=_quiz_pool, play=_quiz_play, show=_quiz_show,
                         broadcast=lambda snap: sse_broadcast("quiz", snap),
-                        record=_quiz_record, schedule=_quiz_schedule)
+                        record=_quiz_record, schedule=_quiz_schedule, result=_progress_quiz_result)
 
 
 def _quiz_config():
@@ -1200,9 +1287,10 @@ def _quiz_toggle():
         print(f"[quiz] not started: {e}", flush=True)
 
 
-def _quiz_key(key_name, action):
+def _quiz_key(key_name, action, virtual=False):
     """A key press while the quiz runs: letters answer; Enter repeats, Space stops the
-    sound, volume keys work; every other key stays silent (no noise over the question)."""
+    sound, volume keys work; every other key stays silent (no noise over the question).
+    Only answers from the real keyboard count for the progress (FUNK-40)."""
     quiz_engine.touch()
     kind = (action or {}).get("action")
     letter = None
@@ -1212,7 +1300,8 @@ def _quiz_key(key_name, action):
         letter = key_name
     if letter is not None:
         if letter in keymap.LETTERS:
-            print(f"[quiz] answer {letter}: {quiz_engine.answer(letter)}", flush=True)
+            result = quiz_engine.answer(letter, "test" if virtual else "keyboard")
+            print(f"[quiz] answer {letter}: {result}", flush=True)
         return
     if kind == "func":
         func = action.get("func")
@@ -1736,28 +1825,31 @@ async def _commit_import(imp, name, resolutions, activate):
     sets = settings.setdefault("sets", {})
     sid = _new_set_id(data["name"], sets)
     previous_active = settings.get("active_set")
-    try:
-        with open(SETTINGS_PATH, "rb") as f:
-            before = f.read()
-    except OSError:
-        before = None
-    sets[sid] = data
-    try:
-        if activate:
-            _set_active(sid)
-        save_settings()
-    except Exception as e:
-        sets.pop(sid, None)
-        if activate:
-            _set_active(previous_active)
-        if _settings_file_unchanged(before) or _restore_settings_file(before):
-            txn.rollback()                    # settings.json does not name the set: its files can go
-            print(f"[sets] import of {sid} undone: settings not saved ({e})", flush=True)
-            return web.json_response({"error": "the settings could not be saved: nothing was imported"}, status=500)
-        txn.commit()                          # settings.json may name the set: keep its files
-        print(f"[sets] import of {sid} failed and settings.json could not be restored ({e})", flush=True)
-        return web.json_response({"error": "the settings could not be saved, and the previous settings could not be "
-                                           "restored: check the Sets tab after a restart"}, status=500)
+    # From reading "before" to a restore, no other thread may save: a restore would undo that
+    # save, e.g. progress counts the keyboard thread had just written (FUNK-40 review).
+    with _settings_write_lock:
+        try:
+            with open(SETTINGS_PATH, "rb") as f:
+                before = f.read()
+        except OSError:
+            before = None
+        sets[sid] = data
+        try:
+            if activate:
+                _set_active(sid)
+            save_settings()
+        except Exception as e:
+            sets.pop(sid, None)
+            if activate:
+                _set_active(previous_active)
+            if _settings_file_unchanged(before) or _restore_settings_file(before):
+                txn.rollback()                    # settings.json does not name the set: its files can go
+                print(f"[sets] import of {sid} undone: settings not saved ({e})", flush=True)
+                return web.json_response({"error": "the settings could not be saved: nothing was imported"}, status=500)
+            txn.commit()                          # settings.json may name the set: keep its files
+            print(f"[sets] import of {sid} failed and settings.json could not be restored ({e})", flush=True)
+            return web.json_response({"error": "the settings could not be saved, and the previous settings could not be "
+                                               "restored: check the Sets tab after a restart"}, status=500)
     txn.commit()
     if activate:
         _announce_active(sid)
@@ -2113,6 +2205,37 @@ async def api_quiz_stop(request):
 async def api_quiz_repeat(request):
     await asyncio.get_running_loop().run_in_executor(None, quiz_engine.repeat)
     return web.json_response(_quiz_payload())
+
+
+# ── Progress API (FUNK-40) ───────────────────────────────────────────────────
+
+async def api_progress_get(request):
+    return web.json_response(letter_progress.snapshot())
+
+
+async def _progress_saved_snapshot():
+    """Save now (off the event loop), tell every parent page, answer with the new state."""
+    await asyncio.get_running_loop().run_in_executor(None, _progress_save)
+    snap = letter_progress.snapshot()
+    sse_broadcast("progress", snap)
+    return web.json_response(snap)
+
+
+async def api_progress_config(request):
+    try:
+        data = await request.json()
+        if not isinstance(data, dict) or "mastery" not in data:
+            raise progress.ProgressError("body must be {\"mastery\": n}")
+        letter_progress.set_mastery(data["mastery"])
+    except ValueError as e:         # ProgressError, and a body that is not JSON
+        return web.json_response({"error": str(e)}, status=400)
+    return await _progress_saved_snapshot()
+
+
+async def api_progress_reset(request):
+    letter_progress.reset()
+    print("[progress] reset by the parent page", flush=True)
+    return await _progress_saved_snapshot()
 
 
 # ── Key map API (FUNK-62) ────────────────────────────────────────────────────
@@ -3262,6 +3385,9 @@ def create_app():
     app.router.add_post("/api/quiz/start", api_quiz_start)
     app.router.add_post("/api/quiz/stop", api_quiz_stop)
     app.router.add_post("/api/quiz/repeat", api_quiz_repeat)
+    app.router.add_get("/api/progress", api_progress_get)
+    app.router.add_put("/api/progress/config", api_progress_config)
+    app.router.add_post("/api/progress/reset", api_progress_reset)
     app.router.add_post("/api/press/{key_id}", api_press)
     app.router.add_get("/api/keyboards", api_get_keyboards)
     app.router.add_post("/api/keyboards/import", api_import_keyboard)
@@ -3314,6 +3440,7 @@ def main():
 
     settings = load_settings()
     _load_favorites()
+    _progress_start()                        # FUNK-40
     set_count = len(settings.get("sets", {}))
     active = settings.get("active_set", "?")
     print(f"[funkeykid] Settings loaded: {set_count} set(s), active={active}, {len(favorites)} favorites", flush=True)

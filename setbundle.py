@@ -229,6 +229,15 @@ def _rewrite(set_data, sound_map, image_map):
 
 # ── export ───────────────────────────────────────────────────────────────────
 
+def _inside(base, path):
+    """True if path, with every symlink resolved, is inside base."""
+    try:
+        b, p = os.path.realpath(base), os.path.realpath(path)
+    except (OSError, ValueError):
+        return False
+    return p != b and os.path.commonpath([b, p]) == b
+
+
 def build_zip(set_id, set_data, sounds_dir, images_dir, version=""):
     """The ZIP bytes for a set: manifest plus every referenced file that exists.
 
@@ -242,7 +251,8 @@ def build_zip(set_id, set_data, sounds_dir, images_dir, version=""):
         for folder, names, base in (("sounds", sounds, sounds_dir), ("images", images, images_dir)):
             for name in sorted(names):
                 path = os.path.join(base, name)
-                if os.path.isfile(path):
+                # a regular file inside its folder only: a symlink there could point anywhere (FUNK-73)
+                if os.path.isfile(path) and not os.path.islink(path) and _inside(base, path):
                     z.write(path, f"{folder}/{name}", compress_type=zipfile.ZIP_STORED)   # already compressed media
                 else:
                     missing.append(f"{folder}/{name}")

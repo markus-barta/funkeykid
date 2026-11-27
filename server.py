@@ -1,5 +1,6 @@
 """funkeykid v2 — aiohttp web server + keyboard handler with sets."""
 import asyncio
+import errno
 import json
 import os
 import subprocess
@@ -2088,26 +2089,206 @@ async def api_normalize_all_sounds(request):
     return web.json_response({"ok": True, "message": "Normalisierung läuft — siehe SSE normalize_progress."})
 
 
+UPLOAD_EXTS = {"sound": ("mp3", "wav", "ogg"), "image": ("png", "jpg", "jpeg", "gif")}   # what the library lists
+UPLOAD_MAX_BYTES = {"sound": 20 * 1024 * 1024, "image": 10 * 1024 * 1024}
+
+
+class _UploadTooLarge(Exception):
+    pass
+
+
+def _upload_name(raw, kind):
+    """The plain name an upload asks for, or None (FUNK-73).
+
+    Only the last part of the browser's name counts (it was joined onto the data folder
+    as is, "../" included); no hidden files and only the kind's extensions. The name it
+    gets in the end is a free one (see _publish_new).
+    """
+    if not isinstance(raw, str):
+        return None
+    name = raw.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if not name or name.startswith(".") or not _MEDIA_NAME.fullmatch(name):
+        return None
+    stem, dot, ext = name.rpartition(".")
+    if not dot or not stem or ext.lower() not in UPLOAD_EXTS[kind]:
+        return None
+    return name
+
+
+def _staging(ext):
+    """A fresh path in the private staging folder: on the data volume (links work), outside
+    every folder a route serves (FUNK-73: /ai served the old upload temp files)."""
+    folder = os.path.join(DATA_DIR, ".staging")
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, f"{uuid.uuid4().hex}.{ext}")
+
+
+def _publish_exact(src, dst):
+    """Put a complete file at dst, never over an existing path and never through one.
+
+    link() and open(..., "x") fail on any existing name, a dangling symlink included, and
+    never follow it. Raises FileExistsError if dst is taken; a failed copy leaves nothing.
+    """
+    try:
+        os.link(src, dst, follow_symlinks=False)
+        return
+    except FileExistsError:
+        raise
+    except NotImplementedError:
+        pass
+    except OSError as e:
+        if e.errno not in (errno.EXDEV, errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP):
+            raise
+    made = False
+    try:
+        with open(src, "rb") as fi, open(dst, "xb") as fo:
+            made = True
+            shutil.copyfileobj(fi, fo)
+    except BaseException:
+        if made:
+            _remove_quiet(dst)
+        raise
+
+
+def _publish_new(src, folder, want, folders):
+    """Put src into folder under a free name based on want; return that name (FUNK-73).
+
+    Another writer (a set import) taking the name meanwhile just means the next free one.
+    """
+    stem, _, ext = want.rpartition(".")
+    for _ in range(8):
+        name = _claim_media_name(want, stem, ext, folders)
+        try:
+            _publish_exact(src, os.path.join(folder, name))
+            return name
+        except FileExistsError:
+            continue
+    raise FileExistsError(want)
+
+
+def _normalize_staged(raw):
+    """Normalize a staged sound into a second staged file. Returns (path to publish, normalized).
+
+    The raw file is complete, so when normalization does not run or fails, the raw file is
+    what gets published (FUNK-1: the caller always gets a usable file); a half-written
+    normalized file is never used. Storage errors outside normalize_mp3 propagate.
+    """
+    out = _staging(raw.rpartition(".")[2])
+    try:
+        normed = normalize_mp3(raw, out)
+    except OSError:                         # its own fallback copy failed (disk full): the raw file is complete
+        _remove_quiet(out)
+        return raw, False
+    except BaseException:
+        _remove_quiet(out)
+        raise
+    if normed and os.path.isfile(out) and os.path.getsize(out) > 0:
+        return out, True
+    _remove_quiet(out)
+    return raw, False
+
+
+def _store_generated_sound(audio_data, filename):
+    """A generation job's sound: staged, normalized, published exclusively as /sounds/<filename>,
+    the raw file kept next to the AI sounds (best effort). Returns whether it was normalized."""
+    raw = _staging(filename.rpartition(".")[2] or "mp3")
+    src = raw
+    try:
+        with open(raw, "xb") as f:
+            f.write(audio_data)
+        src, normed = _normalize_staged(raw)
+        os.makedirs(SOUNDS_DIR, exist_ok=True)
+        _publish_exact(src, os.path.join(SOUNDS_DIR, filename))
+        try:
+            os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
+            _publish_exact(raw, os.path.join(AI_SOUNDS_DIR, filename))
+        except OSError:
+            pass
+        return normed
+    finally:
+        _remove_quiet(raw)
+        if src != raw:
+            _remove_quiet(src)
+
+
+async def _receive_upload(request, kind):
+    """The request's first file field, read into a private temp file.
+
+    Returns (temp path, wanted name, None) or (None, None, error response). The temp
+    file is removed on every failure, a cancelled request included.
+    """
+    try:
+        reader = await request.multipart()
+        field = await reader.next()
+    except Exception:
+        return None, None, web.json_response({"error": "multipart upload expected"}, status=400)
+    want = _upload_name(getattr(field, "filename", None), kind) if field is not None else None
+    if not want:
+        allowed = ", ".join(UPLOAD_EXTS[kind])
+        return None, None, web.json_response({"error": f"Dateiname ungültig (erlaubt: {allowed})"}, status=400)
+    tmp, size, ok = None, 0, False
+    try:
+        tmp = _staging(want.rpartition(".")[2])
+        with open(tmp, "xb") as f:
+            while True:
+                chunk = await field.read_chunk()
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > UPLOAD_MAX_BYTES[kind]:
+                    raise _UploadTooLarge()
+                f.write(chunk)
+        ok = True
+    except _UploadTooLarge:
+        mb = UPLOAD_MAX_BYTES[kind] // (1024 * 1024)
+        return None, None, web.json_response({"error": f"Datei zu groß (höchstens {mb} MB)"}, status=413)
+    except OSError:
+        return None, None, web.json_response({"error": "Die Datei konnte nicht gespeichert werden (Speicher voll?)"}, status=507)
+    finally:
+        if not ok and tmp:
+            _remove_quiet(tmp)
+    return tmp, want, None
+
+
 async def api_upload_sound(request):
     """Upload a sound file. Normalizes the result (FUNK-1) unless disabled.
 
-    Flow: write raw upload → ai-generated/sounds (or tmp if dir missing)
-    → normalize_mp3 into /data/sounds. Keeps the original for reference.
+    The upload is staged privately, normalized there, and only a complete file is
+    published into /data/sounds under a free name (FUNK-73): use the response. The
+    original stays next to the AI sounds for reference (best effort, never partial).
     """
-    os.makedirs(SOUNDS_DIR, exist_ok=True)
-    os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
-    reader = await request.multipart()
-    field = await reader.next()
-    filename = field.filename
-    raw_path = os.path.join(AI_SOUNDS_DIR, filename)
-    with open(raw_path, "wb") as f:
-        while True:
-            chunk = await field.read_chunk()
-            if not chunk:
-                break
-            f.write(chunk)
-    normed = normalize_mp3(raw_path, os.path.join(SOUNDS_DIR, filename))
-    return web.json_response({"ok": True, "file": filename, "normalized": normed})
+    tmp, want, err = await _receive_upload(request, "sound")
+    if err:
+        return err
+    fut = asyncio.get_running_loop().run_in_executor(None, _normalize_staged, tmp)
+    try:
+        src, normed = await asyncio.shield(fut)
+    except asyncio.CancelledError:
+        # the worker keeps running: it owns tmp until it ends; clean both up then
+        def _after(f):
+            _remove_quiet(tmp)
+            if not f.cancelled() and f.exception() is None and f.result()[0] != tmp:
+                _remove_quiet(f.result()[0])
+        fut.add_done_callback(_after)
+        raise
+    except OSError:
+        _remove_quiet(tmp)
+        return web.json_response({"error": "Die Datei konnte nicht gespeichert werden (Speicher voll?)"}, status=507)
+    try:
+        os.makedirs(SOUNDS_DIR, exist_ok=True)
+        name = _publish_new(src, SOUNDS_DIR, want, SOUND_DIRS)
+        try:
+            os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
+            _publish_exact(tmp, os.path.join(AI_SOUNDS_DIR, name))
+        except OSError:
+            pass
+    except OSError:
+        return web.json_response({"error": "Die Datei konnte nicht gespeichert werden (Speicher voll?)"}, status=507)
+    finally:
+        _remove_quiet(tmp)
+        if src != tmp:
+            _remove_quiet(src)
+    return web.json_response({"ok": True, "file": name, "normalized": normed})
 
 
 async def api_get_images(request):
@@ -2117,18 +2298,18 @@ async def api_get_images(request):
 
 
 async def api_upload_image(request):
-    os.makedirs(IMAGES_DIR, exist_ok=True)
-    reader = await request.multipart()
-    field = await reader.next()
-    filename = field.filename
-    path = os.path.join(IMAGES_DIR, filename)
-    with open(path, "wb") as f:
-        while True:
-            chunk = await field.read_chunk()
-            if not chunk:
-                break
-            f.write(chunk)
-    return web.json_response({"ok": True, "file": filename})
+    """Upload a picture into the library under a plain, free name (FUNK-73): use the response."""
+    tmp, want, err = await _receive_upload(request, "image")
+    if err:
+        return err
+    try:
+        os.makedirs(IMAGES_DIR, exist_ok=True)
+        name = _publish_new(tmp, IMAGES_DIR, want, IMAGE_DIRS)
+    except OSError:
+        return web.json_response({"error": "Die Datei konnte nicht gespeichert werden (Speicher voll?)"}, status=507)
+    finally:
+        _remove_quiet(tmp)
+    return web.json_response({"ok": True, "file": name})
 
 
 async def api_test_key(request):
@@ -2638,18 +2819,35 @@ async def api_get_layout(request):
     return web.json_response(LAYOUTS.get(name, {}))
 
 
+def _safe_file(folder, name):
+    """The path of an existing regular file inside folder, or None (FUNK-73).
+
+    name comes from a request: aiohttp decodes %2f inside a route's {filename} too, so
+    "..%2f..%2fproc%2fself%2fenviron" arrives as a path. The resolved path (symlinks
+    followed) must stay inside folder; a NUL or an invalid path is simply not found.
+    """
+    if not isinstance(name, str) or not name or "\x00" in name:
+        return None
+    try:
+        base = os.path.realpath(folder)
+        path = os.path.realpath(os.path.join(base, name))
+    except (ValueError, OSError):
+        return None
+    if path == base or os.path.commonpath([base, path]) != base or not os.path.isfile(path):
+        return None
+    return path
+
+
 async def serve_sound(request):
-    filename = request.match_info["filename"]
-    path = os.path.join(SOUNDS_DIR, filename)
-    if not os.path.exists(path):
+    path = _safe_file(SOUNDS_DIR, request.match_info["filename"])
+    if not path:
         return web.Response(status=404)
     return web.FileResponse(path)
 
 
 async def serve_image(request):
-    filename = request.match_info["filename"]
-    path = os.path.join(IMAGES_DIR, filename)
-    if not os.path.exists(path):
+    path = _safe_file(IMAGES_DIR, request.match_info["filename"])
+    if not path:
         return web.Response(status=404)
     return web.FileResponse(path)
 
@@ -2814,10 +3012,7 @@ def _gen_sound_worker(job_id, word, prompt, duration, filename):
             audio_data = resp.read()
         if len(audio_data) < 1000:
             raise ValueError("Generierung fehlgeschlagen (zu klein)")
-        outpath = os.path.join(AI_SOUNDS_DIR, filename)
-        with open(outpath, "wb") as f:
-            f.write(audio_data)
-        normed = normalize_mp3(outpath, os.path.join(SOUNDS_DIR, filename))
+        normed = _store_generated_sound(audio_data, filename)      # FUNK-73: staged, published exclusively
         gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}", "normalized": normed})
         _ai_log_entry("sound", "elevenlabs/sfx", prompt,
                       f"OK: {len(audio_data)} bytes → {filename}" + (" (normalized)" if normed else ""),
@@ -2871,21 +3066,31 @@ def _gen_image_worker(job_id, word, prompt, filename, model=None):
             raise ValueError("Keine Bilddaten erhalten")
         b64 = images[0]["image_url"]["url"].split(",", 1)[1]
         img_data = base64.b64decode(b64)
-        # Save original
-        with open(os.path.join(AI_IMAGES_ORIG_DIR, filename), "wb") as f:
-            f.write(img_data)
-        # Resize
-        resized_path = os.path.join(AI_IMAGES_RESIZED_DIR, filename)
+        # FUNK-73: staged first, then published exclusively (never over a file, never through a link)
+        orig = _staging(filename.rpartition(".")[2] or "png")
+        small = _staging(filename.rpartition(".")[2] or "png")
         try:
-            from PIL import Image
-            from io import BytesIO
-            img = Image.open(BytesIO(img_data))
-            img = img.resize((64, 64), Image.LANCZOS)
-            img.save(resized_path)
-        except ImportError:
-            with open(resized_path, "wb") as f:
+            with open(orig, "xb") as f:
                 f.write(img_data)
-        shutil.copy2(resized_path, os.path.join(IMAGES_DIR, filename))
+            try:
+                from PIL import Image
+                from io import BytesIO
+                img = Image.open(BytesIO(img_data))
+                img = img.resize((64, 64), Image.LANCZOS)
+                img.save(small, format=img.format or "PNG")
+            except ImportError:
+                with open(small, "wb") as f:
+                    f.write(img_data)
+            os.makedirs(IMAGES_DIR, exist_ok=True)
+            _publish_exact(small, os.path.join(IMAGES_DIR, filename))
+            for src, dst in ((orig, AI_IMAGES_ORIG_DIR), (small, AI_IMAGES_RESIZED_DIR)):
+                try:
+                    _publish_exact(src, os.path.join(dst, filename))
+                except OSError:
+                    pass
+        finally:
+            _remove_quiet(orig)
+            _remove_quiet(small)
         gen_jobs[job_id].update({"status": "done", "size": len(img_data), "path": f"/images/{filename}"})
         _ai_log_entry("image", model, prompt, f"OK: {len(img_data)}b → {filename}", "ok")
     except Exception as e:
@@ -2941,10 +3146,7 @@ def _gen_tts_worker(job_id, text, voice_id, filename):
             audio_data = resp.read()
         if len(audio_data) < 1000:
             raise ValueError("TTS-Ausgabe zu klein")
-        outpath = os.path.join(AI_SOUNDS_DIR, filename)
-        with open(outpath, "wb") as f:
-            f.write(audio_data)
-        normed = normalize_mp3(outpath, os.path.join(SOUNDS_DIR, filename))
+        normed = _store_generated_sound(audio_data, filename)      # FUNK-73: staged, published exclusively
         gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}", "normalized": normed})
         _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text,
                       f"OK: {len(audio_data)}b → {filename}" + (" (normalized)" if normed else ""),
@@ -3238,21 +3440,52 @@ async def api_archive_file(request):
 
     if not filename or file_type not in ("sound", "image"):
         return web.json_response({"error": "type und filename erforderlich"}, status=400)
+    # a plain library name only (FUNK-73): "../settings.json" moved any file the process can move
+    if not isinstance(filename, str) or not _MEDIA_NAME.fullmatch(filename) or filename.startswith("."):
+        return web.json_response({"error": "ungültiger Dateiname"}, status=400)
 
     archive_dir = os.path.join(DATA_DIR, "archive", f"{file_type}s")
     os.makedirs(archive_dir, exist_ok=True)
 
-    if file_type == "sound":
-        src = os.path.join(SOUNDS_DIR, filename)
-    else:
-        src = os.path.join(IMAGES_DIR, filename)
-
-    if not os.path.exists(src):
+    import stat
+    src = os.path.join(SOUNDS_DIR if file_type == "sound" else IMAGES_DIR, filename)
+    try:
+        st = os.lstat(src)
+    except (OSError, ValueError):
+        st = None
+    if st is None or not stat.S_ISREG(st.st_mode):           # a symlink is not archived (it would take its target)
         return web.json_response({"error": f"Datei nicht gefunden: {filename}"}, status=404)
 
-    import shutil
-    dst = os.path.join(archive_dir, filename)
-    shutil.move(src, dst)
+    # Take the file away first, atomically: whatever is at that name at this instant is what gets
+    # archived. A set import writing the name right after leaves its new file alone (FUNK-73).
+    try:
+        held = _staging(filename.rpartition(".")[2] or "bin")
+        os.rename(src, held)
+    except FileNotFoundError:
+        return web.json_response({"error": f"Datei nicht gefunden: {filename}"}, status=404)
+    except OSError:
+        return web.json_response({"error": "Archivieren fehlgeschlagen"}, status=507)
+    stem, dot, ext = filename.rpartition(".")
+    dst = None
+    try:
+        for n in range(1, 1000):                            # an earlier archived file of that name stays
+            cand = os.path.join(archive_dir, filename if n == 1 else (f"{stem}-{n}.{ext}" if dot and stem else f"{filename}-{n}"))
+            try:
+                _publish_exact(held, cand)
+                dst = cand
+                break
+            except FileExistsError:
+                continue
+    except OSError:
+        dst = None
+    if dst is None:                                         # put it back where it was, if that name is still free
+        try:
+            _publish_exact(held, src)
+        except OSError:
+            return web.json_response({"error": "Archivieren fehlgeschlagen; die Datei liegt in /data/.staging"}, status=507)
+        _remove_quiet(held)
+        return web.json_response({"error": "Archivieren fehlgeschlagen"}, status=507)
+    _remove_quiet(held)
     return web.json_response({"ok": True, "archived": filename, "to": dst})
 
 
@@ -3268,10 +3501,14 @@ async def api_list_archive(request):
 
 
 async def serve_ai_file(request):
-    """Serve files from ai-generated directory."""
-    subpath = request.match_info["path"]
-    path = os.path.join(AI_DIR, subpath)
-    if not os.path.exists(path):
+    """Serve a file from the ai-generated folder, and nothing outside it.
+
+    FUNK-73: aiohttp decodes %2f after routing, so /ai/..%2f..%2fetc reached any file the
+    process can read (/proc/self/environ holds the API keys). The resolved path must stay
+    inside the folder.
+    """
+    path = _safe_file(AI_DIR, request.match_info["path"])
+    if not path:
         return web.Response(status=404)
     return web.FileResponse(path)
 
@@ -3294,7 +3531,7 @@ def _free_media_name(base, ext, folders):
 
     n = 1
     name = candidate(n)
-    while name in taken or any(os.path.exists(os.path.join(d, name)) for d in folders):
+    while name in taken or any(os.path.lexists(os.path.join(d, name)) for d in folders):   # a dangling link counts (FUNK-73)
         n += 1
         name = candidate(n)
     _issued_media_names.add(name)

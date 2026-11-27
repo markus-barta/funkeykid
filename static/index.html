@@ -4185,10 +4185,15 @@ function funkeykid() {
       if (!file) return;
       const form = new FormData();
       form.append('file', file);
-      await fetch(`/api/${type}/upload`, { method: 'POST', body: form });
-      await this.refresh();
-      this.showToast(`${file.name} hochgeladen`);
       ev.target.value = '';
+      try {
+        const res = await fetch(`/api/${type}/upload`, { method: 'POST', body: form });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok || !r.file) { this.showToast(r.error || 'Hochladen fehlgeschlagen', 'error'); return; }
+        await this.refresh();
+        // the server picks a plain, free name (FUNK-73): say which one it is
+        this.showToast(r.file === file.name ? `${r.file} hochgeladen` : `Hochgeladen als ${r.file}`);
+      } catch (e) { this.showToast('Hochladen fehlgeschlagen: ' + e.message, 'error'); }
     },
 
     showToast(msg, type='success') {

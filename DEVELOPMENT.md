@@ -377,6 +377,10 @@ Uses OpenRouter (gpt-4.1-nano) with a German-language prompt that:
 
 ---
 
+## File routes, uploads and archive stay in their folders (FUNK-73)
+
+`/ai/…`, `/sounds/…` and `/images/…` serve a file only if its resolved path is a regular file inside the route's folder (`_safe_file`): aiohttp decodes `%2f` inside a route's parameter, so `..%2f` used to reach any file the process could read, `/proc/self/environ` with the API keys included. Uploads take only the last part of the browser's file name, only the library's extensions (sounds: mp3, wav, ogg; pictures: png, jpg, jpeg, gif) and at most 20 / 10 MB. They are staged in `/data/.staging` (outside every served folder), normalized there, and published with `_publish_exact` / `_publish_new`: a hard link or an exclusive copy, never over an existing name and never through a symlink. The response names the file. Generated sounds and pictures are published the same way. The archive takes only a plain library name, refuses symlinks, takes the file away atomically before archiving it and never overwrites an archived file. Set export only adds regular files inside their folder. Tests: `tests/test_server_paths.py`, which runs the real routes (`server.create_app()`). CI installs aiohttp, so the server tests run there (they were skipped before).
+
 ## Archive System
 
 ### How It Works

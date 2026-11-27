@@ -407,6 +407,7 @@ GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
 | Buchstaben | Letter cards (A–Z, plus Ä Ö Ü ß for German), click to edit entries; progress tint and "gelernt" badge (FUNK-40) |
 | Nummern | Digit cards 0–9: word, tracks, counting pictures; progress tint |
 | Quiz | Start/stop a quiz, its settings, the last sessions (FUNK-39) |
+| Übersicht | What the child played: tiles, 30-day chart, keyboard heat map, top keys, play sessions, CSV export (FUNK-42) |
 | Sets | Create, duplicate, rename, delete, activate, export/import sets |
 | Tastatur | Key map on the drawn keyboard, keyboard profiles, virtual QWERTZ keyboard for testing |
 | Einstellungen | Keyboard language, volume, display mode, random sounds, AI prompts; Fortschritt: "gelernt" threshold and reset (FUNK-40) |
@@ -450,6 +451,21 @@ Settings → Fortschritt sets the threshold and resets everything after a confir
 
 API: `GET /api/progress`, `PUT /api/progress/config` (`{"mastery": n}`), `POST /api/progress/reset`.
 
+### Übersicht: play sessions and the dashboard (FUNK-42)
+
+**Play sessions:** every key from the real keyboard (letters, other keys, quiz answers; never test keys) keeps a play session going. 5 minutes (`progress.SESSION_GAP`) without one end it, and a clock set back starts a new one. Each session stores the local day it started, start and end (Unix seconds of the first and last key), all keys, letter/digit presses and quiz answers. Play time is first to last key of each session, booked on the day it started; the keys themselves are also counted per calendar day (`key_days`, 30 days), so a session over midnight makes both days "played". Sessions live in `settings["progress"]["sessions"]` for 90 days, at most 1000, in the order they happened (after a clock set back, the last one is still the running one); they are saved like the other counts, and a reset clears them too. In memory each session also has an `id`, unique for the run, which the tab uses as its key. At every day change, also while nobody plays, the progress loop drops what is past the kept days and bumps `rev` (`Progress.roll_day`), so open pages take the new day, also after the date was set back. Stored times outside 2000–2100 are dropped on load. An older build ignores the key, so a rollback to it drops the sessions at its first save; the other counts stay.
+
+**The tab** shows, for Heute / 7 Tage / 30 Tage:
+- six tiles: key presses (letters and digits), play time and sessions, quiz right on the first try, letters learned, days played, the most-pressed key;
+- a bar chart of the last 30 days (key presses, play time or quiz), the chosen period in colour; hover or tap a bar for the day;
+- the 40 counted keys on a QWERTZ keyboard, more orange the more they were pressed, a green dot on learned ones; tap a key for its numbers;
+- the top 10 keys (or all 40) with quiz answers, and the last 6 sessions ("läuft" while one runs: the server sends the seconds since the last key, and the page counts on with its own monotonic clock, so a wrong phone clock does not matter);
+- two CSV downloads: every kept session, and every key's totals. Semicolons, decimal commas, UTF-8 with BOM, local time, so Excel and Numbers open them directly.
+
+The tab fetches `GET /api/dashboard` (`Progress.dashboard()`: days, periods with per-letter counts, recent sessions, learned letters, `idle`, `boot`/`rev`). While it is open, SSE `progress` events (also the one at midnight) trigger a fetch. Only one request runs at a time; changes meanwhile ask for exactly one more, and only while the tab is open. A response is installed only if newer by `boot`/`rev`/`today`, as in FUNK-40.
+
+API: `GET /api/dashboard`, `GET /api/progress/sessions.csv`, `GET /api/progress/letters.csv`.
+
 ### UI libraries (FUNK-69)
 
 Tailwind 2.2.19, DaisyUI 4.12.24 and Alpine 3.17.5 are vendored under `static/vendor/ui/<name>-<version>/` with their licenses. Before, they came from jsDelivr on every page load (DaisyUI and Alpine unpinned), so the page broke without internet and changed with upstream releases. Each file has a `.gz` sibling that aiohttp serves when the browser accepts gzip (the CSS shrinks from ~2.9 MB to ~0.2–0.3 MB). `tests/test_vendor_ui.py` pins the sha256 of every file, checks the `.gz` siblings and licenses, and fails if `index.html` loads a script or stylesheet from another host. To update a library, follow the steps in that test's docstring.
@@ -470,7 +486,7 @@ The UI uses Server-Sent Events (`/api/events`) for instant updates:
 | `volume` | `{volume}` | Volume change via +/- keys |
 | `status` | Full status object | Initial connection; exclusive/grab or battery changes |
 | `quiz` | Quiz snapshot (`boot`, `rev`, phase, question, …) | Every quiz state change (FUNK-39) |
-| `progress` | Progress snapshot (see `/api/progress`) | Counts changed, at most once a second (FUNK-40) |
+| `progress` | Progress snapshot (see `/api/progress`) | Counts or play sessions changed, at most once a second (FUNK-40/42); the Übersicht tab then fetches `/api/dashboard` |
 
 `/api/status` keyboard fields: `connected`, `exclusive`, `grabbed`, `nodes[{path,name,grabbed}]`,
 `device_name`, `device_path`, `battery_level`, `battery_low`, `battery_low_threshold`,

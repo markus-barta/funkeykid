@@ -174,6 +174,47 @@ def _normalize_letter_entry(e):
     return _normalize_tracks(e, "FX")
 
 
+# ── Entry ids (FUNK-72) ──
+# Every letter entry carries an id, unique within its letter. The editor and the generation
+# jobs find an entry by it, never by word or position: a word can change or repeat, and the
+# list can be reordered while a job runs.
+_ENTRY_ID = re.compile(r"[A-Za-z0-9_-]{6,40}")
+
+
+def _ensure_entry_ids(entries):
+    """Give every entry a valid id that no other entry in the list has. True if any changed."""
+    if not isinstance(entries, list):
+        return False
+    valid = [e.get("id") for e in entries
+             if isinstance(e, dict) and isinstance(e.get("id"), str) and _ENTRY_ID.fullmatch(e["id"])]
+    reserved = set(valid)
+    taken, changed = set(), False
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        eid = e.get("id")
+        if not (isinstance(eid, str) and _ENTRY_ID.fullmatch(eid)) or eid in taken:
+            eid = uuid.uuid4().hex[:10]
+            while eid in reserved or eid in taken:
+                eid = uuid.uuid4().hex[:10]
+            e["id"] = eid
+            changed = True
+        taken.add(eid)
+    return changed
+
+
+def _ensure_all_entry_ids():
+    """Ids for every letter entry of every set (startup, after an import). True if any changed."""
+    changed = False
+    for s in (settings.get("sets") or {}).values():
+        if not isinstance(s, dict):
+            continue
+        for cfg in (s.get("letters") or {}).values():
+            if isinstance(cfg, dict) and _ensure_entry_ids(cfg.get("entries")):
+                changed = True
+    return changed
+
+
 def _normalize_number_entry(n):
     return _normalize_tracks(n, "DE")
 
@@ -280,7 +321,17 @@ flat_pos = -1
 # Favorites: list of {letter, entry_index} — up to 10
 favorites = []
 # AI generation jobs tracking
-gen_jobs = {}  # {job_id: {type, word, status, filename, error}}
+gen_jobs = {}  # {job_id: {type, kind, word, status, filename, started, finished, error, error_code, error_detail}}
+GEN_JOBS_KEEP = 300        # finished jobs kept for the activity list (FUNK-72); running ones always stay
+
+
+def _register_job(job):
+    """Add a generation job; forget the oldest finished ones beyond GEN_JOBS_KEEP."""
+    gen_jobs[job["id"]] = job
+    done = [j for j in gen_jobs.values() if j.get("status") in ("done", "error")]
+    for j in sorted(done, key=lambda j: j.get("finished") or j.get("started") or 0)[:max(0, len(done) - GEN_JOBS_KEEP)]:
+        gen_jobs.pop(j["id"], None)
+    return job
 # AI request/response log (circular buffer, last 50)
 ai_log = []
 AI_LOG_MAX = 50
@@ -297,6 +348,12 @@ def load_settings():
     _ensure_numbers_defaults()
     _migrate_to_tracks_v2()
     _migrate_sz_letter()
+    if _ensure_all_entry_ids():                 # FUNK-72: entries are found by id
+        try:
+            save_settings()
+            print("[migrate] letter entries got ids", flush=True)
+        except Exception as e:
+            print(f"[migrate] entry ids not saved: {e}", flush=True)
     current_volume = settings.get("volume", 100)
     return settings
 
@@ -1509,6 +1566,8 @@ async def api_get_set(request):
     for n in s.get("numbers", {}).values():
         _normalize_number_entry(n)
     s["track_order"] = _normalize_track_order(s.get("track_order"))
+    if any(_ensure_entry_ids(c.get("entries")) for c in list(s.get("letters", {}).values()) if isinstance(c, dict)):
+        save_settings()                      # FUNK-72: the editor finds entries by id
 
     out = _copy.deepcopy(s)
     for letter_cfg in out.get("letters", {}).values():
@@ -1846,6 +1905,7 @@ async def _commit_import(imp, name, resolutions, activate):
         except OSError:
             before = None
         sets[sid] = data
+        _ensure_all_entry_ids()               # FUNK-72: imported entries get ids before the save
         try:
             if activate:
                 _set_active(sid)
@@ -1890,6 +1950,8 @@ async def api_get_letter(request):
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
     letter_cfg = sets[set_id].get("letters", {}).get(letter, {"entries": []})
+    if _ensure_entry_ids(letter_cfg.get("entries")):
+        save_settings()                      # FUNK-72
     # Clone entries for response so we can decorate with legacy aliases
     # without mutating the persisted in-memory state.
     out_entries = []
@@ -1910,20 +1972,82 @@ async def api_put_letter(request):
     """
     set_id = request.match_info["set_id"]
     letter = keymap.norm_letter(request.match_info["letter"])
-    data = await request.json()
+    try:
+        data = await request.json()
+    except ValueError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, list) or not all(isinstance(e, dict) for e in entries):
+        return web.json_response({"error": "entries must be a list of objects"}, status=400)
     sets = settings.get("sets", {})
     if set_id not in sets:
         return web.json_response({"error": "Set not found"}, status=404)
     if "letters" not in sets[set_id]:
         sets[set_id]["letters"] = {}
     cleaned = []
-    for e in data.get("entries", []):
+    for e in entries:
         _normalize_letter_entry(e)
         _strip_legacy_sound(e)
         cleaned.append(e)
+    _ensure_entry_ids(cleaned)                # the editor sends its own ids; a bad or repeated one is replaced
     sets[set_id]["letters"][letter] = {"entries": cleaned}
     save_settings()
-    return web.json_response({"ok": True})
+    sse_broadcast("letter", {"set_id": set_id, "letter": letter})
+    return web.json_response({"ok": True, "ids": [e["id"] for e in cleaned]})
+
+
+MEDIA_KINDS = ("IMG",) + tuple(TRACK_KINDS)
+
+
+async def api_entry_media(request):
+    """Put a finished file on one entry's picture or track, found by entry id (FUNK-72).
+
+    Body: {"kind": "IMG"|"FX"|"DE"|"EN", "file": <name in the library>, "if_empty": bool}.
+    A generation job's file is put on its entry only when the job is done, never before
+    (a name that does not exist yet showed as a broken picture). With if_empty an occupied
+    slot stays as it is (applied: false): a job that ends after the parent chose something
+    else never overwrites that choice.
+    """
+    set_id = request.match_info["set_id"]
+    letter = keymap.norm_letter(request.match_info["letter"])
+    entry_id = request.match_info["entry_id"]
+    try:
+        data = await request.json()
+    except ValueError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "body must be an object"}, status=400)
+    kind, fname = data.get("kind"), data.get("file")
+    if kind not in MEDIA_KINDS:
+        return web.json_response({"error": f"kind must be one of {', '.join(MEDIA_KINDS)}"}, status=400)
+    if not isinstance(fname, str) or not _MEDIA_NAME.fullmatch(fname) or fname.startswith("."):
+        return web.json_response({"error": "invalid file name"}, status=400)
+    if not os.path.isfile(os.path.join(IMAGES_DIR if kind == "IMG" else SOUNDS_DIR, fname)):
+        return web.json_response({"error": "file not found"}, status=404)
+    sets = settings.get("sets", {})
+    if set_id not in sets:
+        return web.json_response({"error": "Set not found"}, status=404)
+    cfg = sets[set_id].get("letters", {}).get(letter)
+    entries = cfg.get("entries") if isinstance(cfg, dict) else None
+    entry = next((e for e in entries or [] if isinstance(e, dict) and e.get("id") == entry_id), None)
+    if entry is None:
+        return web.json_response({"error": "entry not found"}, status=404)
+    _normalize_letter_entry(entry)
+    if kind == "IMG":
+        current = entry.get("image") or ""
+    else:
+        current = (entry["tracks"].get(kind) or {}).get("file") or ""
+    if data.get("if_empty") is True and current:
+        return web.json_response({"ok": True, "applied": False, "current": current})
+    if kind == "IMG":
+        entry["image"] = fname
+    else:
+        track = entry["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
+        track["file"] = fname
+        track["enabled"] = True
+    save_settings()
+    sse_broadcast("letter", {"set_id": set_id, "letter": letter, "entry_id": entry_id})
+    return web.json_response({"ok": True, "applied": True})
 
 
 async def api_add_entry(request):
@@ -1943,8 +2067,9 @@ async def api_add_entry(request):
         "enabled": data.get("enabled", True),
     }
     letter_data["entries"].append(entry)
+    _ensure_entry_ids(letter_data["entries"])
     save_settings()
-    return web.json_response({"ok": True, "index": len(letter_data["entries"]) - 1})
+    return web.json_response({"ok": True, "index": len(letter_data["entries"]) - 1, "id": entry["id"]})
 
 
 # ── Numbers (per set) ────────────────────────────────────────────────────────
@@ -2852,6 +2977,63 @@ async def serve_image(request):
     return web.FileResponse(path)
 
 
+THUMB_SIZES = (160, 480)
+
+
+def _make_thumb(src, dst, size, pixel):
+    """Write dst: an AI original scaled down to fit size×size (JPEG), or a small library
+    picture (the Pixoo's 64×64) scaled up by whole pixels, so it stays sharp (PNG)."""
+    from PIL import Image
+    with Image.open(src) as im:
+        if pixel:
+            im = im.convert("RGBA")
+            n = max(1, size // max(im.size))
+            im = im.resize((im.width * n, im.height * n), Image.NEAREST)
+            fmt, opts = "PNG", {}
+        else:
+            im = im.convert("RGB")
+            im.thumbnail((size, size), Image.LANCZOS)
+            fmt, opts = "JPEG", {"quality": 84, "optimize": True}
+        tmp = f"{dst}.{uuid.uuid4().hex}.tmp"
+        try:
+            im.save(tmp, fmt, **opts)
+            os.replace(tmp, dst)
+        finally:
+            _remove_quiet(tmp)
+
+
+async def serve_thumb(request):
+    """A picture sized for the parent page (FUNK-72): the AI original scaled down when there is
+    one (a 1 MB original per tile was too heavy), else the library picture scaled up sharp.
+    Cached under ai-generated/thumbs; rebuilt when the picture is newer."""
+    try:
+        size = int(request.match_info["size"])
+    except ValueError:
+        return web.Response(status=404)
+    name = request.match_info["filename"]
+    if size not in THUMB_SIZES or not isinstance(name, str) or not _MEDIA_NAME.fullmatch(name) or name.startswith("."):
+        return web.Response(status=404)
+    orig, lib = os.path.join(AI_IMAGES_ORIG_DIR, name), os.path.join(IMAGES_DIR, name)
+    if os.path.isfile(orig):
+        src, pixel = orig, False
+    elif os.path.isfile(lib):
+        src, pixel = lib, True
+    else:
+        return web.Response(status=404)
+    dst = os.path.join(AI_DIR, "thumbs", str(size), name + (".png" if pixel else ".jpg"))
+    try:
+        fresh = os.path.isfile(dst) and os.path.getmtime(dst) >= os.path.getmtime(src)
+        if not fresh:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            await asyncio.get_running_loop().run_in_executor(None, _make_thumb, src, dst, size, pixel)
+    except Exception as e:                       # not a picture PIL reads: the file itself, as it is
+        print(f"[thumbs] {name}: {e}", flush=True)
+        return web.FileResponse(src)
+    resp = web.FileResponse(dst)
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
+
+
 async def serve_index(request):
     resp = web.FileResponse(os.path.join(STATIC_DIR, "index.html"))
     resp.headers["Cache-Control"] = "no-cache, must-revalidate"
@@ -2996,6 +3178,78 @@ def _ai_log_entry(action, model, prompt_sent, response_text, status="ok"):
     sse_broadcast("ai_log", entry)
 
 
+_PROVIDER_NAMES = {"elevenlabs": "ElevenLabs", "openrouter": "OpenRouter"}
+
+
+def _provider_error(provider, exc):
+    """A failed AI call as (message for the parent, HTTP status or None, the provider's own words).
+
+    FUNK-72: the page showed "HTTP Error 402: Payment Required". The message says what
+    happened and what to do, in German; the provider's text stays for the log and the
+    details line. An error body is read at most 4 KiB and never echoed in full.
+    """
+    import urllib.error
+    name = _PROVIDER_NAMES.get(provider, provider)
+    if isinstance(exc, urllib.error.HTTPError):
+        code, detail = exc.code, ""
+        try:
+            raw = exc.read(4096).decode("utf-8", "replace")
+        except Exception:
+            raw = ""
+        try:
+            body = json.loads(raw) if raw else None
+        except ValueError:
+            body = None
+        if isinstance(body, dict):
+            d, err = body.get("detail"), body.get("error")
+            if isinstance(d, dict):
+                detail = str(d.get("message") or d.get("status") or "")
+            elif isinstance(d, str):
+                detail = d
+            elif isinstance(err, dict):
+                detail = str(err.get("message") or "")
+            elif isinstance(err, str):
+                detail = err
+        elif raw and not raw.lstrip().startswith("<"):
+            detail = raw
+        detail = " ".join(detail.split())[:300]
+        low = detail.lower()
+        if provider == "elevenlabs" and "quota" in low:
+            msg = (f"Das {name}-Kontingent ist aufgebraucht. Unter KI & Dienste siehst du den Stand; "
+                   "es füllt sich zum nächsten Abrechnungszeitraum wieder auf.")
+        elif code == 401:
+            msg = f"{name} hat den Schlüssel abgelehnt (ungültig oder abgelaufen). Prüfe ihn unter KI & Dienste."
+        elif code == 402 and provider == "openrouter":
+            msg = "Das OpenRouter-Guthaben reicht nicht. Lade es auf openrouter.ai auf."
+        elif code == 402:
+            msg = (f"{name} verlangt dafür ein bezahltes Abo (zum Beispiel für diese Stimme). "
+                   "Prüfe unter KI & Dienste, zu welchem Konto der Schlüssel von funkeykid gehört.")
+        elif code == 403:
+            msg = f"{name} erlaubt diesem Schlüssel das nicht. Prüfe seine Berechtigungen bei {name}."
+        elif code == 429:
+            msg = f"{name} bekommt gerade zu viele Anfragen. Versuch es in einer Minute nochmal."
+        elif 500 <= code < 600:
+            msg = f"{name} hat gerade ein Problem (Fehler {code}). Versuch es gleich nochmal."
+        elif code in (400, 422):
+            msg = f"{name} hat die Anfrage abgelehnt" + (f": {detail}" if detail else ".")
+        else:
+            msg = f"{name} hat mit Fehler {code} geantwortet."
+        return msg, code, detail
+    if isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError)):
+        return f"Keine Verbindung zu {name}. Ist das Internet erreichbar?", None, str(exc)[:300]
+    if isinstance(exc, ValueError):                 # our own checks: empty result, no image data
+        return f"{name}: {exc}", None, str(exc)[:300]
+    return f"{name}: unerwarteter Fehler ({type(exc).__name__}).", None, str(exc)[:300]
+
+
+def _job_failed(job_id, provider, exc, action, model, prompt):
+    """Mark a generation job failed with the parent-facing reason, and log the provider's words."""
+    msg, code, detail = _provider_error(provider, exc)
+    gen_jobs[job_id].update({"status": "error", "error": msg, "error_code": code,
+                             "error_detail": detail, "finished": time.time()})
+    _ai_log_entry(action, model, prompt, f"{code or ''} {detail or exc}".strip(), "error")
+
+
 def _gen_sound_worker(job_id, word, prompt, duration, filename):
     """Background worker for sound generation."""
     import urllib.request, shutil
@@ -3013,13 +3267,13 @@ def _gen_sound_worker(job_id, word, prompt, duration, filename):
         if len(audio_data) < 1000:
             raise ValueError("Generierung fehlgeschlagen (zu klein)")
         normed = _store_generated_sound(audio_data, filename)      # FUNK-73: staged, published exclusively
-        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}", "normalized": normed})
+        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}",
+                                 "normalized": normed, "finished": time.time()})
         _ai_log_entry("sound", "elevenlabs/sfx", prompt,
                       f"OK: {len(audio_data)} bytes → {filename}" + (" (normalized)" if normed else ""),
                       "ok")
     except Exception as e:
-        gen_jobs[job_id].update({"status": "error", "error": str(e)})
-        _ai_log_entry("sound", "elevenlabs/sfx", prompt, str(e), "error")
+        _job_failed(job_id, "elevenlabs", e, "sound", "elevenlabs/sfx", prompt)
     sse_broadcast("gen_update", gen_jobs[job_id])
 
 
@@ -3035,7 +3289,7 @@ async def api_generate_sound(request):
     if not os.environ.get("ELEVENLABS_API_KEY"):
         return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
     job_id = f"snd_{uuid.uuid4().hex[:8]}"
-    gen_jobs[job_id] = {"id": job_id, "type": "sound", "word": word, "filename": filename, "status": "queued"}
+    _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "status": "queued", "started": time.time()})
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
     threading.Thread(target=_gen_sound_worker, args=(job_id, word, prompt, duration, filename), daemon=True).start()
@@ -3091,11 +3345,11 @@ def _gen_image_worker(job_id, word, prompt, filename, model=None):
         finally:
             _remove_quiet(orig)
             _remove_quiet(small)
-        gen_jobs[job_id].update({"status": "done", "size": len(img_data), "path": f"/images/{filename}"})
+        gen_jobs[job_id].update({"status": "done", "size": len(img_data), "path": f"/images/{filename}",
+                                 "finished": time.time()})
         _ai_log_entry("image", model, prompt, f"OK: {len(img_data)}b → {filename}", "ok")
     except Exception as e:
-        gen_jobs[job_id].update({"status": "error", "error": str(e)})
-        _ai_log_entry("image", model, prompt, str(e), "error")
+        _job_failed(job_id, "openrouter", e, "image", model, prompt)
     sse_broadcast("gen_update", gen_jobs[job_id])
 
 
@@ -3112,7 +3366,8 @@ async def api_generate_image(request):
     if not os.environ.get("OPENROUTER_API_KEY"):
         return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
     job_id = f"img_{uuid.uuid4().hex[:8]}"
-    gen_jobs[job_id] = {"id": job_id, "type": "image", "word": word, "filename": filename, "status": "queued"}
+    _register_job({"id": job_id, "type": "image", "kind": "IMG", "word": word, "filename": filename,
+                        "status": "queued", "started": time.time()})
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
     threading.Thread(target=_gen_image_worker, args=(job_id, word, prompt, filename, model), daemon=True).start()
@@ -3147,13 +3402,13 @@ def _gen_tts_worker(job_id, text, voice_id, filename):
         if len(audio_data) < 1000:
             raise ValueError("TTS-Ausgabe zu klein")
         normed = _store_generated_sound(audio_data, filename)      # FUNK-73: staged, published exclusively
-        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}", "normalized": normed})
+        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}",
+                                 "normalized": normed, "finished": time.time()})
         _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text,
                       f"OK: {len(audio_data)}b → {filename}" + (" (normalized)" if normed else ""),
                       "ok")
     except Exception as e:
-        gen_jobs[job_id].update({"status": "error", "error": str(e)})
-        _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text, str(e), "error")
+        _job_failed(job_id, "elevenlabs", e, "tts", f"elevenlabs/tts/{voice_id}", text)
     sse_broadcast("gen_update", gen_jobs[job_id])
 
 
@@ -3173,7 +3428,7 @@ async def api_generate_tts(request):
     if not os.environ.get("ELEVENLABS_API_KEY"):
         return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
     job_id = f"tts_{uuid.uuid4().hex[:8]}"
-    gen_jobs[job_id] = {"id": job_id, "type": "sound", "word": word, "filename": filename, "status": "queued"}
+    _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "status": "queued", "started": time.time()})
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
     threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
@@ -3214,7 +3469,7 @@ async def api_generate_track(request):
         prompt = data.get("prompt") or _get_sound_prompt().format(word=word)
         duration = data.get("duration", 4)
         job_id = f"trk_{uuid.uuid4().hex[:8]}"
-        gen_jobs[job_id] = {"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind, "status": "queued"}
+        _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind, "status": "queued", "started": time.time()})
         sse_broadcast("gen_update", gen_jobs[job_id])
         threading.Thread(target=_gen_sound_worker, args=(job_id, word, prompt, duration, filename), daemon=True).start()
         return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
@@ -3227,7 +3482,7 @@ async def api_generate_track(request):
         text = (data.get("prompt") or word).strip()
         voice_id = data.get("voice_id") or _voice_for_kind(kind)
         job_id = f"trk_{uuid.uuid4().hex[:8]}"
-        gen_jobs[job_id] = {"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind, "status": "queued"}
+        _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind, "status": "queued", "started": time.time()})
         sse_broadcast("gen_update", gen_jobs[job_id])
         threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
         return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
@@ -3334,8 +3589,9 @@ Wenn du eines der verbotenen Wörter vorschlägst, wird deine Antwort verworfen.
             return web.json_response(suggestion)
 
         except Exception as e:
-            _ai_log_entry("suggest", model, user_msg, str(e), "error")
-            return web.json_response({"error": str(e)}, status=500)
+            msg, code, detail = _provider_error("openrouter", e)
+            _ai_log_entry("suggest", model, user_msg, f"{code or ''} {detail or e}".strip(), "error")
+            return web.json_response({"error": msg, "error_code": code, "error_detail": detail}, status=502)
 
     # All 3 attempts returned excluded words
     _ai_log_entry("suggest", model, user_msg, f"FAILED after 3 attempts", "error")
@@ -3633,6 +3889,7 @@ def create_app():
     app.router.add_get("/api/sets/{set_id}/letters/{letter}", api_get_letter)
     app.router.add_put("/api/sets/{set_id}/letters/{letter}", api_put_letter)
     app.router.add_post("/api/sets/{set_id}/letters/{letter}/entries", api_add_entry)
+    app.router.add_post("/api/sets/{set_id}/letters/{letter}/entries/{entry_id}/media", api_entry_media)
     app.router.add_delete("/api/sets/{set_id}/letters/{letter}/entries/{index}", api_delete_entry)
     # Numbers within a set
     app.router.add_get("/api/sets/{set_id}/numbers", api_get_numbers)
@@ -3692,6 +3949,7 @@ def create_app():
     # File serving
     app.router.add_get("/sounds/{filename}", serve_sound)
     app.router.add_get("/images/{filename}", serve_image)
+    app.router.add_get("/thumbs/{size}/{filename}", serve_thumb)
     # SPA
     app.router.add_get("/", serve_index)
     app.router.add_static("/static/", STATIC_DIR)

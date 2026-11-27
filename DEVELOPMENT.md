@@ -261,7 +261,7 @@ On a German keyboard the ß key (`KEY_MINUS`) plays the set's ß content, like t
 
 Python and JavaScript turn `"ß".upper()` into `"SS"`, so letters are normalized with `keymap.norm_letter()` (upper case, ß stays ß, the capital ẞ becomes ß) on every letter route, the test key, key-map actions and set ZIP import. No German word starts with ß, so the AI suggestion asks for a word that contains one. Content stored under `SS` or `ẞ` by older versions (only the API could write it) moves to `ß` when the settings load.
 
-Since ß is spelled `ss` in slugs, "Busse" and "Buße" share one. So a generation job never writes over an existing file or another running job's file: the server takes the requested name (or `{slug}.{ext}`) when it is free, else a free variant (`b_busse_de-2.mp3` …, `_claim_media_name`), rejects names with a path, and returns the name in its response. The UI puts that name on the entry or track when the request returns; a finished job (`gen_update`) only refreshes what already shows its file (thumbnail, auto-play) and never assigns a file by word, and the generation wizard follows its own jobs by id. A new set never reuses an existing set's id (`_new_set_id`; before, "Neues Set" twice emptied the first set). Favorites that pointed at `SS`/`ẞ` move with their entries, and removing a favorite is saved (it used to come back after a restart).
+Since ß is spelled `ss` in slugs, "Busse" and "Buße" share one. So a generation job never writes over an existing file or another running job's file: the server takes the requested name (or `{slug}.{ext}`) when it is free, else a free variant (`b_busse_de-2.mp3` …, `_claim_media_name`), rejects names with a path, and returns the name in its response. Since FUNK-72 the entry editor puts that name on its entry only when the job is done (by job id and entry id, never by word; see "Entry editor" below); the number editor still puts it on when the request returns. A new set never reuses an existing set's id (`_new_set_id`; before, "Neues Set" twice emptied the first set). Favorites that pointed at `SS`/`ẞ` move with their entries, and removing a favorite is saved (it used to come back after a restart).
 
 ---
 
@@ -408,8 +408,8 @@ GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
 
 | Tab | Purpose |
 |-----|---------|
-| Buchstaben | Letter cards (A–Z, plus Ä Ö Ü ß for German), click to edit entries; progress tint and "gelernt" badge (FUNK-40) |
-| Nummern | Digit cards 0–9: word, tracks, counting pictures; progress tint |
+| Buchstaben | Letter tiles (A–Z, plus Ä Ö Ü ß for German): picture, words, how many have a picture / sound / voice, presses today; filter "Mit Lücken" / "Heute gespielt"; click opens the entry editor (FUNK-72); progress tint and "gelernt" badge (FUNK-40) |
+| Zahlen | Digit cards 0–9: word, tracks, counting pictures; progress tint |
 | Quiz | Start/stop a quiz, its settings, the last sessions (FUNK-39) |
 | Übersicht | What the child played: tiles, 30-day chart, keyboard heat map, top keys, play sessions, CSV export (FUNK-42) |
 | Sets | Create, duplicate, rename, delete, activate, export/import sets |
@@ -474,6 +474,14 @@ API: `GET /api/dashboard`, `GET /api/progress/sessions.csv`, `GET /api/progress/
 
 Tailwind 2.2.19, DaisyUI 4.12.24 and Alpine 3.17.5 are vendored under `static/vendor/ui/<name>-<version>/` with their licenses. Before, they came from jsDelivr on every page load (DaisyUI and Alpine unpinned), so the page broke without internet and changed with upstream releases. Each file has a `.gz` sibling that aiohttp serves when the browser accepts gzip (the CSS shrinks from ~2.9 MB to ~0.2–0.3 MB). `tests/test_vendor_ui.py` pins the sha256 of every file, checks the `.gz` siblings and licenses, and fails if `index.html` loads a script or stylesheet from another host. To update a library, follow the steps in that test's docstring.
 
+### App shell and design system (FUNK-72)
+
+The page has one design system: CSS tokens (`--ui-*`) and `ui-` classes in the `<style>` block, the "Design system (FUNK-72)" part. DaisyUI's theme variables are mapped onto the same tokens (`html[data-theme]`), so tabs that still use DaisyUI classes match the new look. Icons are fixed SVG strings in `FK_UI.ic` (outside the Alpine component, never reactive), shown with `x-html`.
+
+- From 1024 px: a sidebar with the navigation in groups (Inhalte, Lernen, Gerät, Medien & KI), the active set, and a device card (keyboard state and exclusive grab, battery, MQTT, volume, "Alles stoppen"; the card's title opens the keyboard diagnosis). The top bar shows the page's title and the last key with its word, live (`rawkey` / `keypress`).
+- Below 1024 px: a top bar (brand, keyboard state, stop) and a bottom navigation with five places; "Mehr" opens the rest.
+- `go(tab)` switches tabs and loads what a tab needs (quiz, dashboard, AI log).
+
 ### Phone layout (FUNK-68)
 
 The page fits a 360 px screen: nothing is wider than the viewport (checked headless at 360, 390 and 768 px on every tab and with the editors open). The navbar wraps, the status group goes below the set selector. The tab bar is a row of `role="tab"` buttons that scrolls sideways (`.fk-tabs`): it is centred when it fits, starts at the first tab when it does not, and scrolls the active tab into view. The drawn keyboard and the test keyboard (`.fk-testkb`) scroll inside their own boxes. Keyboard hints (`Esc`) are hidden below 640 px (`.kbd.fk-wide-only`: DaisyUI's `.kbd` display beats Tailwind's `hidden`). Don't hide overflow on `html`/`body`: it would clip content instead of fixing it.
@@ -491,6 +499,8 @@ The UI uses Server-Sent Events (`/api/events`) for instant updates:
 | `status` | Full status object | Initial connection; exclusive/grab or battery changes |
 | `quiz` | Quiz snapshot (`boot`, `rev`, phase, question, …) | Every quiz state change (FUNK-39) |
 | `progress` | Progress snapshot (see `/api/progress`) | Counts or play sessions changed, at most once a second (FUNK-40/42); the Übersicht tab then fetches `/api/dashboard` |
+| `gen_update` | A generation job (`id`, `kind`, `status`, `filename`, `started`, `finished`, `error`, `error_code`, `error_detail`) | Every job state change; the entry editor routes its own jobs by id (FUNK-72) |
+| `letter` | `{set_id, letter, entry_id?}` | A letter was saved, or a finished file was put on an entry; the Buchstaben grid reloads the active set (FUNK-72) |
 
 `/api/status` keyboard fields: `connected`, `exclusive`, `grabbed`, `nodes[{path,name,grabbed}]`,
 `device_name`, `device_path`, `battery_level`, `battery_low`, `battery_low_threshold`,
@@ -498,20 +508,22 @@ The UI uses Server-Sent Events (`/api/events`) for instant updates:
 
 Fallback: 10s polling for robustness.
 
-### Letter Edit Modal
+### Entry editor (FUNK-72)
 
-Each entry has:
-- Toggle (enable/disable)
-- Word input
-- Sound picker (searchable, type-to-filter)
-- Image picker (searchable, thumbnail grid)
-- 🔊 Sound generieren → ElevenLabs API
-- 🖼️ Bild generieren → OpenRouter/Gemini API
-- ⚙️ Custom AI instructions field
-- 📦 Archive button (moves files to archive)
-- ✕ Delete button
+Clicking a letter opens the editor: the letter's words on the left (picture, word, what is missing as dots), one word in focus on the right. Shift+←/→ switches letters, ↑/↓ words, Space plays the word, Esc closes.
 
-**✨ KI-Vorschlag**: AI suggests a fitting word + auto-generates sound + image
+- **Entry ids.** Every letter entry has an `id` (10 hex chars), unique within its letter. The server gives missing or repeated ids at startup, on reads and on every write (`_ensure_entry_ids`). The editor makes its own for new words. Jobs and the editor find an entry by id, never by word or position.
+- **Saves by itself.** Every change records the letter as it is now and saves it 600 ms later with `PUT /api/sets/{id}/letters/{L}`. One queue (`_edQueue`) runs every save and every load in order: a load never overtakes a save, and switching or closing never loses a change. A failed save is kept and retried (the header says "Nicht gespeichert · Erneut"). Undo: discrete steps (add, remove, switch off, take a new version, pick from the library) show "Rückgängig" in the toast.
+- **Picture.** Shown from `/thumbs/{160|480}/{name}`: the AI original scaled down (JPEG), or the 64 × 64 library picture scaled up by whole pixels (PNG), cached in `ai-generated/thumbs/` and rebuilt when the picture is newer. "So sieht es auf dem Pixoo aus" shows the real 64 × 64 file.
+- **So hört es dein Kind.** It plays the tracks the set has switched on, in the set's order, with their volume (capped at 100 % in the browser). Each track shows its real waveform (decoded in the browser).
+- **Generation.** A slot (picture or a track) never points at a file that does not exist yet. That was the broken picture while generating, and a failed job left the entry pointing at nothing. The states:
+  - **run:** the current file stays visible and playable.
+  - **done, slot empty:** the file goes on the entry. If the letter is open, through the editor's own save. If not, through `POST /api/sets/{id}/letters/{L}/entries/{entry_id}/media` with `if_empty`, queued after that letter's saves.
+  - **done, slot filled:** "current vs new". The parent compares and takes, discards (the file stays in the library) or runs it again.
+  - **error:** the reason, inline, from the server.
+- **Errors in plain words.** `_provider_error()` turns a failed ElevenLabs/OpenRouter call into a German sentence: 401 key, 402 paid plan or credit, 403, 429, 5xx, no connection. The provider's own words go into `error_detail` (≤ 300 chars) and the AI log; an HTML error page is never echoed.
+- **Activity.** A button bottom right lists every AI job of the server (running, to check, failed) with "Prüfen" / "Öffnen". `/api/jobs` keeps the newest 300 finished jobs (`GEN_JOBS_KEEP`).
+- **Also:** suggest a word (accept → picture and every track the set plays are generated at once; reject → never suggested again), the suggestion prompt, rejected words, library picker with search and preview, upload, archive (files to the archive), remove.
 
 ### Settings Auto-Save
 
@@ -659,7 +671,7 @@ Under Settings → KI-Generierung:
 Sound and image generation runs in background threads:
 - API returns job ID immediately
 - SSE `gen_update` events notify UI on status changes (queued → generating → done/error)
-- Generation jobs panel in header shows active/failed jobs
+- The activity button (bottom right) shows running, finished and failed jobs (FUNK-72)
 - File lists auto-refresh on completion
 
 ---

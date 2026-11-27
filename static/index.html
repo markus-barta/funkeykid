@@ -207,69 +207,468 @@
       background: linear-gradient(90deg, rgba(249,115,22,.10), transparent 70%); }
     @media (max-width: 639px) { .dash-hide-sm { display: none; } .dash-show-sm { display: inline-block; } .dash-plot { height: 10rem; margin-left: 2rem; } .dash-x { margin-left: 2rem; }
       .dash-table td, .dash-table th { padding-left: 0.35rem; padding-right: 0.35rem; } .dash-kb { padding: 0.5rem 0.4rem 0.4rem; } }
+    /* ══ Design system (FUNK-72): tokens, app shell, Buchstaben, entry editor ══
+       New UI uses the ui- classes below. The DaisyUI theme is mapped onto the same
+       tokens, so tabs that still use DaisyUI already match. */
+    :root {
+      --ui-bg: #0c0e12; --ui-s1: #13161c; --ui-s2: #191d25; --ui-s3: #20252f; --ui-s4: #2a303c;
+      --ui-line: rgba(255,255,255,.07); --ui-line2: rgba(255,255,255,.13);
+      --ui-tx: #eef0f4; --ui-tx2: #b6bcc8; --ui-tx3: #8d94a3;
+      --ui-pri: #6a59f3; --ui-pri-hi: #8b7dff; --ui-pri-soft: rgba(122,106,255,.15); --ui-pri-line: rgba(139,125,255,.45);
+      --ui-ok: #3ecf8e; --ui-warn: #f5b941; --ui-err: #ff6170; --ui-err-soft: rgba(255,97,112,.10);
+      --ui-fx: #ff9f43; --ui-de: #3ecf8e; --ui-en: #5aa9ff; --ui-img: #c48bff;
+      --ui-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+      --ui-round: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", var(--ui-font);
+      --ui-ease: cubic-bezier(.2,.8,.2,1);
+    }
+    html[data-theme] {                 /* beats DaisyUI's [data-theme=dark]: same variables, our values */
+      color-scheme: dark;
+      --p: 56.5% 0.215 283; --pc: 100% 0 0; --s: 72% 0.16 300; --sc: 15% 0.02 300;
+      --a: 74% 0.16 55; --ac: 18% 0.03 55; --n: 25.5% 0.017 265; --nc: 92% 0.01 265;
+      --b1: 19% 0.011 265; --b2: 22% 0.014 265; --b3: 25.5% 0.017 265; --bc: 95% 0.006 265;
+      --in: 71% 0.14 255; --inc: 15% 0.03 255; --su: 76% 0.15 160; --suc: 18% 0.04 160;
+      --wa: 81% 0.14 80; --wac: 20% 0.04 80; --er: 68% 0.19 18; --erc: 15% 0.04 18;
+      --rounded-box: 1rem; --rounded-btn: 0.7rem; --rounded-badge: 1.9rem; --tab-radius: 0.6rem;
+    }
+    html, body { background: var(--ui-bg); }
+    body { font-family: var(--ui-font); color: var(--ui-tx); -webkit-font-smoothing: antialiased; }
+    .ui-muted { color: var(--ui-tx2); } .ui-faint { color: var(--ui-tx3); } .num { font-variant-numeric: tabular-nums; }
+    .ui-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .ui-trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .ui-pix { image-rendering: pixelated; }
+    svg.ui-i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .ui-app :focus-visible { outline: 2px solid var(--ui-pri-hi); outline-offset: 2px; }
+
+    /* buttons, switch, inputs */
+    .ui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 12px;
+      font-weight: 600; font-size: 14px; white-space: nowrap; transition: background .15s, transform .1s, box-shadow .15s, color .15s; cursor: pointer; border: 0; background: none; color: inherit; }
+    .ui-btn:active { transform: translateY(1px); }
+    .ui-btn.sm { height: 34px; padding: 0 12px; font-size: 13px; border-radius: 10px; }
+    .ui-btn.xs { height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; gap: 6px; }
+    .ui-btn.xs svg.ui-i, .ui-btn.sm svg.ui-i { width: 16px; height: 16px; }
+    .ui-btn-pri { background: var(--ui-pri); color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.18) inset, 0 6px 18px rgba(106,89,243,.35); }
+    .ui-btn-pri:hover { background: #7566ff; }
+    .ui-btn-soft { background: var(--ui-pri-soft); color: #d4ceff; } .ui-btn-soft:hover { background: rgba(139,125,255,.24); }
+    .ui-btn-ghost { color: var(--ui-tx2); } .ui-btn-ghost:hover { background: rgba(255,255,255,.06); color: var(--ui-tx); }
+    .ui-btn-line { border: 1px solid var(--ui-line2); color: var(--ui-tx); } .ui-btn-line:hover { background: rgba(255,255,255,.05); }
+    .ui-btn[disabled] { opacity: .45; cursor: not-allowed; transform: none; }
+    .ui-ibtn { width: 36px; height: 36px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; color: var(--ui-tx2);
+      transition: background .15s, color .15s; cursor: pointer; background: none; border: 0; flex: none; }
+    .ui-ibtn:hover { background: rgba(255,255,255,.07); color: var(--ui-tx); }
+    .ui-ibtn.sm { width: 30px; height: 30px; border-radius: 8px; }
+    .ui-ibtn.line { border: 1px solid var(--ui-line2); }
+    .ui-switch { position: relative; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ui-tx2); cursor: pointer; user-select: none; }
+    .ui-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .ui-switch .tr { width: 36px; height: 22px; border-radius: 99px; background: var(--ui-s4); position: relative; transition: background .2s; flex: none; }
+    .ui-switch .tr::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+      transition: transform .2s var(--ui-ease); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+    .ui-switch input:checked + .tr { background: var(--ui-ok); }
+    .ui-switch input:checked + .tr::after { transform: translateX(14px); }
+    .ui-switch input:focus-visible + .tr { outline: 2px solid var(--ui-pri-hi); outline-offset: 2px; }
+    .ui-inp { height: 40px; border-radius: 11px; background: var(--ui-s2); border: 1px solid var(--ui-line2); padding: 0 12px; width: 100%;
+      outline: none; color: var(--ui-tx); transition: border-color .15s, box-shadow .15s; font-size: 14px; }
+    .ui-inp:focus { border-color: var(--ui-pri-line); box-shadow: 0 0 0 3px rgba(139,125,255,.18); }
+    textarea.ui-inp { height: auto; padding: 10px 12px; resize: vertical; min-height: 64px; line-height: 1.4; }
+    .ui-inp::placeholder { color: var(--ui-tx3); }
+    .ui-ring { width: 44px; height: 44px; border-radius: 50%; border: 3px solid rgba(255,255,255,.15); border-top-color: var(--ui-pri-hi); animation: ui-spin 1s linear infinite; flex: none; }
+    .ui-ring.sm { width: 18px; height: 18px; border-width: 2.5px; }
+    @keyframes ui-spin { to { transform: rotate(360deg); } }
+
+    /* app shell */
+    .ui-shell { display: grid; grid-template-columns: 256px minmax(0, 1fr); min-height: 100vh; }
+    .ui-side { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 4px; padding: 18px 14px; overflow-y: auto;
+      border-right: 1px solid var(--ui-line); background: var(--ui-s1); scrollbar-width: none; }
+    .ui-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 14px; }
+    .ui-logo { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-family: var(--ui-round); font-weight: 900; font-size: 19px;
+      color: #14102e; background: #ffd166; box-shadow: inset 0 -3px 0 rgba(0,0,0,.18); flex: none; }
+    .ui-brand b, .ui-brandtxt { font-family: var(--ui-round); font-size: 19px; letter-spacing: -.01em; }
+    .ui-setsw { position: relative; display: block; margin: 0 4px 8px; padding: 10px 34px 10px 12px; border-radius: 12px; background: var(--ui-s2); border: 1px solid var(--ui-line); cursor: pointer; }
+    .ui-setsw:hover { border-color: var(--ui-line2); }
+    .ui-setsw small { display: block; font-size: 11px; color: var(--ui-tx3); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+    .ui-setsw select { appearance: none; -webkit-appearance: none; background: transparent; border: 0; color: var(--ui-tx); font-weight: 650; font-size: 14px; width: 100%; padding: 0; cursor: pointer; outline: none; }
+    .ui-setsw select option { background: var(--ui-s2); }
+    .ui-setsw > span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--ui-tx3); pointer-events: none; }
+    .ui-navg { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ui-tx3); font-weight: 700; padding: 12px 12px 5px; }
+    .ui-navi { display: flex; align-items: center; gap: 11px; height: 38px; padding: 0 12px; border-radius: 10px; color: var(--ui-tx2); font-weight: 550; font-size: 14px;
+      width: 100%; text-align: left; transition: background .15s, color .15s; background: none; border: 0; cursor: pointer; }
+    .ui-navi:hover { background: rgba(255,255,255,.05); color: var(--ui-tx); }
+    .ui-navi.on { background: var(--ui-pri-soft); color: #fff; }
+    .ui-navi.on svg { color: var(--ui-pri-hi); }
+    .ui-cnt { margin-left: auto; font-size: 11.5px; font-weight: 700; padding: 2px 7px; border-radius: 99px; background: rgba(245,185,65,.14); color: var(--ui-warn); }
+    .ui-device { margin-top: auto; padding: 12px; border-radius: 14px; background: var(--ui-s2); border: 1px solid var(--ui-line); display: flex; flex-direction: column; gap: 10px; }
+    .ui-dev-h { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; background: none; border: 0; color: inherit; cursor: pointer; padding: 0; text-align: left; width: 100%; }
+    .ui-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ui-ok); box-shadow: 0 0 0 3px rgba(62,207,142,.18); flex: none; }
+    .ui-dot.warn { background: var(--ui-warn); box-shadow: 0 0 0 3px rgba(245,185,65,.18); }
+    .ui-dot.err { background: var(--ui-err); box-shadow: 0 0 0 3px rgba(255,97,112,.18); }
+    .ui-dot.pulse { animation: ui-blink 1s infinite; }
+    .ui-dev-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ui-tx2); }
+    .ui-dev-row .v { margin-left: auto; font-weight: 600; color: var(--ui-tx); }
+    .ui-dev-row.low .v, .ui-dev-row .v.bad { color: var(--ui-err); }
+    .ui-warnline { font-size: 12px; font-weight: 600; color: #ffb3ba; background: var(--ui-err-soft); border-radius: 8px; padding: 6px 8px; }
+    .ui-vol { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+    .ui-app input[type=range].ui-range { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 99px; background: var(--ui-s4); flex: 1; min-width: 0; accent-color: var(--ui-pri-hi); }
+    .ui-app input[type=range].ui-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+    .ui-stop { height: 34px; border-radius: 10px; background: rgba(255,97,112,.12); color: #ff9aa4; font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; cursor: pointer; }
+    .ui-stop:hover { background: rgba(255,97,112,.2); }
+    .ui-main { min-width: 0; display: flex; flex-direction: column; }
+    .ui-top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 16px; padding: 16px 32px; background: rgba(12,14,18,.82);
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--ui-line); }
+    .ui-top h1 { margin: 0; font-size: 22px; font-weight: 750; letter-spacing: -.015em; }
+    .ui-top p { margin: 2px 0 0; font-size: 13px; color: var(--ui-tx2); }
+    .ui-live { margin-left: auto; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px 0 10px; border-radius: 12px; background: var(--ui-s2);
+      border: 1px solid var(--ui-line); font-size: 13px; color: var(--ui-tx2); white-space: nowrap; min-width: 0; }
+    .ui-live .k { min-width: 28px; height: 28px; padding: 0 6px; border-radius: 8px; display: grid; place-items: center; font-family: var(--ui-round); font-weight: 800;
+      font-size: 15px; color: #fff; background: var(--ui-s4); box-shadow: inset 0 -2px 0 rgba(0,0,0,.35); }
+    .ui-live .w { color: var(--ui-tx); font-weight: 600; }
+    .ui-live.ping .k { animation: ui-ping .6s var(--ui-ease); }
+    @keyframes ui-ping { 0% { transform: scale(1); background: var(--ui-pri); } 40% { transform: scale(1.18); background: var(--ui-pri); } 100% { transform: scale(1); } }
+    .ui-content { padding: 24px 32px 110px; max-width: 1480px; width: 100%; }
+    .ui-mtop, .ui-bnav { display: none; }
+
+    /* Buchstaben */
+    .ui-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+    .ui-seg { display: inline-flex; padding: 3px; border-radius: 12px; background: var(--ui-s2); border: 1px solid var(--ui-line); max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+    .ui-seg button { height: 32px; padding: 0 13px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--ui-tx2); background: none; border: 0; cursor: pointer; white-space: nowrap; }
+    .ui-seg button.on { background: var(--ui-s4); color: var(--ui-tx); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .ui-seg .c { font-weight: 700; color: var(--ui-tx3); margin-left: 4px; }
+    .ui-sum { font-size: 13px; margin-left: auto; }
+    .ui-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); gap: 14px; }
+    .ui-tile { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 18px; background-color: var(--ui-s1);
+      border: 1px solid var(--ui-line); text-align: left; transition: transform .18s var(--ui-ease), border-color .18s, background-color .18s; min-height: 178px; cursor: pointer; color: inherit; width: 100%; }
+    .ui-tile:hover { transform: translateY(-2px); border-color: var(--ui-line2); background-color: var(--ui-s2); }
+    .ui-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .ui-glyph { font-family: var(--ui-round); font-weight: 900; font-size: 46px; line-height: .95; letter-spacing: -.02em; }
+    .ui-tile-img { width: 76px; height: 76px; border-radius: 16px; object-fit: cover; background: var(--ui-s3); box-shadow: 0 6px 18px rgba(0,0,0,.35); flex: none; }
+    .ui-tile-words { font-size: 13px; color: var(--ui-tx2); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 36px; }
+    .ui-tile-meta { display: flex; align-items: center; gap: 6px; margin-top: auto; flex-wrap: wrap; min-width: 0; }
+    .ui-st { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border-radius: 7px; font-size: 11.5px; font-weight: 650; background: rgba(255,255,255,.05); color: var(--ui-tx2); }
+    .ui-st.gap { background: rgba(245,185,65,.12); color: var(--ui-warn); }
+    .ui-st svg.ui-i { width: 13px; height: 13px; }
+    .ui-tile .today { margin-left: auto; font-size: 11.5px; color: var(--ui-tx3); font-weight: 600; }
+    .ui-learned { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 700; color: #0c2a1c; background: var(--ui-ok); padding: 2px 8px; border-radius: 99px; }
+    .ui-tile.empty .ui-glyph { opacity: .35; }
+    .ui-tile.empty .ui-tile-words { font-style: italic; }
+
+    /* editor */
+    .ui-scrim { position: fixed; inset: 0; z-index: 60; background: rgba(5,6,9,.66); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center; padding: 28px; }
+    .ui-ed { width: min(1360px, 100%); height: min(900px, 100%); display: grid; grid-template-rows: auto minmax(0, 1fr); border-radius: 24px; background: var(--ui-s1);
+      border: 1px solid var(--ui-line2); box-shadow: 0 30px 80px rgba(0,0,0,.6); overflow: hidden; }
+    .ui-ed-h { display: flex; align-items: center; gap: 16px; padding: 14px 18px 14px 22px; border-bottom: 1px solid var(--ui-line); min-width: 0; }
+    .ui-ed-glyph { width: 52px; height: 52px; border-radius: 15px; display: grid; place-items: center; font-family: var(--ui-round); font-weight: 900; font-size: 32px; background: var(--ui-s3); flex: none; }
+    .ui-ed-title h2 { margin: 0; font-size: 18px; font-weight: 750; white-space: nowrap; }
+    .ui-ed-title p { margin: 1px 0 0; font-size: 12.5px; color: var(--ui-tx2); white-space: nowrap; }
+    .ui-strip { display: flex; gap: 1px; overflow-x: auto; scrollbar-width: none; padding: 4px; border-radius: 12px; background: var(--ui-s2); margin-left: 8px; min-width: 0; flex: 1; }
+    .ui-strip::-webkit-scrollbar { display: none; }
+    .ui-strip button { flex: none; width: 27px; height: 34px; border-radius: 8px; font-family: var(--ui-round); font-weight: 800; font-size: 14px; color: var(--ui-tx2);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; background: none; border: 0; cursor: pointer; }
+    .ui-strip button:hover { background: rgba(255,255,255,.06); color: var(--ui-tx); }
+    .ui-strip button.on { background: var(--ui-s4); color: #fff; }
+    .ui-strip button i { width: 5px; height: 5px; border-radius: 50%; background: var(--ui-ok); }
+    .ui-strip button i.gap { background: var(--ui-warn); } .ui-strip button i.none { background: var(--ui-s4); }
+    .ui-saved { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ui-tx3); white-space: nowrap; }
+    .ui-saved svg.ui-i { color: var(--ui-ok); width: 16px; height: 16px; }
+    .ui-saved.err { color: #ff9aa4; } .ui-saved.err svg.ui-i { color: var(--ui-err); }
+    .ui-ed-b { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 0; }
+    .ui-words { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ui-line); background: rgba(0,0,0,.12); }
+    .ui-words-h { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 8px; }
+    .ui-words-h h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ui-tx3); font-weight: 700; }
+    .ui-wlist { flex: 1; overflow-y: auto; padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 3px; }
+    .ui-wrow { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 13px; text-align: left; width: 100%; transition: background .15s; background: none; border: 0; color: inherit; cursor: pointer; }
+    .ui-wrow:hover { background: rgba(255,255,255,.04); }
+    .ui-wrow.on { background: var(--ui-s3); box-shadow: inset 0 0 0 1px var(--ui-line2); }
+    .ui-wrow img, .ui-wrow .ph { width: 46px; height: 46px; border-radius: 11px; object-fit: cover; background: var(--ui-s3); flex: none; }
+    .ui-wrow .ph { display: grid; place-items: center; color: var(--ui-tx3); }
+    .ui-wrow .wn { font-weight: 650; font-size: 14.5px; display: block; }
+    .ui-wrow .ws { font-size: 12px; color: var(--ui-tx3); display: block; margin-top: 2px; }
+    .ui-wrow.off .wn { color: var(--ui-tx3); text-decoration: line-through; text-decoration-color: rgba(255,255,255,.25); }
+    .ui-pips { display: flex; gap: 4px; margin-left: auto; flex: none; }
+    .ui-pip { width: 9px; height: 9px; border-radius: 50%; }
+    .ui-pip.img { background: var(--ui-img); } .ui-pip.fx { background: var(--ui-fx); } .ui-pip.de { background: var(--ui-de); } .ui-pip.en { background: var(--ui-en); }
+    .ui-pip.miss { background: transparent; box-shadow: inset 0 0 0 1.8px var(--ui-warn); }
+    .ui-pip.run { background: var(--ui-pri-hi); animation: ui-blink 1s infinite; }
+    .ui-pip.err { background: var(--ui-err); }
+    @keyframes ui-blink { 50% { opacity: .35; } }
+    .ui-wfoot { padding: 10px 14px 14px; border-top: 1px solid var(--ui-line); display: flex; flex-direction: column; gap: 8px; }
+    .ui-addrow { display: flex; gap: 8px; }
+    .ui-suggest { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 13px; border: 1px dashed var(--ui-pri-line); background: var(--ui-pri-soft); min-width: 0; }
+    .ui-suggest b { font-size: 15px; }
+    .ui-gapcall { display: flex; align-items: center; gap: 10px; margin: 0 10px 6px; padding: 8px 8px 8px 12px; border-radius: 12px; background: rgba(245,185,65,.08);
+      border: 1px solid rgba(245,185,65,.2); font-size: 12.5px; color: #f3d79b; }
+    .ui-shimmer { position: relative; overflow: hidden; background: var(--ui-s3); }
+    .ui-shimmer::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); animation: ui-sh 1.3s infinite; }
+    @keyframes ui-sh { to { transform: translateX(100%); } }
+    .ui-detail { overflow-y: auto; min-height: 0; padding: 22px 26px 40px; }
+    .ui-d-h { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .ui-wordinp { flex: 1; min-width: 0; font-family: var(--ui-round); font-size: 30px; font-weight: 850; letter-spacing: -.015em; background: transparent; border: 0;
+      border-radius: 10px; padding: 4px 8px; margin-left: -8px; outline: none; color: var(--ui-tx); }
+    .ui-wordinp:hover { background: rgba(255,255,255,.04); }
+    .ui-wordinp:focus { background: var(--ui-s2); box-shadow: 0 0 0 2px var(--ui-pri-line); }
+    .ui-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 230px; padding: 6px; border-radius: 14px; background: var(--ui-s3);
+      border: 1px solid var(--ui-line2); box-shadow: 0 18px 40px rgba(0,0,0,.5); }
+    .ui-menu button { display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 10px; border-radius: 9px; font-size: 13.5px; text-align: left;
+      color: var(--ui-tx); background: none; border: 0; cursor: pointer; }
+    .ui-menu button:hover { background: rgba(255,255,255,.06); }
+    .ui-menu button.danger { color: var(--ui-err); }
+    .ui-menu hr { border: 0; border-top: 1px solid var(--ui-line); margin: 5px 4px; }
+    .ui-cols { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
+    .ui-card { background: var(--ui-s2); border: 1px solid var(--ui-line); border-radius: 20px; }
+    .ui-pic { padding: 14px; }
+    .ui-picbox { position: relative; aspect-ratio: 1; border-radius: 16px; overflow: hidden; background: var(--ui-s3); }
+    .ui-picbox > img { width: 100%; height: 100%; object-fit: cover; }
+    .ui-picbox .tag { position: absolute; left: 10px; top: 10px; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 99px; background: rgba(0,0,0,.55); color: #fff; }
+    .ui-picbox .empty { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--ui-round); font-size: 96px; font-weight: 900; color: var(--ui-s4); }
+    .ui-genov { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center;
+      background: rgba(12,14,18,.58); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); font-size: 13.5px; font-weight: 600; }
+    .ui-cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .ui-cmp figure { margin: 0; }
+    .ui-cmp figcaption { font-size: 11.5px; font-weight: 700; color: var(--ui-tx3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+    .ui-cmp img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 12px; background: var(--ui-s3); }
+    .ui-cmp .new figcaption { color: var(--ui-pri-hi); }
+    .ui-cmp .new img { box-shadow: 0 0 0 2px var(--ui-pri-hi); }
+    .ui-picacts { display: flex; gap: 8px; margin-top: 12px; }
+    .ui-picacts .ui-btn { flex: 1; }
+    .ui-pixoo { display: flex; align-items: center; gap: 14px; margin-top: 14px; padding: 12px; border-radius: 14px; background: var(--ui-s1); border: 1px solid var(--ui-line); }
+    .ui-pixoo-screen { width: 72px; height: 72px; padding: 4px; border-radius: 10px; background: #000; box-shadow: inset 0 0 0 2px #2b2f3a, 0 0 18px rgba(255,209,102,.08); flex: none; }
+    .ui-pixoo-screen img { width: 64px; height: 64px; image-rendering: pixelated; }
+    .ui-pixoo b { display: block; font-size: 13px; }
+    .ui-pixoo span { font-size: 12px; color: var(--ui-tx3); }
+    .ui-field { margin-top: 14px; }
+    .ui-field label { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 650; color: var(--ui-tx2); margin-bottom: 6px; }
+    .ui-field label span { font-weight: 500; color: var(--ui-tx3); }
+    .ui-listen { padding: 16px 18px; display: flex; align-items: center; gap: 16px; margin-bottom: 14px; background: linear-gradient(180deg, rgba(122,106,255,.10), rgba(122,106,255,.04)); border-color: rgba(139,125,255,.25); }
+    .ui-bigplay { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--ui-pri); color: #fff; flex: none; border: 0; cursor: pointer;
+      box-shadow: 0 8px 22px rgba(106,89,243,.45); transition: transform .15s; }
+    .ui-bigplay:hover { transform: scale(1.05); }
+    .ui-bigplay svg.ui-i { width: 24px; height: 24px; }
+    .ui-listen h4 { margin: 0; font-size: 15px; font-weight: 700; }
+    .ui-steps { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .ui-stp { position: relative; display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border-radius: 9px; background: rgba(255,255,255,.06); font-size: 12.5px; font-weight: 600; overflow: hidden; }
+    .ui-stp i { width: 8px; height: 8px; border-radius: 50%; }
+    .ui-stp.on { background: rgba(255,255,255,.14); color: #fff; }
+    .ui-stp .pg { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--ui-pri-hi); transition: width .1s linear; }
+    .ui-stp.miss { color: var(--ui-warn); background: rgba(245,185,65,.1); }
+    .ui-stp.dis { color: var(--ui-tx3); text-decoration: line-through; }
+    .ui-listen small { display: block; margin-top: 8px; font-size: 12px; color: var(--ui-tx3); }
+    .ui-listen small button { color: #b9b0ff; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; font-size: 12px; }
+    .ui-slots { display: flex; flex-direction: column; gap: 12px; }
+    .ui-slot { padding: 14px 16px; }
+    .ui-slot.off { opacity: .62; }
+    .ui-slot-h { display: flex; align-items: center; gap: 10px; }
+    .ui-kind { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+    .ui-kind.fx { background: rgba(255,159,67,.14); color: var(--ui-fx); } .ui-kind.de { background: rgba(62,207,142,.14); color: var(--ui-de); }
+    .ui-kind.en { background: rgba(90,169,255,.14); color: var(--ui-en); } .ui-kind.img { background: rgba(196,139,255,.14); color: var(--ui-img); }
+    .ui-slot-h h4 { margin: 0; font-size: 14.5px; font-weight: 700; }
+    .ui-slot-h p { margin: 0; font-size: 12px; color: var(--ui-tx3); }
+    .ui-sp { flex: 1; }
+    .ui-player { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 10px 8px 8px; border-radius: 14px; background: var(--ui-s1); border: 1px solid var(--ui-line); min-width: 0; }
+    .ui-pbtn { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--ui-s4); color: #fff; flex: none; transition: background .15s; border: 0; cursor: pointer; }
+    .ui-pbtn:hover, .ui-pbtn.on { background: var(--ui-pri); }
+    .ui-wave { flex: 1; height: 34px; display: flex; align-items: center; gap: 2px; min-width: 0; }
+    .ui-wave i { flex: 1; min-width: 1px; border-radius: 2px; background: rgba(255,255,255,.22); transition: background .1s; }
+    .ui-wave i.p { background: var(--ui-pri-hi); }
+    .ui-wave.fx i.p { background: var(--ui-fx); } .ui-wave.de i.p { background: var(--ui-de); } .ui-wave.en i.p { background: var(--ui-en); }
+    .ui-wave.run i { background: rgba(255,255,255,.12); animation: ui-wv 1.1s ease-in-out infinite; }
+    @keyframes ui-wv { 0%, 100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+    .ui-dur { font-size: 12px; color: var(--ui-tx3); width: 42px; text-align: right; flex: none; }
+    .ui-volb { height: 28px; padding: 0 9px; border-radius: 8px; font-size: 12px; font-weight: 650; color: var(--ui-tx2); background: rgba(255,255,255,.05); border: 0; cursor: pointer; flex: none; }
+    .ui-volb:hover { color: var(--ui-tx); background: rgba(255,255,255,.09); }
+    .ui-slot-acts { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; min-width: 0; }
+    .ui-fname { font-size: 11.5px; color: var(--ui-tx3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ui-empty-slot { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border-radius: 14px; border: 1.5px dashed rgba(245,185,65,.35);
+      background: rgba(245,185,65,.05); font-size: 13px; color: #f1d595; flex-wrap: wrap; }
+    .ui-genrow { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: var(--ui-pri-soft); border: 1px solid rgba(139,125,255,.3); font-size: 13px; color: #dcd7ff; }
+    .ui-cand { margin-top: 12px; padding: 12px; border-radius: 14px; border: 1px solid rgba(139,125,255,.4); background: rgba(122,106,255,.07); }
+    .ui-cand .row { display: flex; align-items: center; gap: 10px; padding: 6px 0; min-width: 0; }
+    .ui-cand .lbl { width: 58px; font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--ui-tx3); flex: none; }
+    .ui-cand .lbl.n { color: var(--ui-pri-hi); }
+    .ui-errbox { margin-top: 12px; display: flex; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--ui-err-soft); border: 1px solid rgba(255,97,112,.3); font-size: 13px; }
+    .ui-errbox > svg.ui-i { color: var(--ui-err); margin-top: 1px; }
+    .ui-errbox b { display: block; color: #ffc2c8; margin-bottom: 2px; }
+    .ui-errbox p { margin: 0; color: var(--ui-tx2); }
+    .ui-errbox .acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .ui-errbox details { margin-top: 6px; font-size: 12px; color: var(--ui-tx3); }
+    .ui-prm { margin-top: 10px; }
+    .ui-prm summary { list-style: none; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ui-tx3); cursor: pointer; padding: 4px 0; min-width: 0; }
+    .ui-prm summary::-webkit-details-marker { display: none; }
+    .ui-prm summary .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ui-tx2); min-width: 0; }
+    .ui-prm[open] summary .txt { display: none; }
+    .ui-prm .inner { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+    .ui-offnote { margin-top: 10px; font-size: 12.5px; color: var(--ui-tx3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ui-pop { position: absolute; z-index: 30; right: 0; top: calc(100% + 8px); width: 260px; padding: 14px; border-radius: 14px; background: var(--ui-s3); border: 1px solid var(--ui-line2);
+      box-shadow: 0 18px 40px rgba(0,0,0,.5); font-size: 13px; }
+    .ui-empty-detail { max-width: 460px; margin: 70px auto; text-align: center; color: var(--ui-tx2); }
+    .ui-empty-detail .ic { width: 64px; height: 64px; border-radius: 20px; display: grid; place-items: center; margin: 0 auto 16px; background: var(--ui-pri-soft); color: var(--ui-pri-hi); }
+    .ui-empty-detail h2 { margin: 0 0 8px; color: var(--ui-tx); font-size: 20px; font-weight: 700; }
+
+    /* library picker, activity, toast */
+    .ui-sheet { width: min(720px, 100%); max-height: min(720px, 100%); display: flex; flex-direction: column; border-radius: 24px; background: var(--ui-s1); border: 1px solid var(--ui-line2);
+      box-shadow: 0 30px 80px rgba(0,0,0,.6); overflow: hidden; }
+    .ui-sheet-h { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--ui-line); }
+    .ui-sheet-h h3 { margin: 0; font-size: 17px; flex: 1; font-weight: 700; }
+    .ui-sheet-b { overflow-y: auto; padding: 14px 18px 18px; }
+    .ui-libgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+    .ui-libimg { display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 12px; background: var(--ui-s2); border: 1px solid var(--ui-line); cursor: pointer; color: inherit; text-align: left; }
+    .ui-libimg:hover { border-color: var(--ui-pri-line); }
+    .ui-libimg img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--ui-s3); }
+    .ui-libimg span { font-size: 11px; color: var(--ui-tx3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ui-librow { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 10px; }
+    .ui-librow:hover { background: rgba(255,255,255,.04); }
+    .ui-librow .ui-fname { flex: 1; font-size: 12.5px; color: var(--ui-tx2); }
+    .ui-ac { position: fixed; right: 22px; bottom: 22px; z-index: 70; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+    .ui-acpill { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px 0 12px; border-radius: 99px; background: var(--ui-s3); border: 1px solid var(--ui-line2);
+      box-shadow: 0 12px 30px rgba(0,0,0,.45); font-size: 13.5px; font-weight: 650; color: var(--ui-tx); cursor: pointer; }
+    .ui-acpanel { width: 380px; max-height: 60vh; overflow: auto; padding: 8px; border-radius: 18px; background: var(--ui-s2); border: 1px solid var(--ui-line2); box-shadow: 0 20px 50px rgba(0,0,0,.55); }
+    .ui-acpanel h5 { margin: 6px 8px 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ui-tx3); display: flex; align-items: center; }
+    .ui-job { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 11px; font-size: 13px; }
+    .ui-job:hover { background: rgba(255,255,255,.03); }
+    .ui-job .ui-kind { width: 28px; height: 28px; border-radius: 8px; }
+    .ui-job .ui-kind svg.ui-i { width: 15px; height: 15px; }
+    .ui-job .jm { flex: 1; min-width: 0; }
+    .ui-job .jm b { display: block; font-size: 13px; }
+    .ui-job .jm span { font-size: 12px; color: var(--ui-tx3); display: block; }
+    .ui-job .jm span.e { color: #ff9aa4; }
+    .ui-toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 90; display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 16px;
+      border-radius: 14px; background: #f2f3f7; color: #16181d; font-size: 14px; font-weight: 600; box-shadow: 0 16px 40px rgba(0,0,0,.5); max-width: calc(100vw - 32px); }
+    .ui-toast.err { background: #ffe1e4; color: #5c0a14; }
+    .ui-toast .ui-btn { color: #4a3fe0; height: 32px; }
+    .ui-toast .ui-btn:hover { background: rgba(74,63,224,.1); }
+
+    /* phone */
+    @media (max-width: 1023px) {
+      .ui-shell { grid-template-columns: minmax(0, 1fr); }
+      .ui-side { display: none; }
+      .ui-mtop { display: flex; position: sticky; top: 0; z-index: 25; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(12,14,18,.92);
+        backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--ui-line); }
+      .ui-mtop .ui-logo { width: 30px; height: 30px; font-size: 16px; }
+      .ui-mdev { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ui-tx2); background: none; border: 0; cursor: pointer; }
+      .ui-top { position: static; padding: 16px 16px 10px; border: 0; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; flex-wrap: wrap; }
+      .ui-top .ui-live { order: 3; margin-left: 0; width: 100%; }
+      .ui-content { padding: 8px 16px 110px; }
+      .ui-bnav { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+        background: rgba(19,22,28,.95); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid var(--ui-line); }
+      .ui-bnav button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0; font-size: 11px; font-weight: 600; color: var(--ui-tx3); border-radius: 10px; background: none; border: 0; cursor: pointer; }
+      .ui-bnav button.on { color: #fff; } .ui-bnav button.on svg { color: var(--ui-pri-hi); }
+      .ui-more { position: fixed; inset: 0; z-index: 34; background: rgba(5,6,9,.5); }
+      .ui-more-sheet { position: absolute; left: 10px; right: 10px; bottom: calc(70px + env(safe-area-inset-bottom)); padding: 8px; border-radius: 18px; background: var(--ui-s2); border: 1px solid var(--ui-line2); box-shadow: 0 20px 50px rgba(0,0,0,.55); }
+      .ui-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .ui-tile { padding: 12px; min-height: 150px; border-radius: 16px; }
+      .ui-glyph { font-size: 36px; } .ui-tile-img { width: 56px; height: 56px; border-radius: 12px; }
+      .ui-tile .today { display: none; } .ui-st { padding: 0 5px; gap: 3px; }
+      .ui-sum { margin-left: 0; width: 100%; }
+      .ui-ac { right: 14px; bottom: 84px; }
+      .ui-acpanel { width: calc(100vw - 28px); }
+      .ui-toast { bottom: 84px; }
+    }
+    @media (max-width: 899px) {
+      .ui-scrim { padding: 0; }
+      .ui-ed { height: 100%; border-radius: 0; border: 0; }
+      .ui-ed-h { flex-wrap: wrap; gap: 10px; padding: 10px 12px; }
+      .ui-ed-glyph { width: 42px; height: 42px; font-size: 26px; border-radius: 12px; }
+      .ui-strip { order: 5; flex-basis: 100%; margin-left: 0; }
+      .ui-ed-b { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+      .ui-words { border-right: 0; border-bottom: 1px solid var(--ui-line); }
+      .ui-words-h { display: none; }
+      .ui-wlist { flex-direction: row; overflow-x: auto; padding: 8px 10px; gap: 6px; }
+      .ui-wrow { flex: none; width: auto; padding: 6px 10px 6px 6px; }
+      .ui-wrow img, .ui-wrow .ph { width: 34px; height: 34px; border-radius: 9px; }
+      .ui-wrow .ws, .ui-wrow .ui-pips { display: none; }
+      .ui-wlist { scrollbar-width: none; } .ui-wlist::-webkit-scrollbar { display: none; }
+      .ui-wfoot { flex-direction: row; align-items: center; padding: 8px 10px; }
+      .ui-wfoot .ui-addrow { flex: 1; min-width: 0; }
+      .ui-wfoot .ui-addrow .ui-inp { min-width: 0; height: 36px; }
+      .ui-wfoot > .ui-btn { flex: none; }
+      .ui-wfoot details { display: none; }                 /* prompt + rejected words: on the big screen */
+      .ui-detail { padding: 16px 14px 90px; }
+      .ui-cols { grid-template-columns: minmax(0, 1fr); }
+      .ui-picbox { max-width: 300px; margin: 0 auto; }
+      .ui-wordinp { font-size: 24px; }
+      .ui-listen { flex-wrap: wrap; }
+      .ui-steps { gap: 6px; } .ui-stp { height: 28px; padding: 0 9px; }
+      .ui-dur { display: none; }
+      .ui-slot-acts .ui-fname { flex-basis: 100%; }
+      .ui-sheet { height: 100%; max-height: 100%; border-radius: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) { .ui-app *, .ui-app *::before, .ui-app *::after { animation: none !important; transition: none !important; } }
   </style>
 </head>
 <body class="min-h-screen bg-base-200">
 
-<div x-data="funkeykid()" x-init="init()">
+<div x-data="funkeykid()" x-init="init()" class="ui-app" @keydown.window="onKeyGlobal($event)">
 
-  <!-- Navbar -->
-  <div class="navbar fk-navbar bg-base-100 shadow-lg">
-    <div class="flex-1 flex items-center">
-      <span class="text-lg sm:text-xl font-bold px-2 sm:px-4">funkeykid</span>
-      <!-- Active set selector -->
-      <select class="select select-sm select-bordered ml-2" style="max-width: 60vw; min-width: 8rem" x-model="activeSetId" @change="activateSet()">
+  <div class="ui-shell">
+  <!-- ── Sidebar (FUNK-72): navigation in groups, the active set, the keyboard and the speaker ── -->
+  <aside class="ui-side" aria-label="Navigation">
+    <div class="ui-brand"><div class="ui-logo" aria-hidden="true">f</div><b>funkeykid</b></div>
+    <label class="ui-setsw">
+      <small>Aktives Set</small>
+      <select x-model="activeSetId" @change="activateSet()" aria-label="Aktives Set">
         <template x-for="(meta, sid) in sets" :key="sid">
           <option :value="sid" x-text="meta.name"></option>
         </template>
       </select>
-    </div>
-    <div class="flex flex-wrap items-center justify-end gap-2 pr-2 sm:pr-4 ml-auto">
-      <button class="flex items-center gap-1.5 btn btn-ghost btn-xs" @click="showDiag = !showDiag">
-        <div class="w-2.5 h-2.5 rounded-full"
-             :class="hw.connected ? 'bg-success' : hw.searching ? 'bg-warning animate-pulse' : 'bg-error'"></div>
-        <span class="text-xs"
-              x-text="hw.connected ? 'Tastatur' : hw.searching ? 'Suche...' : 'Getrennt'"></span>
+      <span x-html="ui.ic.chevD" aria-hidden="true"></span>
+    </label>
+    <nav>
+      <template x-for="g in ui.nav" :key="g.g">
+        <div>
+          <div class="ui-navg" x-text="g.g"></div>
+          <template x-for="n in g.items" :key="n.id">
+            <button type="button" class="ui-navi" :class="tab === n.id && 'on'" @click="go(n.id)" :aria-current="tab === n.id ? 'page' : null">
+              <span x-html="ui.ic[n.icon]" aria-hidden="true"></span><span x-text="n.label"></span>
+              <span class="ui-cnt" x-show="n.id === 'letters' && letterTotals().deMiss > 0" x-text="letterTotals().deMiss"
+                    :title="letterTotals().deMiss + ' Wörter ohne Stimme'"></span>
+            </button>
+          </template>
+        </div>
+      </template>
+    </nav>
+    <section class="ui-device" aria-label="Gerät">
+      <button type="button" class="ui-dev-h" @click="showDiag = !showDiag" :aria-expanded="showDiag ? 'true' : 'false'" title="Tastatur-Diagnose">
+        <span class="ui-dot" :class="hw.connected ? (hw.exclusive ? '' : 'warn') : hw.searching ? 'warn pulse' : 'err'"></span>
+        <span class="ui-trunc" x-text="hw.connected ? (hw.device_name || 'Tastatur') : hw.searching ? 'Suche Tastatur …' : 'Tastatur getrennt'"></span>
+        <span class="ui-faint" style="margin-left:auto;font-weight:500" x-text="hw.connected ? (hw.exclusive ? 'exklusiv' : '') : 'Diagnose'"></span>
       </button>
-      <div class="badge badge-sm badge-error" x-show="hw.connected && !hw.exclusive"
-           title="Exklusiver Zugriff fehlgeschlagen — Tastendrücke können den Host erreichen">Nicht exklusiv!</div>
-      <div class="badge badge-sm" x-show="hw.battery_level != null"
-           :class="hw.battery_low ? 'badge-error' : hw.battery_level > 50 ? 'badge-success' : 'badge-warning'"
-           :title="hw.battery_low ? 'Akku schwach (Schwelle ' + hw.battery_low_threshold + ' %)' : 'Akku'"
-           x-text="hw.battery_level + '%'"></div>
-      <div class="badge badge-sm" :class="hw.mqtt_connected ? 'badge-info' : 'badge-error'"
-           x-text="hw.mqtt_connected ? 'MQTT' : 'MQTT ✗'"></div>
-      <div class="badge badge-sm badge-ghost" x-text="hw.volume + '%'"></div>
-    </div>
-  </div>
+      <div class="ui-warnline" x-show="hw.connected && !hw.exclusive" title="Exklusiver Zugriff fehlgeschlagen: Tastendrücke können den Host erreichen">Nicht exklusiv: Tasten erreichen auch den Rechner</div>
+      <div class="ui-dev-row" :class="hw.battery_low && 'low'" x-show="hw.battery_level != null">
+        <span x-html="ui.ic.batt" aria-hidden="true"></span>Tastatur-Akku
+        <span class="v num" x-text="hw.battery_level + ' %' + (hw.battery_low ? ' · laden' : '')"></span>
+      </div>
+      <div class="ui-dev-row"><span x-html="ui.ic.signal" aria-hidden="true"></span>MQTT
+        <span class="v" :class="!hw.mqtt_connected && 'bad'" x-text="hw.mqtt_connected ? 'verbunden' : 'getrennt'"></span></div>
+      <div class="ui-vol">
+        <span x-html="ui.ic.speaker" class="ui-faint" aria-hidden="true"></span>
+        <input type="range" class="ui-range" min="0" max="100" step="5" x-model.number="settings.volume" @change="autoSave()" aria-label="Lautstärke">
+        <span class="num" style="width:38px;text-align:right" x-text="(settings.volume ?? hw.volume) + ' %'"></span>
+      </div>
+      <button type="button" class="ui-stop" @click="stopAll()"><span x-html="ui.ic.stop" aria-hidden="true"></span>Alles stoppen</button>
+    </section>
+  </aside>
 
-  <!-- Live status bar (always visible) -->
-  <div class="bg-base-300 px-4 py-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs border-b border-base-content/10">
-    <template x-if="hw.searching && !hw.connected">
-      <div class="flex items-center gap-2">
-        <span class="loading loading-dots loading-xs"></span>
-        <span class="opacity-60">Suche nach Tastatur &laquo;<span x-text="hw.device_name"></span>&raquo;...</span>
-      </div>
-    </template>
-    <template x-if="hw.last_key">
-      <div class="flex items-center gap-3">
-        <span class="opacity-50">Taste:</span>
-        <span class="font-bold text-primary text-sm" x-text="hw.last_key"></span>
-        <span class="opacity-30 text-2xs font-mono"
-              x-show="hw.last_raw_key && hw.last_raw_key !== hw.last_key"
-              x-text="'(KEY_' + hw.last_raw_key + ')'"></span>
-        <span class="opacity-40" x-text="hw.last_key_ago"></span>
-      </div>
-    </template>
-    <span x-show="!hw.last_key && !hw.searching" class="opacity-30 italic">Noch keine Taste gedrückt</span>
-    <div class="ml-auto flex items-center gap-2">
-      <button class="btn btn-xs btn-error btn-outline gap-1" @click="stopAll()" title="Alles stoppen"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z"/></svg>Stop</button>
-      <span x-show="hw.connected" class="font-mono"
-            :class="hw.exclusive ? 'text-success opacity-70' : 'text-error font-bold'"
-            x-text="hw.exclusive ? ('Exklusiv · ' + (hw.grabbed || 0) + ((hw.grabbed || 0) === 1 ? ' Gerät' : ' Geräte')) : 'NICHT exklusiv'"></span>
-      <span class="opacity-30 hidden sm:inline" x-text="hw.device_path || ''"></span>
+  <div class="ui-main">
+    <!-- phone: brand + keyboard state; the navigation is the bar at the bottom -->
+    <div class="ui-mtop">
+      <div class="ui-logo" aria-hidden="true">f</div><b class="ui-brandtxt">funkeykid</b>
+      <button type="button" class="ui-mdev" @click="showDiag = !showDiag" :aria-expanded="showDiag ? 'true' : 'false'">
+        <span class="ui-dot" :class="hw.connected ? (hw.exclusive ? '' : 'warn') : hw.searching ? 'warn pulse' : 'err'"></span>
+        <span x-text="hw.connected ? 'Tastatur' : hw.searching ? 'Suche …' : 'Getrennt'"></span>
+        <span x-show="hw.battery_level != null" :style="hw.battery_low ? 'color:var(--ui-err);font-weight:700' : ''" x-text="'· ' + hw.battery_level + ' %'"></span>
+      </button>
+      <button type="button" class="ui-ibtn sm" @click="stopAll()" aria-label="Alles stoppen" title="Alles stoppen"><span x-html="ui.ic.stop"></span></button>
     </div>
-  </div>
+    <header class="ui-top">
+      <div style="min-width:0">
+        <h1 x-text="pageMeta().title"></h1>
+        <p x-text="pageMeta().sub"></p>
+      </div>
+      <div class="ui-live" :class="ui.livePing && 'ping'" x-show="hw.last_key" aria-live="polite">
+        <span class="ui-faint">Zuletzt</span>
+        <span class="k" x-text="hw.last_key"></span>
+        <span class="w ui-trunc" x-show="hw.last_word" x-text="hw.last_word"></span>
+        <span class="ui-faint" x-text="'· ' + (hw.last_key_ago || '')"></span>
+      </div>
+      <span class="ui-faint" style="margin-left:auto;font-size:13px" x-show="!hw.last_key && !hw.searching">Noch keine Taste gedrückt</span>
+    </header>
 
   <!-- Diagnostics Panel -->
   <div x-show="showDiag" x-cloak x-transition class="bg-base-300 border-b border-base-content/10 px-4 py-3">
@@ -314,489 +713,45 @@
     </div>
   </div>
 
-  <!-- Generation Jobs -->
-  <div x-show="Object.values(genJobs).some(j => j.status !== 'done' && j.status !== 'error')"
-       class="bg-accent/10 px-4 py-1.5 flex items-center gap-3 text-xs border-b border-accent/20">
-    <span class="loading loading-spinner loading-xs text-accent"></span>
-    <span class="font-bold text-accent">KI-Generierung</span>
-    <template x-for="job in Object.values(genJobs).filter(j => j.status !== 'done')" :key="job.id">
-      <span class="badge badge-xs" :class="job.status === 'error' ? 'badge-error' : 'badge-accent'"
-            x-text="(job.type === 'sound' ? 'Sound: ' : 'Bild: ') + job.word + ': ' + ({queued:'Wartend',generating:'Generiere...',error:'Fehler'}[job.status] || job.status)"></span>
-    </template>
-  </div>
 
-  <!-- Tabs -->
-  <div class="tabs tabs-boxed fk-tabs my-3 mx-2 sm:mx-4" role="tablist"
-       x-effect="tab; $nextTick(() => $el.querySelector('.tab-active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }))">
-    <button type="button" role="tab" class="tab" :class="tab === 'letters' && 'tab-active'" :aria-selected="tab === 'letters' ? 'true' : 'false'" @click="tab='letters'">Buchstaben</button>
-    <button type="button" role="tab" class="tab" :class="tab === 'numbers' && 'tab-active'" :aria-selected="tab === 'numbers' ? 'true' : 'false'" @click="tab='numbers'">Nummern</button>
-    <button type="button" role="tab" class="tab" :class="tab === 'quiz' && 'tab-active'" :aria-selected="tab === 'quiz' ? 'true' : 'false'" @click="tab='quiz'; loadQuiz()">Quiz</button>
-    <button type="button" role="tab" class="tab" :class="tab === 'overview' && 'tab-active'" :aria-selected="tab === 'overview' ? 'true' : 'false'" @click="tab='overview'; loadDashboard()">Übersicht</button>
-    <button type="button" role="tab" class="tab" :class="tab === 'sets' && 'tab-active'" :aria-selected="tab === 'sets' ? 'true' : 'false'" @click="tab='sets'">Sets</button>
-    <button type="button" role="tab" class="tab" :class="tab === 'test' && 'tab-active'" :aria-selected="tab === 'test' ? 'true' : 'false'" @click="tab='test'">Tastatur</button>
-    <button type="button" role="tab" class="tab" :class="tab === 'settings' && 'tab-active'" :aria-selected="tab === 'settings' ? 'true' : 'false'" @click="tab='settings'">Einstellungen</button>
-    <button type="button" role="tab" class="tab" :class="tab === 'files' && 'tab-active'" :aria-selected="tab === 'files' ? 'true' : 'false'" @click="tab='files'">Dateien</button>
-    <button type="button" role="tab" class="tab" :class="tab === 'ailog' && 'tab-active'" :aria-selected="tab === 'ailog' ? 'true' : 'false'" @click="tab='ailog'; loadAiLog(); loadIntegrations()">KI & Dienste</button>
-  </div>
+  <div class="ui-content">
 
-  <div class="container mx-auto px-4 pb-8">
-
-    <!-- ═══ LETTERS TAB ═══ -->
-    <div x-show="tab === 'letters'" x-cloak>
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
-        <template x-for="letter in letterAlphabet()" :key="letter">
-          <div class="card bg-base-100 shadow letter-card" @click="editLetter(letter)"
-               :style="progTint(letter)" :title="progTitle(letter)">
-            <div class="card-body p-3">
-              <div class="flex items-start gap-2">
-                <span class="text-3xl font-black" x-text="letter"
-                      :style="'color:' + randomColor(letter)"></span>
-                <span class="badge badge-success badge-sm mt-1" x-show="progLearned(letter)">gelernt</span>
-                <img :src="'/images/' + firstEntry(letter)?.image"
-                     class="img-preview ml-auto" loading="lazy"
-                     @error="$el.style.display='none'" @load="$el.style.display='block'">
-              </div>
-              <div class="text-sm opacity-70 mt-1"
-                   x-text="getEntries(letter).map(e => (e.enabled ? '' : '(') + e.word + (e.enabled ? '' : ')')).join(', ')"></div>
-              <div class="text-xs opacity-60 mt-1" x-show="prog.letters[letter]" x-text="progLine(letter)"></div>
-              <div class="flex items-center justify-between mt-1">
-                <div class="text-xs opacity-40"
-                     x-text="getEntries(letter).filter(e=>e.enabled).length + '/' + getEntries(letter).length + ' aktiv'"></div>
-                <div class="fk-dot-row" :title="letterTrackPresenceTooltip(letter)">
-                  <template x-for="k in trackKinds" :key="k">
-                    <span class="fk-dot" :class="letterHasTrack(letter, k) ? k.toLowerCase() : 'off'"></span>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
-
-      <!-- Edit Letter Modal -->
-      <dialog class="modal" :class="editingLetter && 'modal-open'"
-              @keydown.shift.left.window="editingLetter && !['INPUT','TEXTAREA','SELECT'].includes($event.target.tagName) && navLetter(-1)"
-              @keydown.shift.right.window="editingLetter && !['INPUT','TEXTAREA','SELECT'].includes($event.target.tagName) && navLetter(1)">
-        <div class="modal-box fk-modal-xl" x-show="editingLetter">
-
-          <!-- ── Top bar (full-width) ── -->
-          <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 border-b border-base-content/5 flex-shrink-0">
-            <h3 class="font-bold text-lg hidden sm:block">Einträge bearbeiten</h3>
-
-            <!-- Letter nav -->
-            <div class="flex items-center gap-1 ml-2">
-              <button class="btn btn-sm btn-ghost btn-square" @click="navLetter(-1)"
-                      :disabled="_navBusy" title="Vorheriger Buchstabe (Shift+←)">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
-              </button>
-              <select class="select select-sm select-bordered w-24 text-center font-bold"
-                      :value="editingLetter"
-                      @change="navLetterTo($event.target.value)"
-                      :disabled="_navBusy">
-                <template x-for="l in letterAlphabet()" :key="l">
-                  <option :value="l" x-text="l"></option>
-                </template>
-              </select>
-              <button class="btn btn-sm btn-ghost btn-square" @click="navLetter(1)"
-                      :disabled="_navBusy" title="Nächster Buchstabe (Shift+→)">
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
-              </button>
-              <span x-show="_navBusy" class="loading loading-spinner loading-xs opacity-60 ml-1"></span>
-            </div>
-
-            <div class="flex-1"></div>
-            <kbd class="kbd kbd-sm opacity-60 fk-wide-only" title="Schließen">Esc</kbd>
-            <button class="btn btn-sm btn-circle btn-ghost" @click="editingLetter=null" title="Schließen">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-
-          <div class="fk-split">
-
-            <!-- ── Left rail ── -->
-            <aside class="fk-rail">
-              <!-- Identity -->
-              <div class="px-5 pt-5 pb-4 flex flex-col items-center gap-1 border-b border-base-content/5">
-                <span class="fk-rail-glyph text-primary select-none" x-text="editingLetter"></span>
-                <div class="text-sm opacity-60 mt-2">
-                  <span class="font-semibold text-success" x-text="editEntries.filter(e=>e.enabled).length"></span>
-                  <span class="opacity-60"> / </span>
-                  <span x-text="editEntries.length"></span>
-                  <span class="opacity-40 ml-1">Wörter aktiv</span>
-                </div>
-              </div>
-
-              <!-- Add buttons -->
-              <div class="px-5 py-4 space-y-2 flex-1 overflow-y-auto">
-                <button class="btn btn-sm btn-outline btn-block gap-1.5"
-                        @click="addEmptyEntry()">
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
-                  Manueller Eintrag
-                </button>
-
-                <!-- KI-Vorschlag (collapsed) -->
-                <button x-show="!_suggestOpen"
-                        class="btn btn-sm btn-primary btn-block gap-1.5"
-                        @click="openSuggest()" :disabled="_suggesting">
-                  <span x-show="_suggesting" class="loading loading-spinner loading-xs"></span>
-                  <svg x-show="!_suggesting" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
-                  <span x-text="_suggesting ? 'Denke nach…' : 'KI-Vorschlag'"></span>
-                </button>
-
-                <!-- KI-Vorschlag (expanded: editable prompt) -->
-                <div x-show="_suggestOpen" x-cloak
-                     class="rounded-lg bg-base-300/50 border border-primary/20 p-3 space-y-2">
-                  <div class="flex items-center gap-1.5 text-xs opacity-70 font-semibold">
-                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
-                    Prompt bearbeiten
-                    <button class="ml-auto opacity-40 hover:opacity-100"
-                            @click="_suggestOpen = false" title="Schließen">
-                      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
-                    </button>
-                  </div>
-                  <div class="text-2xs opacity-50 leading-snug">
-                    Platzhalter: <code class="opacity-80">{letter}</code>, <code class="opacity-80">{excluded}</code>
-                  </div>
-                  <textarea class="textarea textarea-bordered textarea-xs text-xs w-full h-40 font-mono"
-                            x-model="_suggestPrompt"
-                            placeholder="Schlage EIN deutsches Wort vor das mit &quot;{letter}&quot; beginnt..."></textarea>
-                  <div class="flex flex-col gap-1.5">
-                    <button class="btn btn-xs btn-primary gap-1"
-                            @click="runSuggest(true)" :disabled="_suggesting || !_suggestPrompt.trim()">
-                      <span x-show="_suggesting" class="loading loading-spinner loading-xs"></span>
-                      <span x-show="!_suggesting">Speichern &amp; vorschlagen</span>
-                    </button>
-                    <button class="btn btn-xs btn-ghost gap-1"
-                            @click="runSuggest(false)" :disabled="_suggesting || !_suggestPrompt.trim()">
-                      Einmal verwenden
-                    </button>
-                    <button class="btn btn-xs btn-ghost gap-1 opacity-60"
-                            @click="_suggestPrompt = _defaultSuggestPrompt(); $nextTick(() => { /* force textarea sync */ })"
-                            :disabled="_suggesting"
-                            title="Auf Standard zurücksetzen">
-                      ↺ Standard-Prompt
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Blacklist -->
-                <details class="mt-4" x-show="_blacklist.length > 0">
-                  <summary class="text-xs opacity-50 cursor-pointer hover:opacity-80 py-1">
-                    Abgelehnt (<span x-text="_blacklist.length"></span>)
-                  </summary>
-                  <div class="flex flex-wrap gap-1 mt-2">
-                    <template x-for="(w, i) in _blacklist" :key="i">
-                      <span class="badge badge-sm badge-ghost gap-1">
-                        <span x-text="w"></span>
-                        <button class="opacity-50 hover:opacity-100"
-                                @click="_blacklist.splice(i, 1); fetch('/api/blacklist/' + editingLetter, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({words:_blacklist})})">×</button>
-                      </span>
-                    </template>
-                  </div>
-                </details>
-              </div>
-
-              <!-- Commit bar -->
-              <div class="px-5 py-3 border-t border-base-content/5 flex gap-2 flex-shrink-0">
-                <button class="btn btn-sm btn-ghost flex-1" @click="editingLetter=null">Abbrechen</button>
-                <button class="btn btn-sm btn-primary flex-1" @click="saveLetter()">Speichern</button>
-              </div>
-            </aside>
-
-            <!-- ── Right pane: cards grid ── -->
-            <main class="fk-pane px-5 py-5">
-              <div class="fk-grid-cards">
-                <template x-for="(entry, idx) in editEntries" :key="idx">
-                  <div class="fk-entry-card" :class="!entry.enabled && 'is-off'"
-                       x-data="{ showMenu: false }">
-
-                    <!-- Header: word + toggle + overflow menu -->
-                    <div class="flex items-center gap-2 min-w-0">
-                      <input type="text"
-                             class="input input-md input-bordered flex-1 min-w-0 font-bold text-lg"
-                             x-model="entry.word" placeholder="Wort…">
-
-                      <label class="flex items-center gap-2 px-2 cursor-pointer"
-                             title="Eintrag aktivieren/deaktivieren">
-                        <span class="text-2xs opacity-50 select-none"
-                              x-text="entry.enabled ? 'aktiv' : 'inaktiv'"></span>
-                        <input type="checkbox" class="toggle toggle-sm toggle-success"
-                               x-model="entry.enabled">
-                      </label>
-
-                      <div class="relative">
-                        <button class="btn btn-sm btn-circle btn-ghost opacity-50 hover:opacity-100"
-                                @click.stop="showMenu = !showMenu" title="Mehr">
-                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"/></svg>
-                        </button>
-                        <div x-show="showMenu" @click.outside="showMenu = false" x-cloak
-                             class="absolute right-0 top-full mt-1 z-10 bg-base-100 rounded-lg shadow-xl border border-base-content/10 py-1 w-44">
-                          <button class="block w-full text-left px-3 py-1.5 text-xs hover:bg-base-200"
-                                  x-show="!entryHasAnyFile(entry)"
-                                  @click="showMenu=false; blacklistWord(entry.word).then(()=>editEntries.splice(idx,1))">
-                            Ablehnen (blacklist)
-                          </button>
-                          <button class="block w-full text-left px-3 py-1.5 text-xs hover:bg-base-200"
-                                  x-show="entryHasAnyFile(entry)"
-                                  @click="showMenu=false; archiveEntry(idx)">
-                            Archivieren
-                          </button>
-                          <button class="block w-full text-left px-3 py-1.5 text-xs hover:bg-base-200 text-error"
-                                  @click="showMenu=false; editEntries.splice(idx, 1)">
-                            Entfernen
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- 🖼 IMAGE (single, always shown first) -->
-                    <div class="fk-track">
-                      <div class="fk-track-head">
-                        <svg class="fk-ico" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z"/></svg>
-                        Bild
-                        <span class="ml-auto text-2xs opacity-50" x-show="entry.image" x-text="entry.image"></span>
-                        <span class="ml-auto text-2xs opacity-40" x-show="!entry.image">nicht gesetzt</span>
-                      </div>
-
-                      <div class="flex items-stretch gap-2 min-w-0">
-                        <img :src="entry.image ? '/images/' + entry.image + '?v=' + (entry._imgVer||0) : ''"
-                             class="fk-thumb-lg" x-show="entry.image">
-                        <div x-show="!entry.image" class="fk-thumb-placeholder-lg"
-                             x-text="editingLetter"></div>
-
-                        <div class="flex-1 min-w-0 flex flex-col gap-1.5">
-                          <select class="select select-sm select-bordered w-full text-xs"
-                                  x-model="entry.image"
-                                  x-init="$nextTick(() => { $el.value = entry.image || ''; })">
-                            <option value="">— Bild wählen —</option>
-                            <template x-for="img in images" :key="img">
-                              <option :value="img" :selected="img === entry.image" x-text="img"></option>
-                            </template>
-                          </select>
-                          <input type="text" class="input input-xs input-bordered w-full"
-                                 x-model="entry._imageDesc"
-                                 placeholder="KI-Prompt: z.B. Friendly cartoon tiger with big eyes">
-                          <div class="flex gap-1.5">
-                            <button class="btn btn-xs btn-primary gap-1 w-full"
-                                    @click="generateImage(entry, idx)" :disabled="!entry.word">
-                              <span x-show="entry._genImg" class="loading loading-spinner loading-xs"></span>
-                              <svg x-show="!entry._genImg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
-                              <span x-text="entry.image ? 'Neu generieren' : 'Generieren'"></span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <!-- ♫ Sound tracks — one row per kind in playback order -->
-                    <template x-for="cfg in orderedTrackKinds()" :key="cfg.kind">
-                      <div class="fk-track"
-                           :class="!(entry.tracks[cfg.kind] && entry.tracks[cfg.kind].enabled) && 'is-muted'">
-                        <div class="fk-track-head">
-                          <span class="fk-kind-badge" :class="cfg.kind.toLowerCase()" x-text="cfg.kind"></span>
-                          <span class="opacity-70" x-text="kindLabel(cfg.kind)"></span>
-                          <span class="ml-auto text-2xs opacity-50 truncate max-w-xs"
-                                x-show="entry.tracks[cfg.kind] && entry.tracks[cfg.kind].file"
-                                x-text="entry.tracks[cfg.kind].file"></span>
-                          <span class="text-2xs opacity-40"
-                                x-show="!(entry.tracks[cfg.kind] && entry.tracks[cfg.kind].file)">nicht gesetzt</span>
-                          <input type="checkbox"
-                                 class="toggle toggle-xs toggle-success ml-2"
-                                 x-model="entry.tracks[cfg.kind].enabled"
-                                 title="Diese Tonspur abspielen">
-                        </div>
-
-                        <div class="flex items-stretch gap-2 min-w-0">
-                          <div class="fk-track-icon-sm" :class="entry.tracks[cfg.kind].file && 'has-file'">
-                            <svg x-show="cfg.kind === 'FX'" fill="none" viewBox="0 0 24 24" stroke-width="1.3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25 11.25 4.5v15L6.75 15.75H3.75a.75.75 0 0 1-.75-.75V9a.75.75 0 0 1 .75-.75h3Z"/></svg>
-                            <svg x-show="cfg.kind === 'DE' || cfg.kind === 'EN'" fill="none" viewBox="0 0 24 24" stroke-width="1.3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46"/></svg>
-                          </div>
-
-                          <div class="flex-1 min-w-0 flex flex-col gap-1.5">
-                            <select class="select select-sm select-bordered w-full text-xs"
-                                    x-model="entry.tracks[cfg.kind].file"
-                                    x-init="$nextTick(() => { $el.value = (entry.tracks[cfg.kind]&&entry.tracks[cfg.kind].file) || ''; })">
-                              <option value="">— Datei wählen —</option>
-                              <template x-for="s in sounds" :key="s">
-                                <option :value="s"
-                                        :selected="entry.tracks[cfg.kind] && s === entry.tracks[cfg.kind].file"
-                                        x-text="s"></option>
-                              </template>
-                            </select>
-                            <input type="text" class="input input-xs input-bordered w-full"
-                                   x-model="entry.tracks[cfg.kind].prompt"
-                                   :placeholder="kindPromptPlaceholder(cfg.kind)">
-                            <div class="flex items-center gap-2 text-2xs">
-                              <span class="opacity-50 w-10 flex-shrink-0">Laut.</span>
-                              <input type="range" min="0" max="200" step="5"
-                                     class="range range-xs flex-1"
-                                     x-model.number="entry.tracks[cfg.kind].volume"
-                                     :disabled="!entry.tracks[cfg.kind].file">
-                              <span class="font-mono opacity-60 w-10 text-right"
-                                    x-text="(entry.tracks[cfg.kind].volume || 100) + '%'"></span>
-                            </div>
-                            <div class="flex gap-1.5">
-                              <button class="btn btn-xs btn-ghost gap-1 flex-1"
-                                      @click="previewSound(entry.tracks[cfg.kind].file, entry.tracks[cfg.kind].volume)"
-                                      :disabled="!entry.tracks[cfg.kind].file">
-                                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg>
-                                Abspielen
-                              </button>
-                              <button class="btn btn-xs btn-primary gap-1 flex-1"
-                                      @click="generateTrack(entry, idx, cfg.kind, fileSlug(editingLetter))"
-                                      :disabled="!entry.word">
-                                <span x-show="entry.tracks[cfg.kind]._generating" class="loading loading-spinner loading-xs"></span>
-                                <svg x-show="!entry.tracks[cfg.kind]._generating" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
-                                <span x-text="entry.tracks[cfg.kind].file ? 'Neu' : 'Generieren'"></span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </template>
-                  </div>
-                </template>
-
-                <!-- Empty-state card -->
-                <button x-show="editEntries.length === 0"
-                        class="fk-entry-card border-2 border-dashed border-base-content/10 hover:border-primary text-center opacity-60 hover:opacity-100"
-                        style="min-height:160px; align-items:center; justify-content:center;"
-                        @click="addEmptyEntry()">
-                  <span class="text-sm">Noch keine Einträge — manuell anlegen oder KI-Vorschlag holen.</span>
-                </button>
-              </div>
-            </main>
-          </div>
-        </div>
-        <form method="dialog" class="modal-backdrop" @click="editingLetter=null"></form>
-      </dialog>
-
-      <!-- Generation Wizard Modal -->
-      <dialog class="modal" :class="_genWizard && 'modal-open'" style="z-index:100">
-        <div class="modal-box max-w-lg" x-show="_genWizard">
-          <template x-if="_genWizard">
-            <div>
-              <!-- Steps indicator -->
-              <ul class="steps steps-horizontal w-full mb-6 text-xs">
-                <li class="step" :class="_genWizard.step >= 1 && 'step-primary'">Prompt</li>
-                <li class="step" :class="_genWizard.step >= 2 && 'step-primary'">Generieren</li>
-                <li class="step" :class="_genWizard.step >= 3 && 'step-primary'">Prüfen</li>
-              </ul>
-
-              <!-- Step 1: Edit prompts -->
-              <div x-show="_genWizard.step === 1">
-                <p class="text-sm mb-4 opacity-70">Prompts für <strong class="text-primary" x-text="_genWizard.entry.word"></strong> anpassen</p>
-                <div class="form-control mb-3">
-                  <label class="label py-1"><span class="label-text text-xs flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M13.5 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"/></svg>
-                    Sound-Beschreibung</span></label>
-                  <textarea class="textarea textarea-bordered textarea-sm text-xs h-16" x-model="_genWizard.soundPrompt"
-                            placeholder="z.B. A loud tiger roar, clear and recognizable"></textarea>
-                </div>
-                <div class="form-control mb-1">
-                  <label class="label py-1"><span class="label-text text-xs flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 opacity-50" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z"/></svg>
-                    Bild-Beschreibung</span></label>
-                  <textarea class="textarea textarea-bordered textarea-sm text-xs h-16" x-model="_genWizard.imagePrompt"
-                            placeholder="z.B. A friendly cartoon tiger with big eyes"></textarea>
-                </div>
-                <div class="flex justify-between mt-5">
-                  <button class="btn btn-ghost btn-sm" @click="_genWizard = null">Abbrechen</button>
-                  <button class="btn btn-primary btn-sm gap-1.5" @click="startGenWizard()">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
-                    Generieren
-                  </button>
-                </div>
-              </div>
-
-              <!-- Step 2: Generating -->
-              <div x-show="_genWizard.step === 2">
-                <p class="text-sm mb-4 opacity-70">Sound &amp; Bild werden generiert&hellip;</p>
-                <div class="space-y-3">
-                  <div class="flex items-center gap-3 p-3 rounded-lg bg-base-200">
-                    <span x-show="!_genWizard.soundDone && !_genWizard.soundError" class="loading loading-spinner loading-sm text-primary"></span>
-                    <svg x-show="_genWizard.soundDone" class="w-5 h-5 text-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
-                    <svg x-show="_genWizard.soundError" class="w-5 h-5 text-error flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
-                    <div>
-                      <div class="text-sm font-medium">Sound</div>
-                      <div class="text-2xs opacity-50" x-text="_genWizard.soundDone ? 'Fertig' : (_genWizard.soundError || 'Wird generiert...')"></div>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-3 p-3 rounded-lg bg-base-200">
-                    <span x-show="!_genWizard.imageDone && !_genWizard.imageError" class="loading loading-spinner loading-sm text-primary"></span>
-                    <svg x-show="_genWizard.imageDone" class="w-5 h-5 text-success flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
-                    <svg x-show="_genWizard.imageError" class="w-5 h-5 text-error flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
-                    <div>
-                      <div class="text-sm font-medium">Bild</div>
-                      <div class="text-2xs opacity-50" x-text="_genWizard.imageDone ? 'Fertig' : (_genWizard.imageError || 'Wird generiert...')"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Step 3: Review -->
-              <div x-show="_genWizard.step === 3">
-                <p class="text-sm mb-4 opacity-70">Ergebnisse für <strong class="text-primary" x-text="_genWizard.entry.word"></strong></p>
-
-                <!-- Sound review -->
-                <div class="rounded-lg bg-base-200 p-3 mb-3">
-                  <div class="text-xs font-medium mb-2 flex items-center gap-1.5 opacity-60">
-                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M13.5 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"/></svg>
-                    Sound
-                  </div>
-                  <div x-show="_genWizard.soundError" class="text-xs text-error" x-text="_genWizard.soundError"></div>
-                  <div x-show="_genWizard.soundDone">
-                    <div class="flex items-center gap-2">
-                      <button class="btn btn-xs btn-circle btn-ghost" @click="previewSound(_genWizard.soundFilename)" title="Abspielen">
-                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg>
-                      </button>
-                      <span class="text-2xs opacity-40 flex-1 truncate" x-text="_genWizard.soundFilename"></span>
-                      <div x-show="_genWizard.soundAccepted === null" class="flex gap-1">
-                        <button class="btn btn-xs btn-success" @click="acceptGenResult('sound')">Übernehmen</button>
-                        <button class="btn btn-xs btn-ghost" @click="declineGenResult('sound')">Verwerfen</button>
-                      </div>
-                      <span x-show="_genWizard.soundAccepted === true" class="badge badge-sm badge-success gap-1">Übernommen</span>
-                      <span x-show="_genWizard.soundAccepted === false" class="badge badge-sm badge-ghost gap-1">Verworfen</span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Image review -->
-                <div class="rounded-lg bg-base-200 p-3 mb-3">
-                  <div class="text-xs font-medium mb-2 flex items-center gap-1.5 opacity-60">
-                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z"/></svg>
-                    Bild
-                  </div>
-                  <div x-show="_genWizard.imageError" class="text-xs text-error" x-text="_genWizard.imageError"></div>
-                  <div x-show="_genWizard.imageDone">
-                    <img :src="'/images/' + _genWizard.imageFilename + '?v=' + Date.now()"
-                         class="w-16 h-16 rounded bg-base-300 mb-2" style="image-rendering:pixelated">
-                    <div class="flex items-center gap-2">
-                      <span class="text-2xs opacity-40 flex-1 truncate" x-text="_genWizard.imageFilename"></span>
-                      <div x-show="_genWizard.imageAccepted === null" class="flex gap-1">
-                        <button class="btn btn-xs btn-success" @click="acceptGenResult('image')">Übernehmen</button>
-                        <button class="btn btn-xs btn-ghost" @click="declineGenResult('image')">Verwerfen</button>
-                      </div>
-                      <span x-show="_genWizard.imageAccepted === true" class="badge badge-sm badge-success gap-1">Übernommen</span>
-                      <span x-show="_genWizard.imageAccepted === false" class="badge badge-sm badge-ghost gap-1">Verworfen</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="flex justify-between mt-5">
-                  <button class="btn btn-ghost btn-sm gap-1" @click="_genWizard.step = 1">
-                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.992 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182"/></svg>
-                    Neu generieren
-                  </button>
-                  <button class="btn btn-primary btn-sm" @click="closeGenWizard()">Fertig</button>
-                </div>
-              </div>
-            </div>
+    <!-- ═══ LETTERS TAB (FUNK-72): one tile per letter, how complete it is, what was played ═══ -->
+    <section x-show="tab === 'letters'" x-cloak>
+      <div class="ui-bar">
+        <div class="ui-seg" role="tablist" aria-label="Filter">
+          <template x-for="f in ui.letterFilters" :key="f.id">
+            <button type="button" role="tab" :class="ui.letterFilter === f.id && 'on'" :aria-selected="ui.letterFilter === f.id ? 'true' : 'false'"
+                    @click="ui.letterFilter = f.id"><span x-text="f.label"></span><span class="c num" x-text="letterAlphabet().filter(l => letterFilterOk(l, f.id)).length"></span></button>
           </template>
         </div>
-        <form method="dialog" class="modal-backdrop" @click="closeGenWizard()"></form>
-      </dialog>
-    </div>
+        <span class="ui-faint ui-sum" x-text="letterSummary()"></span>
+      </div>
+      <div class="ui-grid">
+        <template x-for="letter in letterAlphabet().filter(l => letterFilterOk(l, ui.letterFilter))" :key="letter">
+          <button type="button" class="ui-tile" :class="!getEntries(letter).length && 'empty'" @click="openEditor(letter)"
+                  :aria-label="'Buchstabe ' + letter + ' bearbeiten'" :style="progTint(letter)" :title="progTitle(letter)">
+            <span class="ui-learned" x-show="progLearned(letter)">gelernt</span>
+            <div class="ui-tile-top">
+              <span class="ui-glyph" :style="'color:' + randomColor(letter)" x-text="letter"></span>
+              <template x-if="tileImage(letter)">
+                <img class="ui-tile-img" :src="thumb(tileImage(letter), 160)" alt="" loading="lazy">
+              </template>
+            </div>
+            <div class="ui-tile-words" x-text="getEntries(letter).length ? getEntries(letter).map(e => (e.enabled ? '' : '(') + e.word + (e.enabled ? '' : ')')).join(' · ') : 'Noch keine Wörter'"></div>
+            <div class="ui-tile-meta" x-show="getEntries(letter).length">
+              <template x-for="k in ['IMG', 'FX', 'DE']" :key="k">
+                <span class="ui-st" :class="letterCount(letter, k) < getEntries(letter).length && 'gap'"
+                      :title="kindName(k) + ': ' + letterCount(letter, k) + ' von ' + getEntries(letter).length">
+                  <span x-html="kindIcon(k)" aria-hidden="true"></span><span class="num" x-text="letterCount(letter, k) + '/' + getEntries(letter).length"></span>
+                </span>
+              </template>
+              <span class="today num" x-show="prog.letters[letter]?.today?.presses" x-text="(prog.letters[letter]?.today?.presses || 0) + '× heute'"></span>
+            </div>
+          </button>
+        </template>
+      </div>
+    </section>
 
     <!-- ═══ NUMBERS TAB ═══ -->
     <div x-show="tab === 'numbers'" x-cloak>
@@ -2228,6 +2183,8 @@
       <span style="font-variant-numeric:tabular-nums" x-text="appBuild && appBuild !== 'dev' ? '#' + appBuild.substring(0, 7) : 'dev'"></span>
     </a>
   </footer>
+  </div><!-- /ui-main -->
+  </div><!-- /ui-shell -->
   <script type="module">
     // INSPR CalVer3 version display (FUNK-60). One thin adapter around the shared
     // renderer + interaction helper from inspr-at/inspr, vendored offline in
@@ -2288,16 +2245,485 @@
     }
   </script>
 
-  <!-- Toast -->
-  <div class="toast" x-show="toast" x-transition x-cloak>
-    <div class="alert" :class="toastType === 'error' ? 'alert-error' : 'alert-success'">
-      <span x-text="toast"></span>
+  <!-- ═══ Entry editor (FUNK-72): word list + one word in focus; saves by itself; a generated file
+       goes on its slot only when it exists, and replacing something is a choice (current vs new) ═══ -->
+  <div class="ui-scrim" x-show="ed" x-cloak x-transition.opacity @mousedown.self="closeEditor()">
+    <div class="ui-ed" role="dialog" aria-modal="true" aria-labelledby="edTitle" x-show="ed">
+      <template x-if="ed">
+        <div style="display:contents">
+          <header class="ui-ed-h">
+            <div class="ui-ed-glyph" :style="'color:' + randomColor(ed.L)" x-text="ed.L"></div>
+            <div class="ui-ed-title">
+              <h2 id="edTitle" x-text="'Buchstabe ' + ed.L"></h2>
+              <p x-text="edSummary()"></p>
+            </div>
+            <nav class="ui-strip" aria-label="Buchstabe wechseln (Shift + Pfeil links/rechts)">
+              <template x-for="l in letterAlphabet()" :key="l">
+                <button type="button" :class="ed.L === l && 'on'" @click="edSwitch(l)" :aria-label="'Buchstabe ' + l" :aria-current="ed.L === l ? 'true' : null">
+                  <span x-text="l"></span><i :class="!getEntries(l).length ? 'none' : letterHasGap(l) ? 'gap' : ''"></i>
+                </button>
+              </template>
+            </nav>
+            <span class="ui-saved" :class="edSaveState === 'error' && 'err'" aria-live="polite">
+              <span x-show="edSaveState === 'saved'" x-html="ui.ic.check"></span>
+              <span x-show="edSaveState === 'saving'" class="ui-ring sm" style="width:13px;height:13px;border-width:2px"></span>
+              <span x-show="edSaveState === 'error'" x-html="ui.ic.alert"></span>
+              <span x-text="{ saved: 'Gespeichert', saving: 'Speichert …', error: 'Nicht gespeichert' }[edSaveState] || ''"></span>
+              <button type="button" class="ui-btn xs ui-btn-line" x-show="edSaveState === 'error'" @click="edSaveNow()">Erneut</button>
+            </span>
+            <button type="button" class="ui-ibtn" @click="closeEditor()" aria-label="Schließen (Esc)" title="Schließen (Esc)"><span x-html="ui.ic.x"></span></button>
+          </header>
+
+          <div class="ui-ed-b">
+            <!-- word list -->
+            <aside class="ui-words" aria-label="Wörter">
+              <div class="ui-words-h"><h3 x-text="ed.entries.length === 1 ? '1 Wort' : ed.entries.length + ' Wörter'"></h3><span class="ui-faint" style="font-size:11.5px">↑ ↓ wechseln</span></div>
+              <div class="ui-gapcall" x-show="edMissingVoices().length">
+                <span x-html="ui.ic.voice" aria-hidden="true"></span>
+                <span style="flex:1" x-text="edMissingVoices().length + ' ohne Stimme'"></span>
+                <button type="button" class="ui-btn xs ui-btn-soft" @click="edGenMissingVoices()">Alle erzeugen</button>
+              </div>
+              <div class="ui-wlist" role="listbox" aria-label="Wörter">
+                <template x-if="ed.loading">
+                  <div style="display:flex;flex-direction:column;gap:6px;padding:4px">
+                    <template x-for="i in 4" :key="i"><div class="ui-shimmer" style="height:62px;border-radius:13px"></div></template>
+                  </div>
+                </template>
+                <template x-for="e in ed.entries" :key="e.id">
+                  <button type="button" class="ui-wrow" role="option" :class="[ed.sel === e.id && 'on', !e.enabled && 'off']"
+                          :aria-selected="ed.sel === e.id ? 'true' : 'false'" @click="ed.sel = e.id">
+                    <template x-if="e.image"><img :src="thumb(e.image, 160)" alt=""></template>
+                    <template x-if="!e.image"><span class="ph" x-html="ui.ic.photo"></span></template>
+                    <span style="min-width:0;flex:1">
+                      <span class="wn ui-trunc" x-text="e.word || 'Neues Wort'"></span>
+                      <span class="ws ui-trunc" x-text="edRowStatus(e)"></span>
+                    </span>
+                    <span class="ui-pips" aria-hidden="true">
+                      <template x-for="k in ['IMG', 'FX', 'DE']" :key="k"><span class="ui-pip" :class="edPip(e, k)"></span></template>
+                    </span>
+                  </button>
+                </template>
+                <template x-if="edSuggest">
+                  <div class="ui-suggest" aria-live="polite">
+                    <template x-if="edSuggest.busy">
+                      <div style="display:flex;align-items:center;gap:10px;flex:1"><span class="ui-ring sm"></span><span class="ui-muted" style="font-size:13px">Denke nach …</span></div>
+                    </template>
+                    <template x-if="!edSuggest.busy && edSuggest.error">
+                      <div style="flex:1;font-size:12.5px;color:#ffb3ba;min-width:0">
+                        <span x-text="edSuggest.error"></span>
+                        <button type="button" class="ui-btn xs ui-btn-ghost" @click="edSuggest = null">OK</button>
+                      </div>
+                    </template>
+                    <template x-if="!edSuggest.busy && !edSuggest.error">
+                      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+                        <span x-html="ui.ic.sparkle" style="color:var(--ui-pri-hi)" aria-hidden="true"></span><b class="ui-trunc" x-text="edSuggest.data.word"></b>
+                        <span class="ui-sp"></span>
+                        <button type="button" class="ui-btn xs ui-btn-ghost" @click="edRejectSuggest()" title="Nicht mehr vorschlagen">Nein</button>
+                        <button type="button" class="ui-btn xs ui-btn-pri" @click="edAcceptSuggest()">Übernehmen</button>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+              <div class="ui-wfoot">
+                <form class="ui-addrow" @submit.prevent="edAddWord()">
+                  <label class="ui-sr" for="edNewWord">Neues Wort</label>
+                  <input id="edNewWord" class="ui-inp" x-model="edNewWord" :placeholder="'Neues Wort mit ' + ed.L + ' …'" maxlength="60">
+                  <button type="submit" class="ui-ibtn" style="background:var(--ui-s3)" aria-label="Wort hinzufügen" :disabled="!edNewWord.trim()"><span x-html="ui.ic.plus"></span></button>
+                </form>
+                <button type="button" class="ui-btn sm ui-btn-soft" @click="edRunSuggest(false)" :disabled="edSuggest && edSuggest.busy"><span x-html="ui.ic.sparkle"></span>Wort vorschlagen</button>
+                <details class="ui-prm" style="margin-top:0">
+                  <summary><span x-html="ui.ic.pencil"></span>Anweisung für Vorschläge</summary>
+                  <div class="inner">
+                    <span class="ui-faint" style="font-size:12px">Platzhalter: <code>{letter}</code>, <code>{excluded}</code></span>
+                    <textarea class="ui-inp" rows="7" style="font-family:ui-monospace,Menlo,monospace;font-size:12px" x-model="_suggestPrompt" @focus="_suggestPrompt || (_suggestPrompt = settings.ai_prompts?.suggest || _defaultSuggestPrompt())" aria-label="Anweisung für Vorschläge"></textarea>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                      <button type="button" class="ui-btn xs ui-btn-soft" @click="edRunSuggest(true)" :disabled="!(_suggestPrompt || '').trim()">Speichern &amp; vorschlagen</button>
+                      <button type="button" class="ui-btn xs ui-btn-ghost" @click="_suggestPrompt = _defaultSuggestPrompt()">Standard</button>
+                    </div>
+                  </div>
+                </details>
+                <details class="ui-prm" style="margin-top:0" x-show="_blacklist.length">
+                  <summary><span x-html="ui.ic.ban"></span><span x-text="'Abgelehnt (' + _blacklist.length + ')'"></span></summary>
+                  <div class="inner" style="flex-direction:row;flex-wrap:wrap;gap:4px">
+                    <template x-for="(w, i) in _blacklist" :key="w + i">
+                      <button type="button" class="ui-btn xs ui-btn-line" @click="edUnblacklist(w)" :title="'„' + w + '“ wieder vorschlagen'"><span x-text="w"></span><span x-html="ui.ic.x"></span></button>
+                    </template>
+                  </div>
+                </details>
+              </div>
+            </aside>
+
+            <!-- detail -->
+            <main class="ui-detail" x-show="!edCur()">
+              <div class="ui-empty-detail" x-show="!ed.loading">
+                <div class="ic" x-html="ui.ic.plus"></div>
+                <h2 x-text="'Noch keine Wörter für ' + ed.L"></h2>
+                <p>Schreib links ein Wort oder lass dir eins vorschlagen. Bild, Geräusch und Stimme erzeugst du danach mit einem Klick.</p>
+              </div>
+            </main>
+            <main class="ui-detail" x-show="edCur()">
+              <template x-if="edCur()">
+                <div x-data="{ e: null }" x-effect="e = edCur()">
+                  <template x-if="e">
+                    <div>
+                      <div class="ui-d-h">
+                        <label class="ui-sr" for="edWord">Wort</label>
+                        <input id="edWord" class="ui-wordinp" x-model="e.word" @focus="edSnap()" @input="edChanged()" maxlength="60"
+                               :style="'color:' + (e.enabled ? 'var(--ui-tx)' : 'var(--ui-tx3)')">
+                        <label class="ui-switch"><input type="checkbox" role="switch" :checked="e.enabled"
+                               @change="edSnap(); e.enabled = $event.target.checked; edChanged(e.enabled ? '„' + e.word + '“ ist wieder an' : '„' + e.word + '“ ist aus')"><span class="tr"></span><span x-text="e.enabled ? 'Aktiv' : 'Aus'"></span></label>
+                        <div style="position:relative" x-data="{ m: false }" @click.outside="m = false" @keydown.escape.stop="m = false">
+                          <button type="button" class="ui-ibtn" @click="m = !m" aria-label="Mehr Aktionen" :aria-expanded="m ? 'true' : 'false'"><span x-html="ui.ic.dots"></span></button>
+                          <div class="ui-menu" x-show="m" x-transition.origin.top.right x-cloak>
+                            <button type="button" x-show="edHasFiles(e)" @click="m = false; edArchive(e)"><span x-html="ui.ic.archive"></span>Archivieren (Dateien aufheben)</button>
+                            <button type="button" @click="m = false; edReject(e)"><span x-html="ui.ic.ban"></span>Ablehnen, nie mehr vorschlagen</button>
+                            <hr>
+                            <button type="button" class="danger" @click="m = false; edRemove(e)"><span x-html="ui.ic.trash"></span>Entfernen</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="ui-cols">
+                        <!-- picture -->
+                        <section class="ui-card ui-pic" aria-label="Bild">
+                          <template x-if="edSlot(e, 'IMG').state !== 'cand'">
+                            <div class="ui-picbox">
+                              <template x-if="e.image"><img :src="thumb(e.image, 480)" :alt="'Bild: ' + e.word"></template>
+                              <template x-if="!e.image"><div class="empty" :class="edSlot(e, 'IMG').state === 'run' && 'ui-shimmer'" x-text="ed.L"></div></template>
+                              <div class="ui-genov" x-show="edSlot(e, 'IMG').state === 'run'">
+                                <span class="ui-ring"></span>
+                                <span x-text="(e.image ? 'Neues Bild wird gemalt … ' : 'Bild wird gemalt … ') + edElapsed(edSlot(e, 'IMG'))"></span>
+                                <span class="ui-faint" style="font-size:12px" x-show="e.image">Das aktuelle Bild bleibt, bis du das neue übernimmst.</span>
+                              </div>
+                            </div>
+                          </template>
+                          <template x-if="edSlot(e, 'IMG').state === 'cand'">
+                            <div>
+                              <div class="ui-cmp">
+                                <figure><figcaption>Aktuell</figcaption><img :src="thumb(e.image, 480)" alt="Aktuelles Bild"></figure>
+                                <figure class="new"><figcaption>Neu</figcaption><img :src="thumb(edSlot(e, 'IMG').cand, 480)" alt="Neues Bild"></figure>
+                              </div>
+                              <div class="ui-picacts">
+                                <button type="button" class="ui-btn sm ui-btn-ghost" @click="edDiscard(e, 'IMG')">Verwerfen</button>
+                                <button type="button" class="ui-btn sm ui-btn-line" @click="edGen(e, 'IMG')"><span x-html="ui.ic.retry"></span>Nochmal</button>
+                                <button type="button" class="ui-btn sm ui-btn-pri" @click="edTake(e, 'IMG')">Übernehmen</button>
+                              </div>
+                            </div>
+                          </template>
+                          <template x-if="edSlot(e, 'IMG').state === 'err'">
+                            <div class="ui-errbox" role="alert">
+                              <span x-html="ui.ic.alert"></span>
+                              <div><b>Bild konnte nicht gemalt werden</b><p x-text="edSlot(e, 'IMG').msg"></p>
+                                <details x-show="edSlot(e, 'IMG').detail"><summary>Details</summary><span x-text="edSlot(e, 'IMG').detail"></span></details>
+                                <div class="acts"><button type="button" class="ui-btn xs ui-btn-line" @click="edGen(e, 'IMG')"><span x-html="ui.ic.retry"></span>Erneut versuchen</button>
+                                  <button type="button" class="ui-btn xs ui-btn-ghost" @click="edClearSlot(e, 'IMG')">Schließen</button></div>
+                              </div>
+                            </div>
+                          </template>
+                          <div class="ui-picacts" x-show="edSlot(e, 'IMG').state !== 'cand'">
+                            <button type="button" class="ui-btn sm ui-btn-soft" @click="edGen(e, 'IMG')" :disabled="edSlot(e, 'IMG').state === 'run' || !e.word.trim()">
+                              <span x-html="ui.ic.sparkle"></span><span x-text="e.image ? 'Neues Bild' : 'Bild malen'"></span></button>
+                            <button type="button" class="ui-btn sm ui-btn-line" @click="libOpen(e, 'IMG')"><span x-html="ui.ic.folder"></span>Bibliothek</button>
+                            <label class="ui-ibtn line" title="Bild hochladen" style="cursor:pointer"><span x-html="ui.ic.upload"></span>
+                              <input type="file" class="ui-sr" accept=".png,.jpg,.jpeg,.gif" @change="edUpload($event, e, 'IMG')" aria-label="Bild hochladen"></label>
+                          </div>
+                          <div class="ui-pixoo" x-show="e.image">
+                            <div class="ui-pixoo-screen"><img :src="'/images/' + encodeURIComponent(e.image || '')" alt=""></div>
+                            <div><b>So sieht es auf dem Pixoo aus</b><span>64 × 64 Pixel, wie dein Kind es sieht</span></div>
+                          </div>
+                          <div class="ui-field">
+                            <label :for="'edImgIdea'">Bildidee für die KI <span>optional, Englisch geht am besten</span></label>
+                            <textarea id="edImgIdea" class="ui-inp" rows="2" x-model="e._imageDesc" @focus="edSnap()" @input="edChanged()"
+                                      :placeholder="'Was soll man sehen? Leer lassen = „' + (e.word || 'das Wort') + '“'"></textarea>
+                          </div>
+                        </section>
+
+                        <!-- sound -->
+                        <div style="min-width:0">
+                          <section class="ui-card ui-listen" aria-label="So hört es dein Kind">
+                            <button type="button" class="ui-bigplay" @click="edPlaySeq(e)" :aria-label="pl.seq ? 'Stopp' : 'Abspielen wie beim Tastendruck (Leertaste)'" :title="pl.seq ? 'Stopp' : 'Abspielen (Leertaste)'"><span x-html="pl.seq ? ui.ic.pause : ui.ic.play"></span></button>
+                            <div style="min-width:0">
+                              <h4>So hört es dein Kind</h4>
+                              <div class="ui-steps">
+                                <template x-for="(k, si) in orderedTrackKinds().slice().sort((a, b) => b.enabled - a.enabled)" :key="k.kind">
+                                  <div style="display:contents">
+                                    <span class="ui-faint" x-show="si > 0" x-html="ui.ic.arrowR" aria-hidden="true"></span>
+                                    <span class="ui-stp" :class="[pl.seq && pl.seqKind === k.kind && 'on', !k.enabled && 'dis', k.enabled && !(e.tracks[k.kind] && e.tracks[k.kind].file) && 'miss']">
+                                      <i :style="'background:' + kindColor(k.kind)"></i>
+                                      <span x-text="k.enabled && !(e.tracks[k.kind] && e.tracks[k.kind].file) ? kindName(k.kind) + ' fehlt' : kindName(k.kind)"></span>
+                                      <span class="pg" :style="'width:' + (pl.seq && pl.seqKind === k.kind ? pl.frac * 100 : 0) + '%'"></span>
+                                    </span>
+                                  </div>
+                                </template>
+                              </div>
+                              <small>Reihenfolge und Spuren gelten für das ganze Set „<span x-text="sets[ed.setId]?.name || ed.setId"></span>“. <button type="button" @click="closeEditor(); go('sets')">Ändern</button></small>
+                            </div>
+                          </section>
+
+                          <div class="ui-slots">
+                            <template x-for="cfg in orderedTrackKinds().slice().sort((a, b) => b.enabled - a.enabled)" :key="cfg.kind">
+                              <section class="ui-card ui-slot" :class="!cfg.enabled && 'off'" :aria-label="kindName(cfg.kind)" x-data="{ k: cfg.kind }">
+                                <div class="ui-slot-h">
+                                  <span class="ui-kind" :class="k.toLowerCase()" x-html="kindIcon(k)"></span>
+                                  <div style="min-width:0"><h4 x-text="kindName(k)"></h4><p class="ui-trunc" x-text="edSlotSub(e, k)"></p></div>
+                                  <span class="ui-sp"></span>
+                                  <label class="ui-switch" x-show="cfg.enabled && e.tracks[k].file" :title="'Diese Spur bei „' + e.word + '“ abspielen'">
+                                    <input type="checkbox" role="switch" :checked="e.tracks[k].enabled" :aria-label="kindName(k) + ' abspielen'"
+                                           @change="edSnap(); e.tracks[k].enabled = $event.target.checked; edChanged(kindName(k) + (e.tracks[k].enabled ? ' an' : ' aus'))"><span class="tr"></span></label>
+                                </div>
+
+                                <template x-if="!cfg.enabled">
+                                  <div class="ui-offnote"><span x-html="ui.ic.eyeoff"></span><span>Im Set ausgeschaltet: dein Kind hört diese Spur gerade nicht.</span>
+                                    <button type="button" class="ui-btn xs ui-btn-ghost" @click="closeEditor(); go('sets')">Im Set einschalten</button></div>
+                                </template>
+
+                                <!-- the file it has (a running job leaves it as it is) -->
+                                <template x-if="e.tracks[k].file && edSlot(e, k).state !== 'cand'">
+                                  <div class="ui-player">
+                                    <button type="button" class="ui-pbtn" :class="pl.f === e.tracks[k].file && 'on'" @click="plToggle(e.tracks[k].file, e.tracks[k].volume)"
+                                            :aria-label="(pl.f === e.tracks[k].file ? 'Stopp: ' : 'Abspielen: ') + kindName(k)"><span x-html="pl.f === e.tracks[k].file ? ui.ic.pause : ui.ic.play"></span></button>
+                                    <div class="ui-wave" :class="k.toLowerCase()" x-effect="loadWave(e.tracks[k].file)" aria-hidden="true">
+                                      <template x-for="(p, wi) in wave(e.tracks[k].file)" :key="wi"><i :class="pl.f === e.tracks[k].file && wi / 48 < pl.frac && 'p'" :style="'height:' + (10 + p * 90) + '%'"></i></template>
+                                    </div>
+                                    <span class="ui-dur num" x-text="dur(e.tracks[k].file)"></span>
+                                    <div style="position:relative" x-data="{ v: false }" @click.outside="v = false">
+                                      <button type="button" class="ui-volb num" @click="v = !v; v && edSnap()" :aria-expanded="v ? 'true' : 'false'" :aria-label="'Lautstärke ' + kindName(k)" x-text="(e.tracks[k].volume ?? 100) + ' %'"></button>
+                                      <div class="ui-pop" x-show="v" x-cloak x-transition.origin.top.right>
+                                        <div style="display:flex;justify-content:space-between;margin-bottom:10px"><b>Lautstärke</b><span class="num" x-text="(e.tracks[k].volume ?? 100) + ' %'"></span></div>
+                                        <input type="range" class="ui-range" min="0" max="200" step="5" style="width:100%" x-model.number="e.tracks[k].volume" @change="edChanged()" :aria-label="'Lautstärke ' + kindName(k)">
+                                        <div class="ui-faint" style="font-size:12px;margin-top:8px">100 % = so laut wie die Datei. Darüber verstärkt das Gerät leise Aufnahmen; die Vorschau hier spielt höchstens 100 %.</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </template>
+                                <!-- nothing yet -->
+                                <template x-if="cfg.enabled && !e.tracks[k].file && !['run', 'err'].includes(edSlot(e, k).state)">
+                                  <div class="ui-empty-slot">
+                                    <span x-html="kindIcon(k)"></span>
+                                    <span style="flex:1;min-width:140px" x-text="k === 'FX' ? 'Noch kein Geräusch.' : k === 'DE' ? 'Noch keine Stimme: dein Kind hört nur das Geräusch.' : 'Noch keine englische Stimme.'"></span>
+                                    <button type="button" class="ui-btn xs ui-btn-pri" @click="edGen(e, k)" :disabled="!e.word.trim()"><span x-html="ui.ic.sparkle"></span>Erzeugen</button>
+                                    <button type="button" class="ui-btn xs ui-btn-ghost" @click="libOpen(e, k)">Bibliothek</button>
+                                  </div>
+                                </template>
+                                <!-- generating -->
+                                <template x-if="edSlot(e, k).state === 'run'">
+                                  <div class="ui-genrow" aria-live="polite">
+                                    <span class="ui-ring sm"></span>
+                                    <div class="ui-wave run" style="height:22px;max-width:140px" aria-hidden="true"><template x-for="wi in 16" :key="wi"><i :style="'height:' + (30 + (wi * 37) % 70) + '%;animation-delay:' + (wi * 60) + 'ms'"></i></template></div>
+                                    <span x-text="(k === 'FX' ? 'Geräusch' : 'Stimme') + ' wird erzeugt … ' + edElapsed(edSlot(e, k))"></span>
+                                    <span class="ui-sp"></span>
+                                    <span class="ui-faint" style="font-size:12px" x-show="e.tracks[k].file">Aktuelle Version bleibt</span>
+                                  </div>
+                                </template>
+                                <!-- a new version to compare -->
+                                <template x-if="edSlot(e, k).state === 'cand'">
+                                  <div class="ui-cand">
+                                    <template x-for="row in [{ lbl: 'Aktuell', f: e.tracks[k].file, n: false }, { lbl: 'Neu', f: edSlot(e, k).cand, n: true }]" :key="row.lbl">
+                                      <div class="row">
+                                        <span class="lbl" :class="row.n && 'n'" x-text="row.lbl"></span>
+                                        <button type="button" class="ui-pbtn" :class="pl.f === row.f && 'on'" @click="plToggle(row.f, e.tracks[k].volume)" :aria-label="row.lbl + ' abspielen'"><span x-html="pl.f === row.f ? ui.ic.pause : ui.ic.play"></span></button>
+                                        <div class="ui-wave" :class="k.toLowerCase()" x-effect="loadWave(row.f)" aria-hidden="true"><template x-for="(p, wi) in wave(row.f)" :key="wi"><i :class="pl.f === row.f && wi / 48 < pl.frac && 'p'" :style="'height:' + (10 + p * 90) + '%'"></i></template></div>
+                                      </div>
+                                    </template>
+                                    <div class="ui-slot-acts">
+                                      <span class="ui-faint" style="font-size:12px">Hör dir beide an.</span><span class="ui-sp"></span>
+                                      <button type="button" class="ui-btn xs ui-btn-ghost" @click="edDiscard(e, k)">Verwerfen</button>
+                                      <button type="button" class="ui-btn xs ui-btn-line" @click="edGen(e, k)"><span x-html="ui.ic.retry"></span>Nochmal</button>
+                                      <button type="button" class="ui-btn xs ui-btn-pri" @click="edTake(e, k)">Neue übernehmen</button>
+                                    </div>
+                                  </div>
+                                </template>
+                                <!-- failed -->
+                                <template x-if="edSlot(e, k).state === 'err'">
+                                  <div class="ui-errbox" role="alert">
+                                    <span x-html="ui.ic.alert"></span>
+                                    <div style="min-width:0">
+                                      <b x-text="(k === 'FX' ? 'Geräusch' : 'Stimme') + ' konnte nicht erzeugt werden'"></b>
+                                      <p x-text="edSlot(e, k).msg"></p>
+                                      <details x-show="edSlot(e, k).detail"><summary>Details</summary><span x-text="edSlot(e, k).detail"></span></details>
+                                      <div class="acts">
+                                        <button type="button" class="ui-btn xs ui-btn-line" @click="edGen(e, k)"><span x-html="ui.ic.retry"></span>Erneut versuchen</button>
+                                        <button type="button" class="ui-btn xs ui-btn-ghost" @click="closeEditor(); go('ailog')">KI &amp; Dienste prüfen</button>
+                                        <button type="button" class="ui-btn xs ui-btn-ghost" @click="edClearSlot(e, k)">Schließen</button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </template>
+
+                                <div class="ui-slot-acts" x-show="e.tracks[k].file && !['run', 'cand'].includes(edSlot(e, k).state)">
+                                  <span class="ui-fname" x-text="e.tracks[k].file"></span><span class="ui-sp"></span>
+                                  <button type="button" class="ui-btn xs ui-btn-soft" @click="edGen(e, k)" :disabled="!e.word.trim()"><span x-html="ui.ic.sparkle"></span>Neu erzeugen</button>
+                                  <button type="button" class="ui-btn xs ui-btn-ghost" @click="libOpen(e, k)"><span x-html="ui.ic.folder"></span>Bibliothek</button>
+                                  <label class="ui-ibtn sm" title="Datei hochladen" style="cursor:pointer"><span x-html="ui.ic.upload"></span>
+                                    <input type="file" class="ui-sr" accept=".mp3,.wav,.ogg,.m4a" @change="edUpload($event, e, k)" :aria-label="kindName(k) + ' hochladen'"></label>
+                                  <button type="button" class="ui-ibtn sm" title="Datei von diesem Wort lösen" :aria-label="kindName(k) + ' entfernen'" @click="edUnset(e, k)"><span x-html="ui.ic.x"></span></button>
+                                </div>
+
+                                <details class="ui-prm" x-show="cfg.enabled || e.tracks[k].prompt">
+                                  <summary><span x-html="ui.ic.pencil"></span><span x-text="k === 'FX' ? 'Anweisung für die KI' : 'Gesprochener Text'"></span>
+                                    <span class="txt" x-text="'· ' + (e.tracks[k].prompt || (k === 'FX' ? 'Standard für „' + e.word + '“' : k === 'DE' ? e.word : 'englisches Wort fehlt'))"></span></summary>
+                                  <div class="inner">
+                                    <input class="ui-inp" x-model="e.tracks[k].prompt" @focus="edSnap()" @input="edChanged()" maxlength="300"
+                                           :placeholder="k === 'FX' ? 'Englisch, z. B. „friendly buzzing bee, short“' : k === 'DE' ? 'Leer = „' + e.word + '“' : 'Englisches Wort, z. B. „bee“'"
+                                           :aria-label="k === 'FX' ? 'Anweisung für die KI' : 'Gesprochener Text'">
+                                    <span class="ui-faint" style="font-size:12px" x-text="k === 'FX' ? 'Gilt für „Neu erzeugen“. Englisch versteht die Geräusch-KI am besten.' : 'Gilt für „Neu erzeugen“ · ElevenLabs'"></span>
+                                  </div>
+                                </details>
+                              </section>
+                            </template>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </main>
+          </div>
+        </div>
+      </template>
     </div>
+  </div>
+
+  <!-- ═══ Library picker (FUNK-72) ═══ -->
+  <div class="ui-scrim" style="z-index:75" x-show="lib" x-cloak x-transition.opacity @mousedown.self="lib = null">
+    <template x-if="lib">
+      <div class="ui-sheet" role="dialog" aria-modal="true" aria-labelledby="libTitle">
+        <div class="ui-sheet-h">
+          <h3 id="libTitle" x-text="(lib.kind === 'IMG' ? 'Bild' : kindName(lib.kind)) + ' aus der Bibliothek'"></h3>
+          <button type="button" class="ui-ibtn" @click="lib = null" aria-label="Schließen"><span x-html="ui.ic.x"></span></button>
+        </div>
+        <div style="padding:12px 18px 0"><input class="ui-inp" x-model="lib.q" placeholder="Suchen …" aria-label="Suchen" x-init="$nextTick(() => $el.focus())"></div>
+        <div class="ui-sheet-b">
+          <template x-if="lib.kind === 'IMG'">
+            <div class="ui-libgrid">
+              <template x-for="f in libItems()" :key="f">
+                <button type="button" class="ui-libimg" @click="libPick(f)" :title="f"><img :src="thumb(f, 160)" alt="" loading="lazy"><span x-text="f"></span></button>
+              </template>
+            </div>
+          </template>
+          <template x-if="lib.kind !== 'IMG'">
+            <div>
+              <template x-for="f in libItems()" :key="f">
+                <div class="ui-librow">
+                  <button type="button" class="ui-pbtn" style="width:32px;height:32px" :class="pl.f === f && 'on'" @click="plToggle(f, 100)" :aria-label="f + ' abspielen'"><span x-html="pl.f === f ? ui.ic.pause : ui.ic.play"></span></button>
+                  <span class="ui-fname" x-text="f"></span>
+                  <button type="button" class="ui-btn xs ui-btn-soft" @click="libPick(f)">Wählen</button>
+                </div>
+              </template>
+            </div>
+          </template>
+          <p class="ui-faint" style="text-align:center;margin:20px 0 0" x-show="!libItems().length">Nichts gefunden.</p>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- ═══ Activity: every AI job of this server, running, finished or failed (FUNK-72) ═══ -->
+  <div class="ui-ac" x-show="acJobs().length" x-cloak>
+    <div class="ui-acpanel" x-show="ui.acOpen" x-transition.origin.bottom.right @click.outside="ui.acOpen = false">
+      <h5>KI-Aufträge<span class="ui-sp"></span><button type="button" class="ui-btn xs ui-btn-ghost" @click="acClear()" x-show="acJobs().some(j => j.status === 'done' || j.status === 'error')">Erledigte ausblenden</button></h5>
+      <template x-for="j in acJobs().slice(0, 30)" :key="j.id">
+        <div class="ui-job">
+          <span class="ui-kind" :class="(j.kind || (j.type === 'image' ? 'IMG' : 'FX')).toLowerCase()" x-html="kindIcon(j.kind || (j.type === 'image' ? 'IMG' : 'FX'))"></span>
+          <div class="jm"><b class="ui-trunc" x-text="(jobTarget(j) ? jobTarget(j).L + ' · ' : '') + (j.word || j.filename)"></b>
+            <span :class="j.status === 'error' && 'e'" x-text="jobLine(j)"></span></div>
+          <span class="ui-faint num" style="font-size:12px" x-show="j.status === 'queued' || j.status === 'generating'" x-text="jobElapsed(j)"></span>
+          <span x-show="j.status === 'done' && !jobReview(j)" x-html="ui.ic.check" style="color:var(--ui-ok)"></span>
+          <button type="button" class="ui-btn xs ui-btn-soft" x-show="jobReview(j)" @click="jobOpen(j)">Prüfen</button>
+          <button type="button" class="ui-btn xs ui-btn-line" x-show="j.status === 'error' && jobTarget(j)" @click="jobOpen(j)">Öffnen</button>
+        </div>
+      </template>
+    </div>
+    <button type="button" class="ui-acpill" @click="ui.acOpen = !ui.acOpen" :aria-expanded="ui.acOpen ? 'true' : 'false'">
+      <span class="ui-ring sm" x-show="acRunning()"></span>
+      <span x-show="!acRunning() && acReviews()" x-html="ui.ic.sparkle" style="color:var(--ui-pri-hi)"></span>
+      <span x-show="!acRunning() && !acReviews() && acErrors()" x-html="ui.ic.alert" style="color:var(--ui-err)"></span>
+      <span x-show="!acRunning() && !acReviews() && !acErrors()" x-html="ui.ic.check" style="color:var(--ui-ok)"></span>
+      <span x-text="acLabel()"></span>
+    </button>
+  </div>
+
+  <!-- phone: bottom navigation + the rest of the pages -->
+  <nav class="ui-bnav" aria-label="Navigation">
+    <template x-for="n in ui.bnav" :key="n.id">
+      <button type="button" :class="(n.id === 'more' ? ui.moreOpen || ui.moreIds.includes(tab) : tab === n.id) && 'on'"
+              @click="n.id === 'more' ? (ui.moreOpen = !ui.moreOpen) : (go(n.id), ui.moreOpen = false)"><span x-html="ui.ic[n.icon]"></span><span x-text="n.label"></span></button>
+    </template>
+  </nav>
+  <div class="ui-more" x-show="ui.moreOpen" x-cloak x-transition.opacity @click.self="ui.moreOpen = false">
+    <div class="ui-more-sheet">
+      <template x-for="g in ui.nav" :key="g.g">
+        <template x-for="n in g.items.filter(n => ui.moreIds.includes(n.id))" :key="n.id">
+          <button type="button" class="ui-navi" :class="tab === n.id && 'on'" @click="go(n.id); ui.moreOpen = false"><span x-html="ui.ic[n.icon]"></span><span x-text="n.label"></span></button>
+        </template>
+      </template>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="ui-toast" :class="toastType === 'error' && 'err'" x-show="toast" x-transition x-cloak role="status" aria-live="polite">
+    <span x-text="toast"></span>
+    <button type="button" class="ui-btn xs" x-show="toastUndo" @click="edUndo()"><span x-html="ui.ic.undo"></span>Rückgängig</button>
   </div>
 
 </div>
 
 <script>
+// ── FUNK-72: icons (fixed SVG strings), navigation, filters. Outside the component: never reactive. ──
+const FK_I = d => '<svg class="ui-i" viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>';
+const FK_AUDIO = { ctx: null };            // one AudioContext for waveforms; not part of Alpine's state
+const FK_UI = {
+  ic: {
+    play: FK_I('M6 4.8c0-.8.9-1.3 1.6-.9l11.6 6.4c.7.4.7 1.4 0 1.8L7.6 20.5c-.7.4-1.6-.1-1.6-.9V4.8Z'),
+    pause: FK_I('M15.75 5.25v13.5m-7.5-13.5v13.5'),
+    sparkle: FK_I('M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z'),
+    photo: FK_I('m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Z'),
+    upload: FK_I('M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5'),
+    folder: FK_I('M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z'),
+    dots: FK_I('M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z'),
+    x: FK_I('M6 18 18 6M6 6l12 12'),
+    chevD: FK_I('m19.5 8.25-7.5 7.5-7.5-7.5'),
+    check: FK_I('m4.5 12.75 6 6 9-13.5'),
+    alert: FK_I('M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z'),
+    speaker: FK_I('M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25l4.72-4.72a.75.75 0 0 1 1.28.53v15.88a.75.75 0 0 1-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.009 9.009 0 0 1 2.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75Z'),
+    voice: FK_I('M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z'),
+    note: FK_I('m9 9 10.5-3m0 6.553v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 1 1-.99-3.467l2.31-.66a2.25 2.25 0 0 0 1.632-2.163Zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 0 1-1.632 2.163l-1.32.377a1.803 1.803 0 0 1-.99-3.467l2.31-.66A2.25 2.25 0 0 0 9 15.553Z'),
+    undo: FK_I('M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3'),
+    plus: FK_I('M12 4.5v15m7.5-7.5h-15'),
+    grid: FK_I('M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z'),
+    hash: FK_I('M5.25 8.25h15m-16.5 7.5h15m-1.8-13.5-3.9 19.5m-2.1-19.5-3.9 19.5'),
+    quiz: FK_I('M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z'),
+    chart: FK_I('M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z'),
+    layers: FK_I('M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3'),
+    keyboard: FK_I('M3.75 6.75h16.5a1.5 1.5 0 0 1 1.5 1.5v7.5a1.5 1.5 0 0 1-1.5 1.5H3.75a1.5 1.5 0 0 1-1.5-1.5v-7.5a1.5 1.5 0 0 1 1.5-1.5ZM6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M7.5 14h9'),
+    cog: FK_I('M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 0 1 1.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.559.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.894.149c-.424.07-.764.383-.929.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 0 1-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.398.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 0 1-.12-1.45l.527-.737c.25-.35.272-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 0 1 .12-1.45l.773-.773a1.125 1.125 0 0 1 1.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z'),
+    bolt: FK_I('m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z'),
+    stop: FK_I('M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z'),
+    arrowR: FK_I('M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3'),
+    archive: FK_I('m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z'),
+    trash: FK_I('m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0'),
+    ban: FK_I('M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636'),
+    retry: FK_I('M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99'),
+    batt: FK_I('M21 10.5h.375c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125H21M3.75 18h15A2.25 2.25 0 0 0 21 15.75v-6a2.25 2.25 0 0 0-2.25-2.25h-15A2.25 2.25 0 0 0 1.5 9.75v6A2.25 2.25 0 0 0 3.75 18ZM4.5 10.5h1.5V15H4.5v-4.5Z'),
+    signal: FK_I('M9.348 14.652a3.75 3.75 0 0 1 0-5.304m5.304 0a3.75 3.75 0 0 1 0 5.304m-7.425 2.121a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12Z'),
+    eyeoff: FK_I('M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88'),
+    pencil: FK_I('m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125'),
+    more: FK_I('M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5'),
+  },
+  nav: [
+    { g: 'Inhalte', items: [{ id: 'letters', label: 'Buchstaben', icon: 'grid' }, { id: 'numbers', label: 'Zahlen', icon: 'hash' }, { id: 'sets', label: 'Sets', icon: 'layers' }] },
+    { g: 'Lernen', items: [{ id: 'quiz', label: 'Quiz', icon: 'quiz' }, { id: 'overview', label: 'Übersicht', icon: 'chart' }] },
+    { g: 'Gerät', items: [{ id: 'test', label: 'Tastatur', icon: 'keyboard' }, { id: 'settings', label: 'Einstellungen', icon: 'cog' }] },
+    { g: 'Medien & KI', items: [{ id: 'files', label: 'Dateien', icon: 'folder' }, { id: 'ailog', label: 'KI & Dienste', icon: 'bolt' }] },
+  ],
+  bnav: [{ id: 'letters', label: 'Buchstaben', icon: 'grid' }, { id: 'numbers', label: 'Zahlen', icon: 'hash' },
+         { id: 'overview', label: 'Übersicht', icon: 'chart' }, { id: 'ailog', label: 'KI', icon: 'bolt' }, { id: 'more', label: 'Mehr', icon: 'more' }],
+  moreIds: ['sets', 'quiz', 'test', 'settings', 'files'],
+  letterFilters: [{ id: 'all', label: 'Alle' }, { id: 'gaps', label: 'Mit Lücken' }, { id: 'played', label: 'Heute gespielt' }],
+  letterFilter: 'all', acOpen: false, moreOpen: false, livePing: false,
+};
 function funkeykid() {
   return {
     tab: 'letters',
@@ -2319,21 +2745,23 @@ function funkeykid() {
     appVersion: '?', appBuild: 'dev', appRepo: '', appBuildTime: null,
 
     // Edit state
-    editingLetter: null,
-    editEntries: [],
     editingNumber: null,
     editNumberData: { word:'', image_subject:'', sound:'', backgrounds:[], tracks:{} },   // tracks filled in init() (FUNK-61)
     _genTTS: false,
     _genBg: false,
-    _suggesting: false,
-    _suggestOpen: false,
     _suggestPrompt: '',
-    _navBusy: false,
     _normAllBusy: false,
     _normAllStatus: '',
-    _genWizard: null,
     _blacklist: [],
     genJobs: {},
+    // ── FUNK-72: shell, entry editor, generation slots, activity ──
+    ui: FK_UI,
+    ed: null, edNewWord: '', edSuggest: null, edSaveState: 'saved',
+    _edQ: Promise.resolve(), _edPend: {}, _edTimer: null, _edRetry: 0, _edUndo: [],
+    edSlots: {}, edJobs: {}, lib: null, acHidden: {}, jobSeen: {}, clockNow: Date.now(),
+    pl: { f: null, frac: 0, seq: false, seqKind: null }, _plAudio: null, _plRun: 0,
+    waves: {}, durs: {}, _flat: Array.from({ length: 48 }, () => 0.08),
+    toastUndo: false, _toastTimer: null,
     aiLogEntries: [],
     integrations: { elevenlabs: null, openrouter: null },
     integrationsLoading: false,
@@ -3104,6 +3532,675 @@ function funkeykid() {
     },
     kbTakeCode() { if (this.kmLast?.id) this.kbSaveKey({ code: this.kmLast.id }); },
     // FUNK-64: language, "Standard" (PC/Mac, number pad), export/import
+    // ══ App shell (FUNK-72) ══
+    go(t) {
+      this.tab = t;
+      if (t === 'quiz') this.loadQuiz();
+      if (t === 'overview') this.loadDashboard();
+      if (t === 'ailog') { this.loadAiLog(); this.loadIntegrations(); }
+      window.scrollTo({ top: 0 });
+    },
+    pageMeta() {
+      const set = this.sets[this.activeSetId]?.name || '';
+      const t = this.letterTotals();
+      const pages = {
+        letters: ['Buchstaben', `${t.words} Wörter in ${this.letterAlphabet().filter(l => this.getEntries(l).length).length} Buchstaben` + (set ? ` · Set „${set}“` : '')],
+        numbers: ['Zahlen', '0 bis 9: Wort, Menge und Hintergrund'],
+        quiz: ['Quiz', 'Hören und die richtige Taste finden'],
+        overview: ['Übersicht', 'Was dein Kind gespielt hat'],
+        sets: ['Sets', 'Inhalte bündeln und wechseln'],
+        test: ['Tastatur', 'Tastenbelegung, Profile und Test'],
+        settings: ['Einstellungen', 'Gerät, Ton und Anzeige'],
+        files: ['Dateien', 'Alle Bilder und Töne'],
+        ailog: ['KI & Dienste', 'ElevenLabs, OpenRouter und alle KI-Aufträge'],
+      };
+      const [title, sub] = pages[this.tab] || pages.letters;
+      return { title, sub };
+    },
+
+    // ══ Buchstaben (FUNK-72) ══
+    thumb(f, size) { return f ? `/thumbs/${size}/${encodeURIComponent(f)}` : ''; },
+    tileImage(l) {
+      const es = this.getEntries(l);
+      const e = es.find(e => e.enabled && e.image) || es.find(e => e.image);
+      return e ? e.image : '';
+    },
+    setKinds() { return this.orderedTrackKinds().filter(k => k.enabled).map(k => k.kind); },
+    tileKinds() { return ['IMG'].concat(this.setKinds()); },
+    letterCount(l, k) {
+      return this.getEntries(l).filter(e => k === 'IMG' ? !!e.image : !!(e.tracks && e.tracks[k] && e.tracks[k].file)).length;
+    },
+    letterHasGap(l) {
+      const n = this.getEntries(l).length;
+      return n > 0 && this.tileKinds().some(k => this.letterCount(l, k) < n);
+    },
+    letterFilterOk(l, f) {
+      if (f === 'gaps') return !this.getEntries(l).length || this.letterHasGap(l);
+      if (f === 'played') return !!this.prog.letters[l]?.today?.presses;
+      return true;
+    },
+    letterTotals() {
+      let words = 0, img = 0, fx = 0, de = 0;
+      for (const l of this.letterAlphabet()) {
+        words += this.getEntries(l).length;
+        img += this.letterCount(l, 'IMG'); fx += this.letterCount(l, 'FX'); de += this.letterCount(l, 'DE');
+      }
+      return { words, img, fx, de, deMiss: this.setKinds().includes('DE') ? words - de : 0 };
+    },
+    letterSummary() {
+      const t = this.letterTotals();
+      return `${t.words} Wörter · ${t.img} Bilder · ${t.fx} Geräusche · ${t.de} ${t.de === 1 ? 'Stimme' : 'Stimmen'}`;
+    },
+    kindName(k) { return { IMG: 'Bild', FX: 'Geräusch', DE: 'Stimme Deutsch', EN: 'Stimme Englisch' }[k] || k; },
+    kindIcon(k) { return k === 'IMG' ? this.ui.ic.photo : k === 'FX' ? this.ui.ic.note : this.ui.ic.voice; },
+    kindColor(k) { return { IMG: 'var(--ui-img)', FX: 'var(--ui-fx)', DE: 'var(--ui-de)', EN: 'var(--ui-en)' }[k]; },
+
+    // ══ Entry editor (FUNK-72) ══
+    // One queue for every write of a letter and every load: a load never overtakes a save,
+    // and a job's file reaches a letter that is not open only after that letter's saves.
+    _edQueue(fn) {
+      const run = this._edQ.then(fn).catch(err => console.warn('[editor]', err));
+      this._edQ = run;
+      return run;
+    },
+    _newId() {
+      const a = new Uint8Array(5);
+      crypto.getRandomValues(a);
+      return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+    },
+    _edCopy(entries) {
+      return (entries || []).map(e => {
+        const c = JSON.parse(JSON.stringify(e));
+        delete c.sound; delete c._soundDesc;                 // read-only alias the server adds for old clients
+        if (typeof c.word !== 'string') c.word = '';
+        if (!c._imageDesc) c._imageDesc = '';
+        if (c.enabled === undefined) c.enabled = true;
+        if (!c.id) c.id = this._newId();
+        this._ensureTracks(c);
+        return c;
+      });
+    },
+    _edClean(e) {
+      const c = { id: e.id, word: (e.word || '').trim(), image: e.image || '', enabled: e.enabled !== false, tracks: this._cleanTracks(e.tracks) };
+      if ((e._imageDesc || '').trim()) c._imageDesc = e._imageDesc.trim();
+      return c;
+    },
+    _edKey(setId, L) { return setId + '|' + L; },
+    edCur() { return this.ed && !this.ed.loading ? (this.ed.entries.find(x => x.id === this.ed.sel) || null) : null; },
+    openEditor(L, setId, sel) {
+      setId = setId || this.activeSetId;
+      if (!setId) return;
+      this.plStop();
+      this.ed = { L, setId, entries: [], sel: null, loading: true, error: '' };
+      this.edSuggest = null; this.edNewWord = ''; this._edUndo = [];
+      this._edLoad(L, setId, sel);
+    },
+    edSwitch(L) {
+      if (!this.ed || this.ed.L === L) return;
+      this.openEditor(L, this.ed.setId);
+    },
+    closeEditor() {
+      if (!this.ed) return;
+      this.plStop();
+      this.ed = null; this.edSuggest = null; this.lib = null;
+      this._edQueue(() => this._edFlush());                    // whatever is still unsaved goes now
+    },
+    _edLoad(L, setId, sel) {
+      return this._edQueue(async () => {
+        await this._edFlush();
+        let letter, bl = [];
+        try {
+          const res = await fetch(`/api/sets/${encodeURIComponent(setId)}/letters/${encodeURIComponent(L)}`);
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          letter = await res.json();
+          bl = await fetch('/api/blacklist/' + encodeURIComponent(L)).then(r => r.json()).catch(() => []);
+        } catch (err) {
+          if (this.ed && this.ed.L === L && this.ed.setId === setId) {
+            this.ed.loading = false; this.ed.error = 'Konnte nicht laden: ' + err.message;
+            this.showToast(`${L} konnte nicht geladen werden`, 'error');
+          }
+          return;
+        }
+        if (!this.ed || this.ed.L !== L || this.ed.setId !== setId) return;   // closed or switched meanwhile
+        const entries = this._edCopy(letter.entries);
+        this._blacklist = Array.isArray(bl) ? bl : [];
+        this.ed.entries = entries;
+        this.ed.sel = entries.some(e => e.id === sel) ? sel : (entries[0] ? entries[0].id : null);
+        this.ed.loading = false;
+        const k = this._edKey(setId, L);
+        this.edSaveState = this._edPend[k] ? 'error' : 'saved';
+      });
+    },
+    // A change in the open letter: remember the letter as it is now, save it shortly.
+    // msg: an undoable step to announce (the toast offers "Rückgängig").
+    edChanged(msg) {
+      if (!this.ed || this.ed.loading) return;
+      const k = this._edKey(this.ed.setId, this.ed.L);
+      this._edPend[k] = { setId: this.ed.setId, L: this.ed.L, entries: this.ed.entries.map(e => this._edClean(e)) };
+      this.edSaveState = 'saving';
+      clearTimeout(this._edTimer);
+      this._edTimer = setTimeout(() => this._edQueue(() => this._edFlush()), 600);
+      if (msg) this.showToast(msg, 'success', true);
+    },
+    edSaveNow() { clearTimeout(this._edTimer); this._edQueue(() => this._edFlush()); },
+    async _edFlush() {                                          // queued only
+      clearTimeout(this._edTimer); this._edTimer = null;
+      for (const k of Object.keys(this._edPend)) {
+        const p = this._edPend[k];
+        delete this._edPend[k];
+        try {
+          const res = await fetch(`/api/sets/${encodeURIComponent(p.setId)}/letters/${encodeURIComponent(p.L)}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: p.entries }) });
+          const r = await res.json().catch(() => ({}));
+          if (!res.ok || !r.ok) throw new Error(r.error || 'HTTP ' + res.status);
+          this._edRetry = 0;
+          this._edFollowIds(p, r.ids || []);
+          this._edMirror(p);
+        } catch (err) {
+          if (!this._edPend[k]) this._edPend[k] = p;           // a newer state of this letter wins; else retry this one
+          this.edSaveState = 'error';
+          if (!this.ed) this.showToast(`${p.L} wurde nicht gespeichert: ${err.message}`, 'error');
+          this._edRetry = Math.min((this._edRetry || 0) + 1, 6);
+          clearTimeout(this._edTimer);
+          this._edTimer = setTimeout(() => this._edQueue(() => this._edFlush()), 2000 * this._edRetry);
+          return false;
+        }
+      }
+      if (!Object.keys(this._edPend).length) this.edSaveState = 'saved';
+      return true;
+    },
+    _edFollowIds(p, ids) {
+      // the server replaces an id that is invalid or taken twice; follow it in the open copy
+      ids.forEach((nid, i) => {
+        const old = p.entries[i] && p.entries[i].id;
+        if (!old || old === nid) return;
+        if (this.ed && this.ed.setId === p.setId && this.ed.L === p.L) {
+          const e = this.ed.entries.find(x => x.id === old);
+          if (e) { e.id = nid; if (this.ed.sel === old) this.ed.sel = nid; }
+        }
+      });
+    },
+    _edMirror(p) {
+      // the grid shows what was saved, without fetching the whole set again
+      if (p.setId !== this.activeSetId || !this.activeSet) return;
+      const letters = Object.assign({}, this.activeSet.letters || {});
+      letters[p.L] = { entries: JSON.parse(JSON.stringify(p.entries)) };
+      this.activeSet = Object.assign({}, this.activeSet, { letters });
+    },
+    edSnap() {
+      if (!this.ed || this.ed.loading) return;
+      this._edUndo.push({ L: this.ed.L, setId: this.ed.setId, sel: this.ed.sel, entries: JSON.stringify(this.ed.entries) });
+      if (this._edUndo.length > 40) this._edUndo.shift();
+    },
+    edUndo() {
+      const u = this._edUndo.pop();
+      this.toast = ''; this.toastUndo = false;
+      if (!u || !this.ed || this.ed.loading || this.ed.L !== u.L || this.ed.setId !== u.setId) return;
+      this.ed.entries = JSON.parse(u.entries);
+      this.ed.sel = this.ed.entries.some(e => e.id === u.sel) ? u.sel : (this.ed.entries[0] ? this.ed.entries[0].id : null);
+      this.edChanged();
+    },
+    edSummary() {
+      if (!this.ed || this.ed.loading) return this.ed && this.ed.error ? this.ed.error : 'Lädt …';
+      const n = this.ed.entries.length;
+      if (!n) return 'Noch keine Wörter';
+      const miss = this.edMissingVoices().length;
+      return (n === 1 ? '1 Wort' : n + ' Wörter') + (miss ? ` · ${miss} ohne Stimme` : ' · Stimmen vollständig');
+    },
+    edMissingVoices() {
+      if (!this.ed || this.ed.loading || !this.setKinds().includes('DE')) return [];
+      return this.ed.entries.filter(e => e.word.trim() && !e.tracks.DE.file && this.edSlot(e, 'DE').state !== 'run');
+    },
+    edGenMissingVoices() { for (const e of this.edMissingVoices()) this.edGen(e, 'DE'); },
+    edRowStatus(e) {
+      if (!e.enabled) return 'ausgeschaltet';
+      const kinds = ['IMG'].concat(this.setKinds());
+      const run = kinds.find(k => this.edSlot(e, k).state === 'run');
+      if (run) return this.kindName(run) + ' wird erzeugt …';
+      if (kinds.some(k => this.edSlot(e, k).state === 'cand')) return 'Neue Version zum Prüfen';
+      if (kinds.some(k => this.edSlot(e, k).state === 'err')) return 'Fehler beim Erzeugen';
+      const miss = kinds.filter(k => k === 'IMG' ? !e.image : !e.tracks[k].file).map(k => ({ IMG: 'Bild', FX: 'Geräusch', DE: 'Stimme', EN: 'Englisch' }[k]));
+      return miss.length ? miss.join(', ') + ' fehlt' : 'vollständig';
+    },
+    edPip(e, k) {
+      const s = this.edSlot(e, k).state;
+      if (s === 'run') return 'run';
+      if (s === 'err') return 'err';
+      const has = k === 'IMG' ? !!e.image : !!(e.tracks[k] && e.tracks[k].file);
+      return has ? k.toLowerCase() : 'miss';
+    },
+    edSlotSub(e, k) {
+      const kinds = this.setKinds();
+      if (!kinds.includes(k)) return 'Im Set aus';
+      const pos = kinds.indexOf(k) + 1;
+      const order = pos === 1 ? 'spielt zuerst' : `spielt als ${pos}.`;
+      if (k === 'FX') return order;
+      const said = (e.tracks[k].prompt || '').trim() || (k === 'DE' ? e.word.trim() : '');
+      return (said ? `sagt „${said}“ · ` : '') + order;
+    },
+    edHasFiles(e) { return !!e.image || this.trackKinds.some(k => e.tracks[k] && e.tracks[k].file); },
+    edAddWord() {
+      if (!this.ed || this.ed.loading) return;
+      const w = this.edNewWord.trim();
+      if (!w) return;
+      const dup = this.ed.entries.find(e => e.word.trim().toLowerCase() === w.toLowerCase());
+      if (dup) { this.ed.sel = dup.id; this.edNewWord = ''; this.showToast(`„${w}“ gibt es schon`); return; }
+      this.edSnap();
+      const e = this._edCopy([{ id: this._newId(), word: w, image: '', enabled: true, tracks: {} }])[0];
+      this.ed.entries.push(e);
+      this.ed.sel = e.id; this.edNewWord = '';
+      this.edChanged(`„${w}“ hinzugefügt`);
+    },
+    edRemove(e) {
+      const i = this.ed.entries.indexOf(e);
+      if (i < 0) return;
+      this.edSnap();
+      this.ed.entries.splice(i, 1);
+      const next = this.ed.entries[Math.min(i, this.ed.entries.length - 1)];
+      this.ed.sel = next ? next.id : null;
+      this.edChanged(`„${e.word}“ entfernt`);
+    },
+    async _edBlacklist(L, words) {
+      this._blacklist = words;
+      try {
+        await fetch('/api/blacklist/' + encodeURIComponent(L), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ words }) });
+      } catch (err) { this.showToast('Ablehnen nicht gespeichert: ' + err.message, 'error'); }
+    },
+    async edReject(e) {
+      const L = this.ed.L, w = e.word.trim();
+      if (w && !this._blacklist.includes(w)) await this._edBlacklist(L, this._blacklist.concat([w]));
+      if (!this.ed || this.ed.L !== L) return;
+      const i = this.ed.entries.indexOf(e);
+      if (i < 0) return;
+      this.ed.entries.splice(i, 1);
+      const next = this.ed.entries[Math.min(i, this.ed.entries.length - 1)];
+      this.ed.sel = next ? next.id : null;
+      this.edChanged();
+      this.showToast(`„${w}“ abgelehnt: wird nicht mehr vorgeschlagen`);
+    },
+    edUnblacklist(w) { if (this.ed) this._edBlacklist(this.ed.L, this._blacklist.filter(x => x !== w)); },
+    async edArchive(e) {
+      if (!confirm(`„${e.word}“ archivieren? Bild und Töne kommen ins Archiv und sind dann nicht mehr in der Bibliothek.`)) return;
+      const L = this.ed.L, setId = this.ed.setId;
+      const files = [];
+      if (e.image) files.push({ type: 'image', filename: e.image });
+      for (const k of this.trackKinds) if (e.tracks[k] && e.tracks[k].file) files.push({ type: 'sound', filename: e.tracks[k].file });
+      for (const f of files) {
+        try { await fetch('/api/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f) }); } catch {}
+      }
+      if (!this.ed || this.ed.L !== L || this.ed.setId !== setId) return;
+      const i = this.ed.entries.indexOf(e);
+      if (i >= 0) this.ed.entries.splice(i, 1);
+      const next = this.ed.entries[Math.min(Math.max(i, 0), this.ed.entries.length - 1)];
+      this.ed.sel = next ? next.id : null;
+      this.edChanged();
+      this.showToast(`„${e.word}“ archiviert`);
+      this._refreshLists();
+    },
+    edUnset(e, k) {
+      this.edSnap();
+      e.tracks[k].file = '';
+      this.edChanged(this.kindName(k) + ' entfernt');
+    },
+
+    // ── suggestions ──
+    async edRunSuggest(persist) {
+      if (!this.ed || this.ed.loading) return;
+      const L = this.ed.L, setId = this.ed.setId;
+      const prompt = (this._suggestPrompt || '').trim();
+      if (persist && prompt) {
+        if (!this.settings.ai_prompts) this.settings.ai_prompts = {};
+        this.settings.ai_prompts.suggest = prompt;
+        try { await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.settings) }); } catch {}
+      }
+      this.edSuggest = { busy: true };
+      let r;
+      try {
+        const res = await fetch('/api/suggest-word', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(prompt ? { letter: L, user_prompt: prompt } : { letter: L }) });
+        r = await res.json().catch(() => ({}));
+      } catch { r = { error: 'Keine Verbindung zum Server.' }; }
+      if (!this.ed || this.ed.L !== L || this.ed.setId !== setId) return;
+      this.edSuggest = r && r.word ? { busy: false, data: r } : { busy: false, error: (r && r.error) || 'Kein Vorschlag' };
+    },
+    edAcceptSuggest() {
+      if (!this.ed || !this.edSuggest || !this.edSuggest.data) return;
+      const d = this.edSuggest.data;
+      this.edSuggest = null;
+      const w = (d.word || '').trim();
+      if (!w) return;
+      this.edSnap();
+      const e = this._edCopy([{ id: this._newId(), word: w, image: '', enabled: true, _imageDesc: d.image_description || '', tracks: {} }])[0];
+      if (d.sound_description) e.tracks.FX.prompt = d.sound_description;
+      if (d.word_en) e.tracks.EN.prompt = d.word_en;
+      this.ed.entries.push(e);
+      this.ed.sel = e.id;
+      this.edChanged(`„${w}“ hinzugefügt`);
+      // picture and every sound the set plays, at once; each lands on its slot when it is done
+      this.edGen(e, 'IMG');
+      for (const k of this.setKinds()) if (k !== 'EN' || e.tracks.EN.prompt) this.edGen(e, k);
+    },
+    async edRejectSuggest() {
+      if (!this.ed || !this.edSuggest || !this.edSuggest.data) return;
+      const w = this.edSuggest.data.word;
+      if (w && !this._blacklist.includes(w)) await this._edBlacklist(this.ed.L, this._blacklist.concat([w]));
+      this.edRunSuggest(false);
+    },
+
+    // ── generation: a slot shows run → (its file | current vs new | why it failed) ──
+    _slotKey(setId, L, id, k) { return [setId, L, id, k].join('|'); },
+    edSlot(e, k) {
+      if (!this.ed || !e) return { state: 'idle' };
+      return this.edSlots[this._slotKey(this.ed.setId, this.ed.L, e.id, k)] || { state: 'idle' };
+    },
+    _setSlot(key, v) {
+      const n = Object.assign({}, this.edSlots);
+      if (v) n[key] = v; else delete n[key];
+      this.edSlots = n;
+    },
+    edClearSlot(e, k) { this._setSlot(this._slotKey(this.ed.setId, this.ed.L, e.id, k), null); },
+    edElapsed(s) { return s && s.t0 ? Math.max(0, Math.floor((this.clockNow - s.t0) / 1000)) + ' s' : ''; },
+    async edGen(e, k) {
+      if (!this.ed || this.ed.loading || !e) return;
+      const word = e.word.trim();
+      if (!word) return;
+      const setId = this.ed.setId, L = this.ed.L, key = this._slotKey(setId, L, e.id, k);
+      if ((this.edSlots[key] || {}).state === 'run') return;
+      if (k === 'EN' && !(e.tracks.EN.prompt || '').trim()) {
+        this._setSlot(key, { state: 'err', msg: 'Trag zuerst unter „Gesprochener Text“ das englische Wort ein.', detail: '' });
+        return;
+      }
+      const had = k === 'IMG' ? !!e.image : !!e.tracks[k].file;
+      const t0 = Date.now();
+      this._setSlot(key, { state: 'run', t0, job: null });
+      let r;
+      try {
+        let res;
+        if (k === 'IMG') {
+          res = await fetch('/api/generate/image', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ word, description: (e._imageDesc || '').trim() || word, filename: `${this.fileSlug(L)}_${this.fileSlug(word)}.png` }) });
+        } else {
+          const body = { kind: k, word, slug_prefix: this.fileSlug(L) };
+          if ((e.tracks[k].prompt || '').trim()) body.prompt = e.tracks[k].prompt.trim();
+          res = await fetch('/api/generate/track', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        }
+        r = await res.json().catch(() => ({}));
+      } catch { r = { error: 'Keine Verbindung zum Server.' }; }
+      if (!r || !r.ok || !r.job_id) {
+        if ((this.edSlots[key] || {}).t0 === t0) this._setSlot(key, { state: 'err', msg: (r && r.error) || 'Konnte nicht starten.', detail: '' });
+        return;
+      }
+      this.edJobs[r.job_id] = { setId, L, entryId: e.id, kind: k, had, word, key };
+      if (!this.jobSeen[r.job_id]) this.jobSeen[r.job_id] = t0;
+      if ((this.edSlots[key] || {}).t0 === t0) this._setSlot(key, { state: 'run', t0, job: r.job_id });
+      const known = this.genJobs[r.job_id];                   // it may have ended before this response
+      if (known && (known.status === 'done' || known.status === 'error')) this._edJobEnded(known);
+    },
+    _edJobEnded(d) {
+      const j = this.edJobs[d.id];
+      if (!j || j.ended) return;
+      j.ended = true;
+      const slot = this.edSlots[j.key];
+      const mine = !!slot && slot.state === 'run' && slot.job === d.id;   // a later run of the slot wins
+      if (d.status === 'error') {
+        if (mine) this._setSlot(j.key, { state: 'err', msg: d.error || 'Unbekannter Fehler', detail: d.error_detail || '' });
+        return;
+      }
+      if (!d.filename) return;
+      this._refreshLists();
+      if (j.had) {                                             // replacing: the parent compares and chooses
+        if (mine) this._setSlot(j.key, { state: 'cand', cand: d.filename });
+        return;
+      }
+      this._edQueue(async () => {
+        const res = await this._edApply(j, d.filename);
+        const still = this.edSlots[j.key];
+        const stillMine = !!still && still.state === 'run' && still.job === d.id;
+        if (res === 'occupied') { if (stillMine) this._setSlot(j.key, { state: 'cand', cand: d.filename }); return; }
+        if (res === 'failed') { if (stillMine) this._setSlot(j.key, { state: 'err', msg: 'Die Datei ist fertig, konnte aber nicht eingetragen werden. Du findest sie in der Bibliothek.', detail: d.filename }); return; }
+        if (stillMine) this._setSlot(j.key, null);
+        if (res === 'local' && j.kind !== 'IMG' && this.ed && this.ed.sel === j.entryId && !this.pl.seq) {
+          const e = this.ed.entries.find(x => x.id === j.entryId);
+          if (e) this.plPlay(d.filename, e.tracks[j.kind].volume);
+        }
+        if (res === 'applied') this.showToast(`${this.kindName(j.kind)} für „${j.word}“ ist da`);
+      });
+    },
+    // queued: put a finished file on its entry if that slot is still empty
+    async _edApply(j, file) {
+      if (this.ed && !this.ed.loading && this.ed.setId === j.setId && this.ed.L === j.L) {
+        const e = this.ed.entries.find(x => x.id === j.entryId);
+        if (!e) return 'gone';
+        const cur = j.kind === 'IMG' ? e.image : e.tracks[j.kind].file;
+        if (cur) return 'occupied';
+        if (j.kind === 'IMG') e.image = file;
+        else { e.tracks[j.kind].file = file; e.tracks[j.kind].enabled = true; }
+        this.edChanged();
+        return 'local';
+      }
+      await this._edFlush();                                   // that letter's own saves first
+      try {
+        const res = await fetch(`/api/sets/${encodeURIComponent(j.setId)}/letters/${encodeURIComponent(j.L)}/entries/${encodeURIComponent(j.entryId)}/media`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: j.kind, file, if_empty: true }) });
+        const r = await res.json().catch(() => ({}));
+        if (res.status === 404 && r.error === 'entry not found') return 'gone';
+        if (!res.ok) return 'failed';
+        return r.applied ? 'applied' : 'occupied';
+      } catch { return 'failed'; }
+    },
+    edTake(e, k) {
+      const s = this.edSlot(e, k);
+      if (s.state !== 'cand' || !s.cand) return;
+      this.edSnap();
+      if (k === 'IMG') e.image = s.cand;
+      else { e.tracks[k].file = s.cand; e.tracks[k].enabled = true; }
+      this.edClearSlot(e, k);
+      this.plStop();
+      this.edChanged('Neue Version übernommen');
+    },
+    edDiscard(e, k) {
+      this.edClearSlot(e, k);
+      this.plStop();
+      this.showToast('Verworfen: die neue Datei bleibt in der Bibliothek');
+    },
+    async _refreshLists() {
+      try {
+        const [snd, img] = await Promise.all([fetch('/api/sounds').then(r => r.json()), fetch('/api/images').then(r => r.json())]);
+        if (Array.isArray(snd)) this.sounds = snd;
+        if (Array.isArray(img)) this.images = img;
+      } catch {}
+    },
+
+    // ── library + upload ──
+    libOpen(e, k) { this.plStop(); this.lib = { kind: k, entryId: e.id, q: '' }; this._refreshLists(); },
+    libItems() {
+      if (!this.lib) return [];
+      const list = this.lib.kind === 'IMG' ? this.images : this.sounds;
+      const q = (this.lib.q || '').toLowerCase().trim();
+      const pre = this.ed ? this.fileSlug(this.ed.L) + '_' : '';
+      return list.filter(f => !q || f.toLowerCase().includes(q))
+        .sort((a, b) => (b.toLowerCase().startsWith(pre) - a.toLowerCase().startsWith(pre)) || a.localeCompare(b))
+        .slice(0, 400);
+    },
+    libPick(f) {
+      const l = this.lib;
+      this.lib = null;
+      this.plStop();
+      if (!l || !this.ed || this.ed.loading) return;
+      const e = this.ed.entries.find(x => x.id === l.entryId);
+      if (!e) return;
+      this.edSnap();
+      if (l.kind === 'IMG') e.image = f;
+      else { e.tracks[l.kind].file = f; e.tracks[l.kind].enabled = true; }
+      this._setSlot(this._slotKey(this.ed.setId, this.ed.L, e.id, l.kind), null);
+      this.edChanged(`${this.kindName(l.kind)}: ${f}`);
+    },
+    async edUpload(ev, e, k) {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file || !this.ed) return;
+      const setId = this.ed.setId, L = this.ed.L, id = e.id;
+      const form = new FormData();
+      form.append('file', file);
+      this.showToast('Lädt hoch …');
+      try {
+        const res = await fetch(`/api/${k === 'IMG' ? 'images' : 'sounds'}/upload`, { method: 'POST', body: form });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok || !r.file) { this.showToast(r.error || 'Hochladen fehlgeschlagen', 'error'); return; }
+        this._refreshLists();
+        if (!this.ed || this.ed.loading || this.ed.setId !== setId || this.ed.L !== L) { this.showToast(`Hochgeladen als ${r.file} (in der Bibliothek)`); return; }
+        const cur = this.ed.entries.find(x => x.id === id);
+        if (!cur) return;
+        this.edSnap();
+        if (k === 'IMG') cur.image = r.file;
+        else { cur.tracks[k].file = r.file; cur.tracks[k].enabled = true; }
+        this.edChanged(`Hochgeladen: ${r.file}`);
+      } catch (err) { this.showToast('Hochladen fehlgeschlagen: ' + err.message, 'error'); }
+    },
+
+    // ── listening ──
+    _actx() { return FK_AUDIO.ctx || (FK_AUDIO.ctx = new (window.AudioContext || window.webkitAudioContext)()); },
+    async loadWave(f) {
+      if (!f || this.waves[f] !== undefined) return;
+      this.waves = Object.assign({}, this.waves, { [f]: null });
+      try {
+        const ab = await (await fetch('/sounds/' + encodeURIComponent(f))).arrayBuffer();
+        const buf = await this._actx().decodeAudioData(ab);
+        const ch = buf.getChannelData(0), n = 48, step = Math.max(1, Math.floor(ch.length / n)), peaks = [];
+        for (let i = 0; i < n; i++) {
+          let m = 0;
+          for (let j = 0; j < step; j += 16) { const v = Math.abs(ch[i * step + j] || 0); if (v > m) m = v; }
+          peaks.push(m);
+        }
+        const mx = Math.max(...peaks) || 1;
+        this.waves = Object.assign({}, this.waves, { [f]: peaks.map(p => Math.sqrt(p / mx)) });
+        this.durs = Object.assign({}, this.durs, { [f]: buf.duration });
+      } catch { this.waves = Object.assign({}, this.waves, { [f]: [] }); }
+    },
+    wave(f) { const w = this.waves[f]; return w && w.length ? w : this._flat; },
+    dur(f) { const d = this.durs[f]; return d ? d.toFixed(1).replace('.', ',') + ' s' : ''; },
+    plToggle(f, vol) { if (this.pl.f === f) this.plStop(); else this.plPlay(f, vol); },
+    plPlay(f, vol, onEnd, keepSeq) {
+      this.plStop(keepSeq);
+      if (!f) return;
+      const a = new Audio('/sounds/' + encodeURIComponent(f));
+      a.volume = Math.max(0, Math.min(1, (parseInt(vol, 10) || 100) / 100));
+      this._plAudio = a; this.pl.f = f; this.pl.frac = 0;
+      a.addEventListener('timeupdate', () => { if (this._plAudio === a && a.duration) this.pl.frac = a.currentTime / a.duration; });
+      a.addEventListener('ended', () => { if (this._plAudio !== a) return; this._plAudio = null; this.pl.f = null; this.pl.frac = 0; if (onEnd) onEnd(); });
+      a.addEventListener('error', () => { if (this._plAudio !== a) return; this._plAudio = null; this.pl.f = null; if (onEnd) onEnd(); });
+      a.play().catch(() => { if (this._plAudio === a) { this._plAudio = null; this.pl.f = null; } });
+    },
+    plStop(keepSeq) {
+      if (this._plAudio) { this._plAudio.pause(); this._plAudio = null; }
+      this.pl.f = null; this.pl.frac = 0;
+      if (!keepSeq) { this.pl.seq = false; this.pl.seqKind = null; }
+    },
+    edPlaySeq(e) {
+      if (this.pl.seq) { this.plStop(); return; }
+      if (!e) return;
+      const ks = this.setKinds().filter(k => e.tracks[k] && e.tracks[k].file && e.tracks[k].enabled !== false);
+      if (!ks.length) { this.showToast('Noch nichts zum Abspielen'); return; }
+      const run = ++this._plRun;
+      this.pl.seq = true;
+      let i = 0;
+      const step = () => {
+        if (!this.pl.seq || run !== this._plRun || i >= ks.length) { if (run === this._plRun) { this.pl.seq = false; this.pl.seqKind = null; } return; }
+        const k = ks[i++];
+        this.pl.seqKind = k;
+        this.plPlay(e.tracks[k].file, e.tracks[k].volume, step, true);
+      };
+      step();
+    },
+
+    // ── activity (all AI jobs of this server) ──
+    acJobs() {
+      return Object.values(this.genJobs).filter(j => j && j.id && !this.acHidden[j.id])
+        .sort((a, b) => (b.started || 0) - (a.started || 0));
+    },
+    jobTarget(j) { return this.edJobs[j.id] || null; },
+    jobReview(j) {
+      const t = this.jobTarget(j);
+      const s = t && this.edSlots[t.key];
+      return !!(s && s.state === 'cand' && s.cand === j.filename);
+    },
+    jobLine(j) {
+      const what = this.kindName(j.kind || (j.type === 'image' ? 'IMG' : 'FX'));
+      if (j.status === 'error') return j.error || 'Fehler';
+      if (j.status === 'done') return this.jobReview(j) ? what + ': neue Version prüfen' : what + ' fertig';
+      return j.status === 'queued' ? what + ': wartet' : what + ' wird erzeugt';
+    },
+    jobElapsed(j) {
+      const t = this.jobSeen[j.id];
+      return t ? Math.max(0, Math.floor((this.clockNow - t) / 1000)) + ' s' : '';
+    },
+    jobOpen(j) {
+      const t = this.jobTarget(j);
+      this.ui.acOpen = false;
+      if (!t) return;
+      if (this.tab !== 'letters') this.go('letters');
+      if (this.ed && this.ed.L === t.L && this.ed.setId === t.setId && !this.ed.loading) { this.ed.sel = t.entryId; return; }
+      this.openEditor(t.L, t.setId, t.entryId);
+    },
+    acRunning() { return this.acJobs().filter(j => j.status === 'queued' || j.status === 'generating').length; },
+    acReviews() { return this.acJobs().filter(j => this.jobReview(j)).length; },
+    acErrors() { return this.acJobs().filter(j => j.status === 'error').length; },
+    acLabel() {
+      const r = this.acRunning(), c = this.acReviews(), e = this.acErrors();
+      if (r) return r + ' in Arbeit';
+      if (c) return c + ' zum Prüfen';
+      if (e) return e === 1 ? '1 Fehler' : e + ' Fehler';
+      return 'Alles fertig';
+    },
+    acClear() {
+      const h = Object.assign({}, this.acHidden);
+      for (const j of this.acJobs()) if ((j.status === 'done' || j.status === 'error') && !this.jobReview(j)) h[j.id] = true;
+      this.acHidden = h;
+      if (!this.acJobs().length) this.ui.acOpen = false;
+    },
+    async loadJobs() {
+      try {
+        const list = await fetch('/api/jobs').then(r => r.json());
+        const map = {}, hidden = Object.assign({}, this.acHidden);
+        for (const j of list || []) {
+          if (!j || !j.id) continue;
+          map[j.id] = j;
+          if (j.status === 'done' || j.status === 'error') hidden[j.id] = true;   // finished before this page: not news
+          else if (!this.jobSeen[j.id]) this.jobSeen[j.id] = Date.now();
+        }
+        this.genJobs = Object.assign(map, this.genJobs);
+        this.acHidden = hidden;
+      } catch {}
+    },
+
+    // ── keys while the editor is open ──
+    onKeyGlobal(ev) {
+      if (!this.ed) return;
+      if (this.lib) { if (ev.key === 'Escape') { this.lib = null; ev.preventDefault(); } return; }
+      const t = ev.target || {};
+      const tag = (t.tagName || '').toUpperCase();
+      const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || t.isContentEditable;
+      if (ev.key === 'Escape') {
+        if (typing) { t.blur(); return; }
+        if (document.querySelector('.ui-menu:not([style*="display: none"]), .ui-pop:not([style*="display: none"])')) return;
+        ev.preventDefault(); this.closeEditor(); return;
+      }
+      if (typing || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (ev.shiftKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
+        ev.preventDefault();
+        const a = this.letterAlphabet(), i = a.indexOf(this.ed.L), d = ev.key === 'ArrowLeft' ? -1 : 1;
+        this.edSwitch(a[(i + d + a.length) % a.length]);
+        return;
+      }
+      if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && !ev.shiftKey && !this.ed.loading && this.ed.entries.length) {
+        ev.preventDefault();
+        const ids = this.ed.entries.map(e => e.id), i = ids.indexOf(this.ed.sel), d = ev.key === 'ArrowDown' ? 1 : -1;
+        this.ed.sel = ids[(Math.max(i, 0) + d + ids.length) % ids.length];
+        return;
+      }
+      if (ev.key === ' ' && !['BUTTON', 'SUMMARY', 'A', 'LABEL'].includes(tag)) { ev.preventDefault(); this.edPlaySeq(this.edCur()); }
+    },
+
     letterAlphabet() {
       return 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').concat(this.kb.language === 'de' ? ['Ä', 'Ö', 'Ü', 'ß'] : []);
     },
@@ -3160,6 +4257,7 @@ function funkeykid() {
       this.loadQuiz();                       // FUNK-39: a quiz may already run
       this.loadProgress();                   // FUNK-40
       this.connectSSE();
+      this.loadJobs();                       // FUNK-72: AI jobs still running after a reload
       this.loadDiagnostics();  // fills the keyboard picker in Settings
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
       setInterval(() => this.pollStatus(), 10000);
@@ -3181,6 +4279,7 @@ function funkeykid() {
         // ALL keypresses — even unmapped ones — update status bar
         const d = JSON.parse(e.data);
         this.hw.last_key = d.key;
+        this.hw.last_word = '';                // the keypress that may follow names the word (FUNK-72)
         this.hw.last_raw_key = d.raw;
         this.hw.last_key_at = d.timestamp;
         this.updateAgo();
@@ -3194,8 +4293,11 @@ function funkeykid() {
       es.addEventListener('keypress', (e) => {
         const d = JSON.parse(e.data);
         this.hw.last_key = d.letter;
+        this.hw.last_word = d.word || '';
         this.hw.last_key_at = d.timestamp;
         this.updateAgo();
+        this.ui.livePing = false;
+        requestAnimationFrame(() => { this.ui.livePing = true; });
         if (this.tab === 'test') {
           this.lastTestLetter = d.letter;
           this.lastTestWord = d.word;
@@ -3223,9 +4325,10 @@ function funkeykid() {
         await this.refresh();
         this.loadKeymap();                     // built-in labels follow the set's content
         this.loadQuiz();                       // the quiz asks the active set's letters (FUNK-39)
-        const editing = (this.editingLetter || this.editingNumber) && this.editSetId && this.editSetId !== d.active_set;
+        const edSet = this.ed ? this.ed.setId : (this.editingNumber !== null ? this.editSetId : '');
+        const editing = !!edSet && edSet !== d.active_set;
         this.showToast(editing
-          ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[this.editSetId]?.name || this.editSetId}".`
+          ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[edSet]?.name || edSet}".`
           : `Set "${d.name}" aktiv`);
       });
       es.addEventListener('keyboard_profile', (e) => {
@@ -3241,32 +4344,20 @@ function funkeykid() {
       });
       es.addEventListener('gen_update', (e) => {
         const d = JSON.parse(e.data);
-        this.genJobs[d.id] = d;
-        // Auto-refresh file lists when generation completes
+        this.genJobs = Object.assign({}, this.genJobs, { [d.id]: d });
+        if (!this.jobSeen[d.id]) this.jobSeen[d.id] = Date.now();
+        // FUNK-72: a job the entry editor started goes to its slot (by job id, never by word);
+        // the activity list shows it, no toast
+        if (this.edJobs[d.id]) { this._edJobEnded(d); return; }
         if (d.status === 'done') {
           this.showToast((d.type === 'sound' ? 'Sound' : 'Bild') + ' "' + d.word + '" fertig ✓');
-          // Refresh file lists AND update open edit modal entries
           Promise.all([
             fetch('/api/sounds').then(r => r.json()),
             fetch('/api/images').then(r => r.json()),
           ]).then(([snd, img]) => {
             this.sounds = snd;
             this.images = img;
-            // Every job writes a file name of its own, and the code that started it put that name
-            // on its entry or track from the response (FUNK-46). So a finished job only refreshes
-            // what shows its file (thumbnail, auto-play); it never assigns a file by word, which
-            // gave one job's file to every entry with the same word.
-            if (this.editingLetter && this.editEntries && d.filename) {
-              for (const entry of this.editEntries) {
-                const t = d.type === 'sound' && d.kind && entry.tracks ? entry.tracks[d.kind] : null;
-                if (t && t.file === d.filename && t._autoPlay) {
-                  t._autoPlay = false;
-                  this.previewSound(d.filename, t.volume);
-                }
-                if (d.type === 'image' && entry.image === d.filename) entry._imgVer = (entry._imgVer||0) + 1;
-              }
-            }
-            // If number edit modal is open, refresh its track and background thumbs the same way
+            // The number editor refreshes what shows this job's file (FUNK-46: by file name, never by word)
             if (this.editingNumber !== null && this.editNumberData) {
               const t = d.type === 'sound' && d.kind ? this.editNumberData.tracks?.[d.kind] : null;
               if (t && t.file === d.filename && t._autoPlay) {
@@ -3277,27 +4368,15 @@ function funkeykid() {
                 if (bg.image === d.filename) bg._v = (bg._v||0) + 1;
               }
             }
-            // Update generation wizard state
-            if (this._genWizard) {
-              if (this._genWizardJob(d, 'sound')) this._genWizard.soundDone = true;
-              if (this._genWizardJob(d, 'image')) {
-                this._genWizard.imageDone = true;
-                this._genWizard.entry._imgVer = (this._genWizard.entry._imgVer||0) + 1;
-              }
-              const w = this._genWizard;
-              if ((w.soundDone || w.soundError) && (w.imageDone || w.imageError)) w.step = 3;
-            }
-          });
+          }).catch(() => {});
         } else if (d.status === 'error') {
-          // Update wizard on error too
-          if (this._genWizard) {
-            if (this._genWizardJob(d, 'sound')) this._genWizard.soundError = d.error;
-            if (this._genWizardJob(d, 'image')) this._genWizard.imageError = d.error;
-            const w = this._genWizard;
-            if ((w.soundDone || w.soundError) && (w.imageDone || w.imageError)) w.step = 3;
-          }
           this.showToast(d.word + ': ' + d.error, 'error');
         }
+      });
+      // a letter changed on the server (a save, a finished job): the grid follows (FUNK-72)
+      es.addEventListener('letter', (e) => {
+        const d = JSON.parse(e.data);
+        if (d.set_id === this.activeSetId) this._scheduleSetReload();
       });
       es.addEventListener('ai_log', (e) => {
         const d = JSON.parse(e.data);
@@ -3326,6 +4405,7 @@ function funkeykid() {
     },
 
     updateAgo() {
+      this.clockNow = Date.now();
       if (this.hw.last_key_at) {
         const ago = Math.round(Date.now()/1000 - this.hw.last_key_at);
         this.hw.last_key_ago = ago < 5 ? 'gerade eben' : ago < 60 ? `vor ${ago}s` :
@@ -3607,12 +4687,6 @@ function funkeykid() {
       this._ensureTracks(e);
       return e;
     },
-    addEmptyEntry() { this.editEntries.push(this._blankEntry()); },
-    entryHasAnyFile(e) {
-      if (e.image) return true;
-      const t = e.tracks || {};
-      return this.trackKinds.some(k => t[k] && t[k].file);
-    },
 
     async generateTrack(entry, idx, kind, slugPrefix, opts = {}) {
       if (!entry.word) return;
@@ -3679,52 +4753,6 @@ function funkeykid() {
       this._orderSaving = false;
     },
 
-    async editLetter(letter) {
-      const [snd, img, bl] = await Promise.all([
-        fetch('/api/sounds').then(r => r.json()),
-        fetch('/api/images').then(r => r.json()),
-        fetch('/api/blacklist/' + letter).then(r => r.json()),
-      ]);
-      this.sounds = snd;
-      this.images = img;
-      this._blacklist = bl || [];
-      const setId = this.activeSetId;          // same step as the content read below
-      const entries = this.getEntries(letter);
-      this.editEntries = entries.length
-        ? JSON.parse(JSON.stringify(entries)).map(e => {
-            // Strip transient flags that might linger from a previous session.
-            delete e._genSound; delete e._genImg; delete e._imgVer; delete e._genExtra;
-            if (!e._imageDesc) e._imageDesc = '';
-            this._ensureTracks(e);
-            return e;
-          })
-        : [this._blankEntry()];
-      this._suggestOpen = false;
-      await this.$nextTick();
-      this.editSetId = setId;
-      this.editingLetter = letter;
-    },
-    async saveLetter() {
-      const letter = this.editingLetter;
-      const cleanEntries = this.editEntries.map(e => {
-        const c = {
-          word: e.word,
-          image: e.image,
-          enabled: e.enabled,
-          tracks: this._cleanTracks(e.tracks),
-        };
-        if (e._imageDesc) c._imageDesc = e._imageDesc;
-        return c;
-      });
-      await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${letter}`, {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ entries: cleanEntries }),
-      });
-      this.editingLetter = null;
-      await this.refresh();
-      this.showToast(`${letter} gespeichert ✓`);
-    },
 
     // ── Sets CRUD ──
     async activateSet() {
@@ -3875,8 +4903,19 @@ function funkeykid() {
         this._previewAudio = null;
       }
     },
+    _scheduleSetReload() {
+      clearTimeout(this._setReloadTimer);
+      this._setReloadTimer = setTimeout(async () => {
+        const sid = this.activeSetId;
+        try {
+          const data = await fetch(`/api/sets/${encodeURIComponent(sid)}`).then(r => r.ok ? r.json() : null);
+          if (data && sid === this.activeSetId) this.activeSet = data;
+        } catch {}
+      }, 800);
+    },
     async stopAll() {
       this.stopPreview();
+      this.plStop();
       await fetch('/api/test/SPACE', { method: 'POST' });
       this.showToast('Wiedergabe gestoppt');
     },
@@ -3911,151 +4950,9 @@ function funkeykid() {
            + 'das dem deutschen Wort entspricht — z.B. Ameise → Ant):\n'
            + '{"word": "...", "word_en": "...", "sound_description": "... (Englisch)", "image_description": "... (Englisch)"}';
     },
-    openSuggest() {
-      this._suggestPrompt = (this.settings.ai_prompts && this.settings.ai_prompts.suggest) || this._defaultSuggestPrompt();
-      this._suggestOpen = true;
-    },
-    async runSuggest(persistPrompt) {
-      if (!this.editingLetter) return;
-      const userPrompt = this._suggestPrompt.trim();
-      if (!userPrompt) return;
-      this._suggesting = true;
-      try {
-        if (persistPrompt) {
-          if (!this.settings.ai_prompts) this.settings.ai_prompts = {};
-          this.settings.ai_prompts.suggest = userPrompt;
-          await fetch('/api/settings', {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(this.settings),
-          });
-        }
-        const r = await fetch('/api/suggest-word', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ letter: this.editingLetter, user_prompt: userPrompt }),
-        }).then(r => r.json());
-        if (r.word) {
-          const entry = this._blankEntry();
-          entry.word = r.word;
-          entry._imageDesc = r.image_description || '';
-          if (r.sound_description) entry.tracks.FX.prompt = r.sound_description;
-          entry.tracks.DE.prompt = r.word;
-          if (r.word_en) entry.tracks.EN.prompt = r.word_en;
-          this.editEntries.push(entry);
-          this.showToast((persistPrompt ? 'Prompt gespeichert · ' : '') + 'Vorschlag: ' + r.word + (r.word_en ? ' / ' + r.word_en : ''));
-          this._suggestOpen = false;
-          // Auto-chain: fire image + all three sound tracks in parallel.
-          // No auto-play (too many sounds arriving near-simultaneously).
-          const newIdx = this.editEntries.length - 1;
-          const prefix = this.fileSlug(this.editingLetter);
-          this.generateImage(entry, newIdx);
-          this.generateTrack(entry, newIdx, 'FX', prefix, { autoPlay: false });
-          this.generateTrack(entry, newIdx, 'DE', prefix, { autoPlay: false });
-          if (r.word_en) this.generateTrack(entry, newIdx, 'EN', prefix, { autoPlay: false });
-        } else {
-          this.showToast(r.error || 'Kein Vorschlag', 'error');
-        }
-      } catch (e) { this.showToast(e.message, 'error'); }
-      this._suggesting = false;
-    },
 
-    // Letter nav — auto-saves current before opening next
-    async navLetter(delta) {
-      if (!this.editingLetter || this._navBusy) return;
-      const alphabet = this.letterAlphabet();
-      const cur = alphabet.indexOf(this.editingLetter);
-      if (cur < 0) return;
-      const next = alphabet[(cur + delta + alphabet.length) % alphabet.length];
-      await this.navLetterTo(next);
-    },
-    async navLetterTo(target) {
-      if (!target || target === this.editingLetter || this._navBusy) return;
-      this._navBusy = true;
-      try {
-        // Save current silently (no close)
-        const letter = this.editingLetter;
-        const cleanEntries = this.editEntries.map(e => {
-          const c = {
-            word: e.word,
-            image: e.image,
-            enabled: e.enabled,
-            tracks: this._cleanTracks(e.tracks),
-          };
-          if (e._imageDesc) c._imageDesc = e._imageDesc;
-          return c;
-        });
-        await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${letter}`, {
-          method: 'PUT',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ entries: cleanEntries }),
-        });
-        // Refresh activeSet in background (non-blocking for UX)
-        this.refresh().catch(() => {});
-        const [bl] = await Promise.all([
-          fetch('/api/blacklist/' + target).then(r => r.json()),
-        ]);
-        this._blacklist = bl || [];
-        const updated = await fetch(`/api/sets/${this.editSetId || this.activeSetId}/letters/${target}`).then(r => r.json());
-        const entries = updated.entries || [];
-        this.editEntries = entries.length
-          ? JSON.parse(JSON.stringify(entries)).map(e => {
-              delete e._genSound; delete e._genImg; delete e._imgVer; delete e._genExtra;
-              if (!e._imageDesc) e._imageDesc = '';
-              this._ensureTracks(e);
-              return e;
-            })
-          : [this._blankEntry()];
-        this._suggestOpen = false;
-        await this.$nextTick();
-        this.editingLetter = target;
-      } catch (e) { this.showToast('Nav-Fehler: ' + e.message, 'error'); }
-      this._navBusy = false;
-    },
 
-    async blacklistWord(word) {
-      if (!this.editingLetter || !word) return;
-      const letter = this.editingLetter;
-      // Add to blacklist
-      let bl = this._blacklist || [];
-      if (!bl.includes(word)) bl.push(word);
-      this._blacklist = bl;
-      await fetch('/api/blacklist/' + letter, {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ words: bl }),
-      });
-      this.showToast('"' + word + '" wird nicht mehr vorgeschlagen');
-    },
 
-    async archiveEntry(idx) {
-      const entry = this.editEntries[idx];
-      if (!confirm(`"${entry.word}" archivieren? Sound-Dateien und Bild werden ins Archiv verschoben.`)) return;
-      // Archive every track's file
-      const tracks = entry.tracks || {};
-      for (const k of this.trackKinds) {
-        const fname = tracks[k] && tracks[k].file;
-        if (fname) {
-          await fetch('/api/archive', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ type: 'sound', filename: fname }),
-          });
-        }
-      }
-      // Archive image
-      if (entry.image) {
-        await fetch('/api/archive', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ type: 'image', filename: entry.image }),
-        });
-      }
-      this.editEntries.splice(idx, 1);
-      this.sounds = await fetch('/api/sounds').then(r => r.json());
-      this.images = await fetch('/api/images').then(r => r.json());
-      this.showToast(`📦 "${entry.word}" archiviert`);
-    },
 
     _nextFilename(base, ext, existing) {
       const first = `${base}.${ext}`;
@@ -4068,117 +4965,9 @@ function funkeykid() {
       return `${base}_${Date.now()}.${ext}`;
     },
 
-    async generateImage(entry, idx) {
-      if (!entry.word) return;
-      entry._genImg = true;
-      const letter = this.fileSlug(this.editingLetter);
-      const slug = this.fileSlug(entry.word);
-      const filename = this._nextFilename(`${letter}_${slug}`, 'png', this.images);
-      const extra = entry._genExtra || '';
-      const baseDesc = entry._imageDesc || entry.word;
-      const desc = `${baseDesc}. ${extra}`.trim();
-      try {
-        const r = await fetch('/api/generate/image', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ word: entry.word, description: desc, filename }),
-        }).then(r => r.json());
-        if (r.ok) {
-          entry.image = r.filename || filename;     // the server may pick a free variant (FUNK-46)
-          entry._imgVer = (entry._imgVer||0) + 1;
-        } else {
-          this.showToast(r.error || 'Fehler', 'error');
-        }
-      } catch (e) { this.showToast(e.message, 'error'); }
-      entry._genImg = false;
-    },
 
-    // ── Generation Wizard ──
-    openGenWizard(entry, idx) {
-      const soundBase = entry._soundDesc || `${entry.word} sound effect, clear and recognizable for children`;
-      const imageBase = entry._imageDesc || entry.word;
-      const extra = entry._genExtra || '';
-      this._genWizard = {
-        entry, idx, step: 1,
-        soundPrompt: extra ? `${soundBase}. ${extra}` : soundBase,
-        imagePrompt: extra ? `${imageBase}. ${extra}` : imageBase,
-        oldSound: entry.sound,
-        oldImage: entry.image,
-        soundFilename: null, imageFilename: null, soundJob: null, imageJob: null,
-        soundDone: false, imageDone: false,
-        soundError: null, imageError: null,
-        soundAccepted: null, imageAccepted: null,
-      };
-    },
-    async startGenWizard() {
-      const w = this._genWizard;
-      if (!w) return;
-      w.step = 2;
-      w.soundDone = false; w.imageDone = false;
-      w.soundError = null; w.imageError = null;
-      w.soundAccepted = null; w.imageAccepted = null;
-      w.soundJob = null; w.imageJob = null;
-      const entry = w.entry;
-      const letter = this.fileSlug(this.editingLetter);
-      const slug = this.fileSlug(entry.word);
-      const soundFilename = this._nextFilename(`${letter}_${slug}`, 'mp3', this.sounds);
-      const imageFilename = this._nextFilename(`${letter}_${slug}`, 'png', this.images);
-      w.soundFilename = soundFilename;
-      w.imageFilename = imageFilename;
-      entry._genSound = true;
-      entry._genImg = true;
-      const [sndRes, imgRes] = await Promise.all([
-        fetch('/api/generate/sound', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ word: entry.word, prompt: w.soundPrompt, filename: soundFilename, duration: 4 }),
-        }).then(r => r.json()).catch(e => ({ error: e.message })),
-        fetch('/api/generate/image', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ word: entry.word, description: w.imagePrompt, filename: imageFilename }),
-        }).then(r => r.json()).catch(e => ({ error: e.message })),
-      ]);
-      // the server may pick free variants of the names (FUNK-46); a job is matched by its id
-      if (sndRes.error || !sndRes.ok) { w.soundError = sndRes.error || 'Fehler'; }
-      else { w.soundFilename = sndRes.filename || soundFilename; w.soundJob = sndRes.job_id; entry.sound = w.soundFilename; }
-      if (imgRes.error || !imgRes.ok) { w.imageError = imgRes.error || 'Fehler'; }
-      else { w.imageFilename = imgRes.filename || imageFilename; w.imageJob = imgRes.job_id; entry.image = w.imageFilename; entry._imgVer = (entry._imgVer||0) + 1; }
-      // a job that ended before its response arrived
-      const sj = this.genJobs[w.soundJob], ij = this.genJobs[w.imageJob];
-      if (sj?.status === 'done') w.soundDone = true; else if (sj?.status === 'error') w.soundError = sj.error || 'Fehler';
-      if (ij?.status === 'done') w.imageDone = true; else if (ij?.status === 'error') w.imageError = ij.error || 'Fehler';
-      if ((w.soundDone || w.soundError) && (w.imageDone || w.imageError)) w.step = 3;
-      entry._genSound = false;
-      entry._genImg = false;
-      // If both errored on API call, skip to review
-      if (w.soundError && w.imageError) w.step = 3;
-    },
     // is a gen_update about the wizard's sound or image job? Only by job id: an event that comes
     // before the id is known is read from genJobs once the response arrives (startGenWizard)
-    _genWizardJob(d, type) {
-      const job = this._genWizard?.[type + 'Job'];
-      return !!job && d.id === job;
-    },
-    acceptGenResult(type) {
-      if (!this._genWizard) return;
-      if (type === 'sound') this._genWizard.soundAccepted = true;
-      if (type === 'image') this._genWizard.imageAccepted = true;
-    },
-    declineGenResult(type) {
-      if (!this._genWizard) return;
-      const w = this._genWizard;
-      if (type === 'sound') {
-        w.soundAccepted = false;
-        w.entry.sound = w.oldSound;
-      }
-      if (type === 'image') {
-        w.imageAccepted = false;
-        w.entry.image = w.oldImage;
-        w.entry._imgVer = (w.entry._imgVer||0) + 1;
-      }
-    },
-    closeGenWizard() {
-      this._genWizard = null;
-    },
 
     async uploadFile(ev, type) {
       const file = ev.target.files[0];
@@ -4196,9 +4985,10 @@ function funkeykid() {
       } catch (e) { this.showToast('Hochladen fehlgeschlagen: ' + e.message, 'error'); }
     },
 
-    showToast(msg, type='success') {
-      this.toast = msg; this.toastType = type;
-      setTimeout(() => this.toast = '', 3000);
+    showToast(msg, type = 'success', undo = false) {
+      this.toast = msg; this.toastType = type; this.toastUndo = !!undo;
+      clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => { this.toast = ''; this.toastUndo = false; }, undo || type === 'error' ? 6000 : 3000);
     },
   };
 }

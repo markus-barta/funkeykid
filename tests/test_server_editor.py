@@ -20,8 +20,9 @@ import server  # noqa: E402
 
 
 class Req:
-    def __init__(self, body=None, raw=None, **match):
+    def __init__(self, body=None, raw=None, headers=None, **match):
         self._body, self._raw, self.match_info = body, raw, match
+        self.headers = headers or {}
 
     async def json(self):
         if self._raw is not None:
@@ -106,7 +107,7 @@ def test_put_letter_keeps_the_editors_ids_and_replaces_bad_ones(st):
     status, out = call(server.api_put_letter, Req(body, set_id="s", letter="b"))
     assert status == 200 and out["ids"][0] == "clientid1" and len(set(out["ids"])) == 3
     assert [e["id"] for e in entries(st)] == out["ids"]
-    assert ("letter", {"set_id": "s", "letter": "B"}) in st.sent
+    assert ("letter", {"set_id": "s", "letter": "B", "origin": ""}) in st.sent
 
 
 @pytest.mark.parametrize("req", [Req({"entries": "x"}), Req({"entries": [1]}), Req([]), Req(raw="{bad")])
@@ -128,7 +129,7 @@ def test_a_finished_voice_goes_on_its_empty_track(st):
     t = entries(st)[1]["tracks"]["DE"]
     assert t["file"] == "b_biene_de.mp3" and t["enabled"] is True and t["volume"] == 100
     assert st.disk()["sets"]["s"]["letters"]["B"]["entries"][1]["tracks"]["DE"]["file"] == "b_biene_de.mp3"
-    assert st.sent[-1] == ("letter", {"set_id": "s", "letter": "B", "entry_id": "bieneid1"})
+    assert st.sent[-1] == ("letter", {"set_id": "s", "letter": "B", "entry_id": "bieneid1", "origin": ""})
 
 
 def test_if_empty_never_overwrites_what_the_parent_chose(st):
@@ -270,7 +271,7 @@ def test_a_thumb_comes_from_the_original_scaled_down(pics):
     from PIL import Image
     resp = thumb(160, "b_ball.png")
     path = pics / "ai-generated/thumbs/160/b_ball.png.jpg"
-    assert resp.status == 200 and resp.headers["Cache-Control"].startswith("public")
+    assert resp.status == 200 and resp.headers["Cache-Control"] == "no-cache"
     with Image.open(path) as im:
         assert im.size == (160, 160) and im.format == "JPEG" and im.getpixel((80, 80))[0] > 150
 
@@ -299,3 +300,308 @@ def test_bad_thumb_requests(pics, size, name):
 def test_a_picture_pil_cannot_read_is_served_as_it_is(pics):
     resp = thumb(160, "broken.png")
     assert resp.status == 200 and not (pics / "ai-generated/thumbs/160/broken.png.png").exists()
+
+
+
+# ── edits by entry id (FUNK-72 round 1: no whole-letter overwrites) ──────────
+
+def patch(st, body, entry_id="bieneid1", letter="B", headers=None):
+    return call(server.api_patch_entry, Req(body, headers=headers, set_id="s", letter=letter, entry_id=entry_id))
+
+
+def test_a_patch_changes_only_its_fields(st):
+    status, out = patch(st, {"word": "Bienchen", "tracks": {"DE": {"prompt": "Biene!", "volume": 120}}},
+                        headers={"X-FK-Client": "page-a"})
+    e = entries(st)[1]
+    assert status == 200 and e["word"] == "Bienchen" and e["tracks"]["DE"]["prompt"] == "Biene!"
+    assert e["tracks"]["DE"]["volume"] == 120 and e["tracks"]["DE"]["file"] == "" and out["entry"]["id"] == "bieneid1"
+    assert st.sent[-1] == ("letter", {"set_id": "s", "letter": "B", "entry_id": "bieneid1", "origin": "page-a"})
+    patch(st, {"enabled": False, "image": "b_ball_002.png", "_imageDesc": "a bee", "tracks": {"FX": {"file": "b_ball.mp3"}}})
+    e = entries(st)[1]
+    assert (e["enabled"], e["image"], e["_imageDesc"], e["tracks"]["FX"]["file"]) == (False, "b_ball_002.png", "a bee", "b_ball.mp3")
+    assert e["word"] == "Bienchen" and e["tracks"]["DE"]["prompt"] == "Biene!"          # untouched fields stay
+
+
+def test_two_pages_editing_different_fields_both_win(st):
+    patch(st, {"word": "Biene"}, headers={"X-FK-Client": "a"})
+    patch(st, {"tracks": {"DE": {"file": "b_biene_de.mp3"}}}, headers={"X-FK-Client": "b"})
+    e = entries(st)[1]
+    assert e["word"] == "Biene" and e["tracks"]["DE"]["file"] == "b_biene_de.mp3"
+
+
+@pytest.mark.parametrize("body", [{"nope": 1}, {"word": 5}, {"word": "x" * 61}, {"enabled": "yes"}, {"image": "missing.png"},
+                                  {"image": "../settings.json"}, {"tracks": {"XX": {}}}, {"tracks": {"DE": {"volume": 201}}},
+                                  {"tracks": {"DE": {"volume": True}}}, {"tracks": {"DE": {"file": "missing.mp3"}}},
+                                  {"tracks": {"DE": {"bad": 1}}}, {"tracks": "x"}, [], {"_imageDesc": 3}])
+def test_bad_patches_change_nothing(st, body):
+    before = json.dumps(entries(st))
+    status, out = patch(st, body)
+    assert status == 400 and out["error"] and json.dumps(entries(st)) == before and st.sent == []
+
+
+def test_patching_an_unknown_entry_is_404(st):
+    assert patch(st, {"word": "x"}, entry_id="nope0000")[0] == 404
+
+
+def test_add_keeps_the_editors_id_and_position(st):
+    status, out = call(server.api_add_entry, Req({"id": "newbus01", "index": 1, "word": "Bus", "tracks": {"FX": {"prompt": "bus"}}},
+                                                 set_id="s", letter="B"))
+    assert status == 200 and out["id"] == "newbus01" and out["index"] == 1
+    assert [e["word"] for e in entries(st)] == ["Ball", "Bus", "Biene"] and entries(st)[1]["tracks"]["FX"]["prompt"] == "bus"
+
+
+def test_repeating_an_add_never_makes_two_entries_and_a_new_letter_is_made(st):
+    status, out = call(server.api_add_entry, Req({"id": "ballid01", "word": "Ball 2"}, set_id="s", letter="B"))
+    assert status == 200 and out["id"] == "ballid01" and out["existed"] is True and len(entries(st)) == 2
+    assert entries(st)[0]["word"] == "Ball"
+    status, out = call(server.api_add_entry, Req({"word": "Qualle"}, set_id="s", letter="Q"))
+    assert status == 200 and entries(st, "Q")[0]["word"] == "Qualle" and server._ENTRY_ID.fullmatch(out["id"])
+
+
+@pytest.mark.parametrize("body,code", [({"index": "1", "word": "x"}, 400), ({"word": 3}, 400), ([], 400)])
+def test_bad_adds(st, body, code):
+    assert call(server.api_add_entry, Req(body, set_id="s", letter="B"))[0] == code and len(entries(st)) == 2
+
+
+def test_add_to_a_missing_set_is_404(st):
+    assert call(server.api_add_entry, Req({"word": "x"}, set_id="nope", letter="B"))[0] == 404
+
+
+def test_delete_by_id_returns_what_undo_needs(st):
+    status, out = call(server.api_delete_entry_by_id, Req(set_id="s", letter="B", entry_id="ballid01"))
+    assert status == 200 and out["index"] == 0 and out["entry"]["word"] == "Ball" and [e["id"] for e in entries(st)] == ["bieneid1"]
+    assert call(server.api_delete_entry_by_id, Req(set_id="s", letter="B", entry_id="ballid01"))[0] == 404
+
+
+def test_archive_entry_moves_only_unshared_files_then_removes_the_entry(st, tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "DATA_DIR", str(tmp_path))
+    st.settings["sets"]["s"]["letters"]["K"] = {"entries": [{"id": "kuhid001", "word": "Kuh", "image": "b_ball_002.png", "tracks": {}}]}
+    entries(st)[0]["image"] = "b_ball_002.png"                                        # shared with Kuh
+    status, out = call(server.api_archive_entry, Req(set_id="s", letter="B", entry_id="ballid01"))
+    assert status == 200 and out["archived"] == ["b_ball.mp3"] and out["kept"] == ["b_ball_002.png"]
+    assert (tmp_path / "archive/sounds/b_ball.mp3").exists() and (tmp_path / "images/b_ball_002.png").exists()
+    assert [e["id"] for e in entries(st)] == ["bieneid1"]
+
+
+def test_archive_entry_is_all_or_nothing(st, tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "DATA_DIR", str(tmp_path))
+    entries(st)[0]["image"] = "b_ball_002.png"
+    real = server._archive_one
+
+    def second_fails(file_type, name):
+        if file_type == "sound":
+            raise server._ArchiveError(507, "disk full")
+        return real(file_type, name)
+    monkeypatch.setattr(server, "_archive_one", second_fails)
+    status, out = call(server.api_archive_entry, Req(set_id="s", letter="B", entry_id="ballid01"))
+    assert status == 507 and "disk full" in out["error"]
+    assert (tmp_path / "images/b_ball_002.png").exists() and not (tmp_path / "archive/images/b_ball_002.png").exists()
+    assert [e["id"] for e in entries(st)] == ["ballid01", "bieneid1"]
+
+
+def test_the_letter_brings_its_sets_track_order(st):
+    st.settings["sets"]["s"]["track_order"] = [{"kind": "EN", "enabled": False}, {"kind": "FX", "enabled": True}, {"kind": "DE", "enabled": True}]
+    status, out = call(server.api_get_letter, Req(set_id="s", letter="B"))
+    assert [t["kind"] for t in out["track_order"] if t["enabled"]] == ["FX", "DE"]
+
+
+def test_media_if_empty_must_be_a_boolean(st):
+    status, out = media(st, {"kind": "FX", "file": "b_ball_de.mp3", "if_empty": "true"}, entry_id="ballid01")
+    assert status == 400 and entries(st)[0]["tracks"]["FX"]["file"] == "b_ball.mp3"
+
+
+# ── a job's file goes on its entry on the server, only if the slot is still empty ──
+
+@pytest.fixture
+def job(st, monkeypatch):
+    monkeypatch.setattr(server, "gen_jobs", {})
+    monkeypatch.setattr(server, "_loop", None)
+
+    def make(kind="DE", entry_id="bieneid1", filename="b_biene_de.mp3", status="done"):
+        target = server._job_target({"set_id": "s", "letter": "B", "entry_id": entry_id}, kind)
+        server.gen_jobs["j1"] = {"id": "j1", "kind": kind, "filename": filename, "status": status, "target": target}
+        return server.gen_jobs["j1"]
+    return make
+
+
+def test_a_done_job_fills_its_empty_slot(st, job):
+    j = job()
+    server._job_finished("j1")
+    assert j["applied"] is True and entries(st)[1]["tracks"]["DE"]["file"] == "b_biene_de.mp3"
+    assert ("letter", {"set_id": "s", "letter": "B", "entry_id": "bieneid1", "origin": "job"}) in st.sent
+    assert st.sent[-1] == ("gen_update", j) and st.disk()["sets"]["s"]["letters"]["B"]["entries"][1]["tracks"]["DE"]["file"] == "b_biene_de.mp3"
+
+
+def test_a_done_job_never_overwrites_a_filled_slot(st, job):
+    j = job(kind="FX", entry_id="ballid01", filename="b_ball_de.mp3")
+    server._job_finished("j1")
+    assert j["applied"] is False and entries(st)[0]["tracks"]["FX"]["file"] == "b_ball.mp3"
+
+
+def test_a_detached_job_only_lands_in_the_library(st, job):
+    j = job(status="generating")
+    status, out = call(server.api_job_detach, Req(job_id="j1"))
+    assert status == 200 and out["detached"] is True and j["target"] is None
+    j["status"] = "done"
+    server._job_finished("j1")
+    assert j.get("applied") is False and entries(st)[1]["tracks"].get("DE", {}).get("file", "") == ""
+
+
+def test_detaching_a_finished_job_marks_it_reviewed(st, job):
+    j = job()
+    status, out = call(server.api_job_detach, Req(job_id="j1"))
+    assert out == {"ok": True, "detached": False, "status": "done"} and j["target"] is None
+    assert call(server.api_job_detach, Req(job_id="nope"))[0] == 404
+
+
+def test_a_job_for_a_removed_entry_changes_nothing(st, job):
+    j = job()
+    entries(st).pop(1)
+    server._job_finished("j1")
+    assert j["applied"] is False
+
+
+def test_a_picture_job_fills_an_empty_picture(st, job):
+    j = job(kind="IMG", filename="b_ball_002.png")
+    server._job_finished("j1")
+    assert j["applied"] is True and entries(st)[1]["image"] == "b_ball_002.png"
+
+
+def test_a_failed_job_is_only_announced(st, job):
+    j = job(status="error")
+    server._job_finished("j1")
+    assert "applied" not in j and st.sent == [("gen_update", j)]
+
+
+@pytest.mark.parametrize("raw,code", [("x", 400), ({"set_id": "s", "letter": "B"}, 400),
+                                      ({"set_id": "s", "letter": "B", "entry_id": "nope0000"}, 404),
+                                      ({"set_id": "zz", "letter": "B", "entry_id": "bieneid1"}, 404)])
+def test_a_bad_target_is_refused_before_the_job_starts(st, raw, code):
+    with pytest.raises(server._TargetError) as e:
+        server._job_target(raw, "DE")
+    assert e.value.status == code
+
+
+# ── round 2: containment for thumbs, nothing half-saved, choices from any page detach jobs ──
+
+def test_a_thumb_never_reads_through_a_symlink(pics, tmp_path):
+    (tmp_path / "secret.txt").write_text("SECRET-CANARY")
+    os.symlink(tmp_path / "secret.txt", pics / "images/leak.png")
+    os.symlink(tmp_path / "secret.txt", pics / "ai-generated/images-original/leak2.png")
+    assert thumb(160, "leak.png").status == 404 and thumb(160, "leak2.png").status == 404
+
+
+def failing_save(monkeypatch):
+    def boom():
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(server, "save_settings", boom)
+
+
+def test_a_failed_save_undoes_a_patch_and_a_retry_saves_it(st, monkeypatch):
+    real = server.save_settings
+    failing_save(monkeypatch)
+    status, out = patch(st, {"word": "Bienchen"})
+    assert status == 500 and entries(st)[1]["word"] == "Biene" and st.sent == []
+    monkeypatch.setattr(server, "save_settings", real)
+    assert patch(st, {"word": "Bienchen"})[0] == 200 and st.disk()["sets"]["s"]["letters"]["B"]["entries"][1]["word"] == "Bienchen"
+
+
+def test_a_failed_save_undoes_add_and_delete(st, monkeypatch):
+    failing_save(monkeypatch)
+    assert call(server.api_add_entry, Req({"id": "newbus01", "word": "Bus"}, set_id="s", letter="B"))[0] == 500
+    assert [e["id"] for e in entries(st)] == ["ballid01", "bieneid1"]
+    assert call(server.api_delete_entry_by_id, Req(set_id="s", letter="B", entry_id="ballid01"))[0] == 500
+    assert [e["id"] for e in entries(st)] == ["ballid01", "bieneid1"]
+
+
+def test_a_failed_save_after_archiving_brings_the_files_back(st, tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "DATA_DIR", str(tmp_path))
+    failing_save(monkeypatch)
+    status, out = call(server.api_archive_entry, Req(set_id="s", letter="B", entry_id="ballid01"))
+    assert status == 500 and [e["id"] for e in entries(st)] == ["ballid01", "bieneid1"]
+    assert (tmp_path / "sounds/b_ball.mp3").exists() and not (tmp_path / "archive/sounds/b_ball.mp3").exists()
+
+
+def test_choosing_a_file_on_any_page_detaches_running_jobs_for_that_slot(st, monkeypatch):
+    monkeypatch.setattr(server, "gen_jobs", {})
+    t = server._job_target({"set_id": "s", "letter": "B", "entry_id": "ballid01"}, "IMG")
+    server.gen_jobs["img"] = {"id": "img", "status": "generating", "target": t}
+    t2 = server._job_target({"set_id": "s", "letter": "B", "entry_id": "ballid01"}, "DE")
+    server.gen_jobs["de"] = {"id": "de", "status": "generating", "target": t2}
+    patch(st, {"word": "Ball!"}, entry_id="ballid01")                       # not a choice of a file
+    assert server.gen_jobs["img"]["target"] and server.gen_jobs["de"]["target"]
+    patch(st, {"image": ""}, entry_id="ballid01")                           # removing the picture is one
+    assert server.gen_jobs["img"]["target"] is None and server.gen_jobs["de"]["target"]
+
+
+
+# ── round 3: a finishing job stays detachable; a replaced library picture wins ──
+
+def test_a_job_that_is_finishing_is_still_detached_by_a_removal(st, monkeypatch):
+    monkeypatch.setattr(server, "gen_jobs", {})
+    monkeypatch.setattr(server, "_loop", None)
+    entries(st)[0]["image"] = "b_ball.png"
+    t = server._job_target({"set_id": "s", "letter": "B", "entry_id": "ballid01"}, "IMG")
+    # the worker has its result, the event loop has not finalized it yet
+    server.gen_jobs["j"] = {"id": "j", "status": "generating", "_done": True, "filename": "b_ball_002.png", "target": t}
+    patch(st, {"image": ""}, entry_id="ballid01")                 # the parent removes the picture now
+    server._job_finished("j")
+    j = server.gen_jobs["j"]
+    assert j["status"] == "done" and j["applied"] is False and "_done" not in j and entries(st)[0]["image"] == ""
+
+
+def test_a_library_picture_replaced_after_its_original_is_shown(pics):
+    from PIL import Image
+    orig = pics / "ai-generated/images-original/b_ball.png"
+    lib = pics / "images/b_ball.png"
+    os.utime(orig, (1_000_000, 1_000_000))
+    os.utime(lib, (1_000_500, 1_000_500))                         # an import wrote it 500 s later
+    thumb(160, "b_ball.png")
+    with Image.open(pics / "ai-generated/thumbs/160/b_ball.png.png") as im:
+        assert im.size == (128, 128)                              # the 64 × 64 library picture, scaled sharp
+
+
+# ── round 5: undo restores an entry with a missing file; detaching tells every page ──
+
+def test_undo_restores_an_entry_whose_file_is_missing(st):
+    body = {"id": "gone0001", "word": "Bus", "image": "missing.png", "tracks": {"FX": {"file": "missing.mp3"}}}
+    assert call(server.api_add_entry, Req(dict(body), set_id="s", letter="B"))[0] == 400          # a normal add checks
+    status, out = call(server.api_add_entry, Req(dict(body, restore=True), set_id="s", letter="B"))
+    assert status == 200 and entries(st)[2]["image"] == "missing.png" and entries(st)[2]["tracks"]["FX"]["file"] == "missing.mp3"
+    status, out = patch(st, {"restore": True, "image": "missing2.png"}, entry_id="gone0001")
+    assert status == 200 and entries(st)[2]["image"] == "missing2.png"
+    assert patch(st, {"restore": True, "image": "../x.png"}, entry_id="gone0001")[0] == 400       # names still checked
+
+
+def test_detaching_tells_the_other_pages(st, job):
+    j = job()
+    st.sent.clear()
+    call(server.api_job_detach, Req(job_id="j1"))
+    assert st.sent == [("gen_update", j)] and j["target"] is None
+    st.sent.clear()
+    call(server.api_job_detach, Req(job_id="j1"))                    # nothing new: no event
+    assert st.sent == []
+
+
+def test_undo_restores_longer_text_an_import_allowed(st):
+    long_prompt, long_desc = "p" * 301, "d" * 501
+    body = {"id": "long0001", "word": "Bus", "_imageDesc": long_desc, "tracks": {"FX": {"prompt": long_prompt}}}
+    assert call(server.api_add_entry, Req(dict(body), set_id="s", letter="B"))[0] == 400
+    status, _ = call(server.api_add_entry, Req(dict(body, restore=True), set_id="s", letter="B"))
+    assert status == 200 and entries(st)[2]["tracks"]["FX"]["prompt"] == long_prompt and entries(st)[2]["_imageDesc"] == long_desc
+    too_long = "x" * (server.setbundle.MAX_TEXT + 1)
+    assert patch(st, {"restore": True, "_imageDesc": too_long}, entry_id="long0001")[0] == 400
+
+
+def test_an_uploaded_photo_is_scaled_down_not_kept_full_size(pics):
+    from PIL import Image
+    Image.new("RGB", (2000, 1500), (90, 120, 200)).save(pics / "images/photo.jpg")
+    thumb(160, "photo.jpg")
+    with Image.open(pics / "ai-generated/thumbs/160/photo.jpg.png") as im:
+        assert max(im.size) == 160 and im.size == (160, 120)
+
+
+def test_the_job_list_names_the_server_process(monkeypatch):
+    monkeypatch.setattr(server, "gen_jobs", {"a": {"id": "a", "status": "generating"}})
+    resp = asyncio.run(server.api_get_jobs(Req()))
+    assert resp.headers["X-FK-Boot"] == server.BOOT_ID and json.loads(resp.body) == [{"id": "a", "status": "generating"}]

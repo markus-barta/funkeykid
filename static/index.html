@@ -574,11 +574,11 @@
       .ui-wrow img, .ui-wrow .ph { width: 34px; height: 34px; border-radius: 9px; }
       .ui-wrow .ws, .ui-wrow .ui-pips { display: none; }
       .ui-wlist { scrollbar-width: none; } .ui-wlist::-webkit-scrollbar { display: none; }
-      .ui-wfoot { flex-direction: row; align-items: center; padding: 8px 10px; }
+      .ui-wfoot { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 8px 10px; }
       .ui-wfoot .ui-addrow { flex: 1; min-width: 0; }
       .ui-wfoot .ui-addrow .ui-inp { min-width: 0; height: 36px; }
       .ui-wfoot > .ui-btn { flex: none; }
-      .ui-wfoot details { display: none; }                 /* prompt + rejected words: on the big screen */
+      .ui-wfoot details { flex-basis: 100%; }
       .ui-detail { padding: 16px 14px 90px; }
       .ui-cols { grid-template-columns: minmax(0, 1fr); }
       .ui-picbox { max-width: 300px; margin: 0 auto; }
@@ -594,7 +594,11 @@
 </head>
 <body class="min-h-screen bg-base-200">
 
-<div x-data="funkeykid()" x-init="init()" class="ui-app" @keydown.window="onKeyGlobal($event)">
+<div x-data="funkeykid()" x-init="init()" class="ui-app" @keydown.window="onKeyGlobal($event)"
+     x-effect="const sh = $root.querySelector('.ui-shell'), bn = $root.querySelector('.ui-bnav'), ed2 = $root.querySelector('.ui-ed');
+               const ac = $root.querySelector('.ui-ac'), to = $root.querySelector('.ui-toast');
+               if (sh) sh.inert = !!ed || !!lib; if (bn) bn.inert = !!ed || !!lib; if (ed2) ed2.inert = !!lib;
+               if (ac) ac.inert = !!lib; if (to) to.inert = !!lib;">
 
   <div class="ui-shell">
   <!-- ── Sidebar (FUNK-72): navigation in groups, the active set, the keyboard and the speaker ── -->
@@ -740,7 +744,7 @@
             </div>
             <div class="ui-tile-words" x-text="getEntries(letter).length ? getEntries(letter).map(e => (e.enabled ? '' : '(') + e.word + (e.enabled ? '' : ')')).join(' · ') : 'Noch keine Wörter'"></div>
             <div class="ui-tile-meta" x-show="getEntries(letter).length">
-              <template x-for="k in ['IMG', 'FX', 'DE']" :key="k">
+              <template x-for="k in tileKinds()" :key="k">
                 <span class="ui-st" :class="letterCount(letter, k) < getEntries(letter).length && 'gap'"
                       :title="kindName(k) + ': ' + letterCount(letter, k) + ' von ' + getEntries(letter).length">
                   <span x-html="kindIcon(k)" aria-hidden="true"></span><span class="num" x-text="letterCount(letter, k) + '/' + getEntries(letter).length"></span>
@@ -2271,7 +2275,7 @@
               <span x-text="{ saved: 'Gespeichert', saving: 'Speichert …', error: 'Nicht gespeichert' }[edSaveState] || ''"></span>
               <button type="button" class="ui-btn xs ui-btn-line" x-show="edSaveState === 'error'" @click="edSaveNow()">Erneut</button>
             </span>
-            <button type="button" class="ui-ibtn" @click="closeEditor()" aria-label="Schließen (Esc)" title="Schließen (Esc)"><span x-html="ui.ic.x"></span></button>
+            <button type="button" class="ui-ibtn" data-autofocus @click="closeEditor()" aria-label="Schließen (Esc)" title="Schließen (Esc)"><span x-html="ui.ic.x"></span></button>
           </header>
 
           <div class="ui-ed-b">
@@ -2299,7 +2303,7 @@
                       <span class="ws ui-trunc" x-text="edRowStatus(e)"></span>
                     </span>
                     <span class="ui-pips" aria-hidden="true">
-                      <template x-for="k in ['IMG', 'FX', 'DE']" :key="k"><span class="ui-pip" :class="edPip(e, k)"></span></template>
+                      <template x-for="k in ['IMG'].concat(edKinds())" :key="k"><span class="ui-pip" :class="edPip(e, k)"></span></template>
                     </span>
                   </button>
                 </template>
@@ -2329,9 +2333,9 @@
                 <form class="ui-addrow" @submit.prevent="edAddWord()">
                   <label class="ui-sr" for="edNewWord">Neues Wort</label>
                   <input id="edNewWord" class="ui-inp" x-model="edNewWord" :placeholder="'Neues Wort mit ' + ed.L + ' …'" maxlength="60">
-                  <button type="submit" class="ui-ibtn" style="background:var(--ui-s3)" aria-label="Wort hinzufügen" :disabled="!edNewWord.trim()"><span x-html="ui.ic.plus"></span></button>
+                  <button type="submit" class="ui-ibtn" style="background:var(--ui-s3)" aria-label="Wort hinzufügen" :disabled="!edNewWord.trim() || ed.loading"><span x-html="ui.ic.plus"></span></button>
                 </form>
-                <button type="button" class="ui-btn sm ui-btn-soft" @click="edRunSuggest(false)" :disabled="edSuggest && edSuggest.busy"><span x-html="ui.ic.sparkle"></span>Wort vorschlagen</button>
+                <button type="button" class="ui-btn sm ui-btn-soft" @click="edRunSuggest(false)" :disabled="(edSuggest && edSuggest.busy) || ed.loading"><span x-html="ui.ic.sparkle"></span>Wort vorschlagen</button>
                 <details class="ui-prm" style="margin-top:0">
                   <summary><span x-html="ui.ic.pencil"></span>Anweisung für Vorschläge</summary>
                   <div class="inner">
@@ -2343,10 +2347,10 @@
                     </div>
                   </div>
                 </details>
-                <details class="ui-prm" style="margin-top:0" x-show="_blacklist.length">
-                  <summary><span x-html="ui.ic.ban"></span><span x-text="'Abgelehnt (' + _blacklist.length + ')'"></span></summary>
+                <details class="ui-prm" style="margin-top:0" x-show="ed.blacklist.length">
+                  <summary><span x-html="ui.ic.ban"></span><span x-text="'Abgelehnt (' + ed.blacklist.length + ')'"></span></summary>
                   <div class="inner" style="flex-direction:row;flex-wrap:wrap;gap:4px">
-                    <template x-for="(w, i) in _blacklist" :key="w + i">
+                    <template x-for="(w, i) in ed.blacklist" :key="w + i">
                       <button type="button" class="ui-btn xs ui-btn-line" @click="edUnblacklist(w)" :title="'„' + w + '“ wieder vorschlagen'"><span x-text="w"></span><span x-html="ui.ic.x"></span></button>
                     </template>
                   </div>
@@ -2356,6 +2360,12 @@
 
             <!-- detail -->
             <main class="ui-detail" x-show="!edCur()">
+              <div class="ui-empty-detail" x-show="ed.loading && ed.loadError">
+                <div class="ic" x-html="ui.ic.alert"></div>
+                <h2>Konnte nicht laden</h2>
+                <p x-text="ed.loadError"></p>
+                <button type="button" class="ui-btn sm ui-btn-line" style="margin-top:12px" @click="edSaveNow()">Erneut versuchen</button>
+              </div>
               <div class="ui-empty-detail" x-show="!ed.loading">
                 <div class="ic" x-html="ui.ic.plus"></div>
                 <h2 x-text="'Noch keine Wörter für ' + ed.L"></h2>
@@ -2369,10 +2379,10 @@
                     <div>
                       <div class="ui-d-h">
                         <label class="ui-sr" for="edWord">Wort</label>
-                        <input id="edWord" class="ui-wordinp" x-model="e.word" @focus="edSnap()" @input="edChanged()" maxlength="60"
+                        <input id="edWord" class="ui-wordinp" x-model="e.word" @input="edText(e, 'word')" @change="edText(e, 'word', true)" maxlength="60"
                                :style="'color:' + (e.enabled ? 'var(--ui-tx)' : 'var(--ui-tx3)')">
                         <label class="ui-switch"><input type="checkbox" role="switch" :checked="e.enabled"
-                               @change="edSnap(); e.enabled = $event.target.checked; edChanged(e.enabled ? '„' + e.word + '“ ist wieder an' : '„' + e.word + '“ ist aus')"><span class="tr"></span><span x-text="e.enabled ? 'Aktiv' : 'Aus'"></span></label>
+                               @change="edSet(e, { enabled: $event.target.checked }, $event.target.checked ? '„' + e.word + '“ ist wieder an' : '„' + e.word + '“ ist aus')"><span class="tr"></span><span x-text="e.enabled ? 'Aktiv' : 'Aus'"></span></label>
                         <div style="position:relative" x-data="{ m: false }" @click.outside="m = false" @keydown.escape.stop="m = false">
                           <button type="button" class="ui-ibtn" @click="m = !m" aria-label="Mehr Aktionen" :aria-expanded="m ? 'true' : 'false'"><span x-html="ui.ic.dots"></span></button>
                           <div class="ui-menu" x-show="m" x-transition.origin.top.right x-cloak>
@@ -2427,6 +2437,7 @@
                             <button type="button" class="ui-btn sm ui-btn-line" @click="libOpen(e, 'IMG')"><span x-html="ui.ic.folder"></span>Bibliothek</button>
                             <label class="ui-ibtn line" title="Bild hochladen" style="cursor:pointer"><span x-html="ui.ic.upload"></span>
                               <input type="file" class="ui-sr" accept=".png,.jpg,.jpeg,.gif" @change="edUpload($event, e, 'IMG')" aria-label="Bild hochladen"></label>
+                            <button type="button" class="ui-ibtn line" x-show="e.image" @click="edUnset(e, 'IMG')" title="Bild von diesem Wort lösen" aria-label="Bild entfernen"><span x-html="ui.ic.x"></span></button>
                           </div>
                           <div class="ui-pixoo" x-show="e.image">
                             <div class="ui-pixoo-screen"><img :src="'/images/' + encodeURIComponent(e.image || '')" alt=""></div>
@@ -2434,7 +2445,7 @@
                           </div>
                           <div class="ui-field">
                             <label :for="'edImgIdea'">Bildidee für die KI <span>optional, Englisch geht am besten</span></label>
-                            <textarea id="edImgIdea" class="ui-inp" rows="2" x-model="e._imageDesc" @focus="edSnap()" @input="edChanged()"
+                            <textarea id="edImgIdea" class="ui-inp" rows="2" x-model="e._imageDesc" @input="edText(e, '_imageDesc')" @change="edText(e, '_imageDesc', true)" maxlength="500"
                                       :placeholder="'Was soll man sehen? Leer lassen = „' + (e.word || 'das Wort') + '“'"></textarea>
                           </div>
                         </section>
@@ -2446,7 +2457,7 @@
                             <div style="min-width:0">
                               <h4>So hört es dein Kind</h4>
                               <div class="ui-steps">
-                                <template x-for="(k, si) in orderedTrackKinds().slice().sort((a, b) => b.enabled - a.enabled)" :key="k.kind">
+                                <template x-for="(k, si) in edOrder().slice().sort((a, b) => b.enabled - a.enabled)" :key="k.kind">
                                   <div style="display:contents">
                                     <span class="ui-faint" x-show="si > 0" x-html="ui.ic.arrowR" aria-hidden="true"></span>
                                     <span class="ui-stp" :class="[pl.seq && pl.seqKind === k.kind && 'on', !k.enabled && 'dis', k.enabled && !(e.tracks[k.kind] && e.tracks[k.kind].file) && 'miss']">
@@ -2457,12 +2468,12 @@
                                   </div>
                                 </template>
                               </div>
-                              <small>Reihenfolge und Spuren gelten für das ganze Set „<span x-text="sets[ed.setId]?.name || ed.setId"></span>“. <button type="button" @click="closeEditor(); go('sets')">Ändern</button></small>
+                              <small>Reihenfolge und Spuren gelten für das ganze Set „<span x-text="sets[ed.setId]?.name || ed.setId"></span>“. <button type="button" x-show="ed.setId === activeSetId" @click="closeEditor(); go('sets')">Ändern</button></small>
                             </div>
                           </section>
 
                           <div class="ui-slots">
-                            <template x-for="cfg in orderedTrackKinds().slice().sort((a, b) => b.enabled - a.enabled)" :key="cfg.kind">
+                            <template x-for="cfg in edOrder().slice().sort((a, b) => b.enabled - a.enabled)" :key="cfg.kind">
                               <section class="ui-card ui-slot" :class="!cfg.enabled && 'off'" :aria-label="kindName(cfg.kind)" x-data="{ k: cfg.kind }">
                                 <div class="ui-slot-h">
                                   <span class="ui-kind" :class="k.toLowerCase()" x-html="kindIcon(k)"></span>
@@ -2470,12 +2481,12 @@
                                   <span class="ui-sp"></span>
                                   <label class="ui-switch" x-show="cfg.enabled && e.tracks[k].file" :title="'Diese Spur bei „' + e.word + '“ abspielen'">
                                     <input type="checkbox" role="switch" :checked="e.tracks[k].enabled" :aria-label="kindName(k) + ' abspielen'"
-                                           @change="edSnap(); e.tracks[k].enabled = $event.target.checked; edChanged(kindName(k) + (e.tracks[k].enabled ? ' an' : ' aus'))"><span class="tr"></span></label>
+                                           @change="edSet(e, { tracks: { [k]: { enabled: $event.target.checked } } }, kindName(k) + ($event.target.checked ? ' an' : ' aus'))"><span class="tr"></span></label>
                                 </div>
 
                                 <template x-if="!cfg.enabled">
                                   <div class="ui-offnote"><span x-html="ui.ic.eyeoff"></span><span>Im Set ausgeschaltet: dein Kind hört diese Spur gerade nicht.</span>
-                                    <button type="button" class="ui-btn xs ui-btn-ghost" @click="closeEditor(); go('sets')">Im Set einschalten</button></div>
+                                    <button type="button" class="ui-btn xs ui-btn-ghost" x-show="ed.setId === activeSetId" @click="closeEditor(); go('sets')">Im Set einschalten</button></div>
                                 </template>
 
                                 <!-- the file it has (a running job leaves it as it is) -->
@@ -2488,10 +2499,10 @@
                                     </div>
                                     <span class="ui-dur num" x-text="dur(e.tracks[k].file)"></span>
                                     <div style="position:relative" x-data="{ v: false }" @click.outside="v = false">
-                                      <button type="button" class="ui-volb num" @click="v = !v; v && edSnap()" :aria-expanded="v ? 'true' : 'false'" :aria-label="'Lautstärke ' + kindName(k)" x-text="(e.tracks[k].volume ?? 100) + ' %'"></button>
+                                      <button type="button" class="ui-volb num" @click="v = !v" :aria-expanded="v ? 'true' : 'false'" :aria-label="'Lautstärke ' + kindName(k)" x-text="(e.tracks[k].volume ?? 100) + ' %'"></button>
                                       <div class="ui-pop" x-show="v" x-cloak x-transition.origin.top.right>
                                         <div style="display:flex;justify-content:space-between;margin-bottom:10px"><b>Lautstärke</b><span class="num" x-text="(e.tracks[k].volume ?? 100) + ' %'"></span></div>
-                                        <input type="range" class="ui-range" min="0" max="200" step="5" style="width:100%" x-model.number="e.tracks[k].volume" @change="edChanged()" :aria-label="'Lautstärke ' + kindName(k)">
+                                        <input type="range" class="ui-range" min="0" max="200" step="5" style="width:100%" x-model.number="e.tracks[k].volume" @change="_edPatchOp(ed.setId, ed.L, e.id, { tracks: { [k]: { volume: e.tracks[k].volume } } })" :aria-label="'Lautstärke ' + kindName(k)">
                                         <div class="ui-faint" style="font-size:12px;margin-top:8px">100 % = so laut wie die Datei. Darüber verstärkt das Gerät leise Aufnahmen; die Vorschau hier spielt höchstens 100 %.</div>
                                       </div>
                                     </div>
@@ -2504,6 +2515,8 @@
                                     <span style="flex:1;min-width:140px" x-text="k === 'FX' ? 'Noch kein Geräusch.' : k === 'DE' ? 'Noch keine Stimme: dein Kind hört nur das Geräusch.' : 'Noch keine englische Stimme.'"></span>
                                     <button type="button" class="ui-btn xs ui-btn-pri" @click="edGen(e, k)" :disabled="!e.word.trim()"><span x-html="ui.ic.sparkle"></span>Erzeugen</button>
                                     <button type="button" class="ui-btn xs ui-btn-ghost" @click="libOpen(e, k)">Bibliothek</button>
+                                    <label class="ui-ibtn sm" title="Eigene Aufnahme hochladen" style="cursor:pointer"><span x-html="ui.ic.upload"></span>
+                                      <input type="file" class="ui-sr" accept=".mp3,.wav,.ogg" @change="edUpload($event, e, k)" :aria-label="kindName(k) + ' hochladen'"></label>
                                   </div>
                                 </template>
                                 <!-- generating -->
@@ -2556,7 +2569,7 @@
                                   <button type="button" class="ui-btn xs ui-btn-soft" @click="edGen(e, k)" :disabled="!e.word.trim()"><span x-html="ui.ic.sparkle"></span>Neu erzeugen</button>
                                   <button type="button" class="ui-btn xs ui-btn-ghost" @click="libOpen(e, k)"><span x-html="ui.ic.folder"></span>Bibliothek</button>
                                   <label class="ui-ibtn sm" title="Datei hochladen" style="cursor:pointer"><span x-html="ui.ic.upload"></span>
-                                    <input type="file" class="ui-sr" accept=".mp3,.wav,.ogg,.m4a" @change="edUpload($event, e, k)" :aria-label="kindName(k) + ' hochladen'"></label>
+                                    <input type="file" class="ui-sr" accept=".mp3,.wav,.ogg" @change="edUpload($event, e, k)" :aria-label="kindName(k) + ' hochladen'"></label>
                                   <button type="button" class="ui-ibtn sm" title="Datei von diesem Wort lösen" :aria-label="kindName(k) + ' entfernen'" @click="edUnset(e, k)"><span x-html="ui.ic.x"></span></button>
                                 </div>
 
@@ -2564,7 +2577,7 @@
                                   <summary><span x-html="ui.ic.pencil"></span><span x-text="k === 'FX' ? 'Anweisung für die KI' : 'Gesprochener Text'"></span>
                                     <span class="txt" x-text="'· ' + (e.tracks[k].prompt || (k === 'FX' ? 'Standard für „' + e.word + '“' : k === 'DE' ? e.word : 'englisches Wort fehlt'))"></span></summary>
                                   <div class="inner">
-                                    <input class="ui-inp" x-model="e.tracks[k].prompt" @focus="edSnap()" @input="edChanged()" maxlength="300"
+                                    <input class="ui-inp" x-model="e.tracks[k].prompt" @input="edText(e, 'tracks.' + k + '.prompt')" @change="edText(e, 'tracks.' + k + '.prompt', true)" maxlength="300"
                                            :placeholder="k === 'FX' ? 'Englisch, z. B. „friendly buzzing bee, short“' : k === 'DE' ? 'Leer = „' + e.word + '“' : 'Englisches Wort, z. B. „bee“'"
                                            :aria-label="k === 'FX' ? 'Anweisung für die KI' : 'Gesprochener Text'">
                                     <span class="ui-faint" style="font-size:12px" x-text="k === 'FX' ? 'Gilt für „Neu erzeugen“. Englisch versteht die Geräusch-KI am besten.' : 'Gilt für „Neu erzeugen“ · ElevenLabs'"></span>
@@ -2587,19 +2600,19 @@
   </div>
 
   <!-- ═══ Library picker (FUNK-72) ═══ -->
-  <div class="ui-scrim" style="z-index:75" x-show="lib" x-cloak x-transition.opacity @mousedown.self="lib = null">
+  <div class="ui-scrim" style="z-index:75" x-show="lib" x-cloak x-transition.opacity @mousedown.self="libClose()">
     <template x-if="lib">
       <div class="ui-sheet" role="dialog" aria-modal="true" aria-labelledby="libTitle">
         <div class="ui-sheet-h">
           <h3 id="libTitle" x-text="(lib.kind === 'IMG' ? 'Bild' : kindName(lib.kind)) + ' aus der Bibliothek'"></h3>
-          <button type="button" class="ui-ibtn" @click="lib = null" aria-label="Schließen"><span x-html="ui.ic.x"></span></button>
+          <button type="button" class="ui-ibtn" @click="libClose()" aria-label="Schließen"><span x-html="ui.ic.x"></span></button>
         </div>
         <div style="padding:12px 18px 0"><input class="ui-inp" x-model="lib.q" placeholder="Suchen …" aria-label="Suchen" x-init="$nextTick(() => $el.focus())"></div>
         <div class="ui-sheet-b">
           <template x-if="lib.kind === 'IMG'">
             <div class="ui-libgrid">
               <template x-for="f in libItems()" :key="f">
-                <button type="button" class="ui-libimg" @click="libPick(f)" :title="f"><img :src="thumb(f, 160)" alt="" loading="lazy"><span x-text="f"></span></button>
+                <button type="button" class="ui-libimg" @click="libPick(f)" :title="f" :aria-label="'Bild wählen: ' + f"><img :src="thumb(f, 160)" alt="" loading="lazy"><span x-text="f"></span></button>
               </template>
             </div>
           </template>
@@ -2609,7 +2622,7 @@
                 <div class="ui-librow">
                   <button type="button" class="ui-pbtn" style="width:32px;height:32px" :class="pl.f === f && 'on'" @click="plToggle(f, 100)" :aria-label="f + ' abspielen'"><span x-html="pl.f === f ? ui.ic.pause : ui.ic.play"></span></button>
                   <span class="ui-fname" x-text="f"></span>
-                  <button type="button" class="ui-btn xs ui-btn-soft" @click="libPick(f)">Wählen</button>
+                  <button type="button" class="ui-btn xs ui-btn-soft" @click="libPick(f)" :aria-label="'Wählen: ' + f">Wählen</button>
                 </div>
               </template>
             </div>
@@ -2673,7 +2686,8 @@
 <script>
 // ── FUNK-72: icons (fixed SVG strings), navigation, filters. Outside the component: never reactive. ──
 const FK_I = d => '<svg class="ui-i" viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>';
-const FK_AUDIO = { ctx: null };            // one AudioContext for waveforms; not part of Alpine's state
+const FK_AUDIO = { ctx: null };
+const FK_CLIENT = Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');   // this page, for SSE echoes            // one AudioContext for waveforms; not part of Alpine's state
 const FK_UI = {
   ic: {
     play: FK_I('M6 4.8c0-.8.9-1.3 1.6-.9l11.6 6.4c.7.4.7 1.4 0 1.8L7.6 20.5c-.7.4-1.6-.1-1.6-.9V4.8Z'),
@@ -2757,7 +2771,9 @@ function funkeykid() {
     // ── FUNK-72: shell, entry editor, generation slots, activity ──
     ui: FK_UI,
     ed: null, edNewWord: '', edSuggest: null, edSaveState: 'saved',
-    _edQ: Promise.resolve(), _edPend: {}, _edTimer: null, _edRetry: 0, _edUndo: [],
+    _edOps: [], _edRunning: false, _edPaused: false, _edFails: 0, _edDeb: {}, _edToken: 0, _edUndo: [],
+    _slotRev: {}, _edRefreshTimer: null, _edReturnFocus: null, _edNeedRefresh: false, _libReturn: null,
+    _edResumeTimer: null, _jobsBoot: '', _edPendingPlay: null, _undoUntil: 0, _toastNext: null,
     edSlots: {}, edJobs: {}, lib: null, acHidden: {}, jobSeen: {}, clockNow: Date.now(),
     pl: { f: null, frac: 0, seq: false, seqKind: null }, _plAudio: null, _plRun: 0,
     waves: {}, durs: {}, _flat: Array.from({ length: 48 }, () => 0.08),
@@ -3596,165 +3612,417 @@ function funkeykid() {
     kindColor(k) { return { IMG: 'var(--ui-img)', FX: 'var(--ui-fx)', DE: 'var(--ui-de)', EN: 'var(--ui-en)' }[k]; },
 
     // ══ Entry editor (FUNK-72) ══
-    // One queue for every write of a letter and every load: a load never overtakes a save,
-    // and a job's file reaches a letter that is not open only after that letter's saves.
-    _edQueue(fn) {
-      const run = this._edQ.then(fn).catch(err => console.warn('[editor]', err));
-      this._edQ = run;
-      return run;
+    // Every write is a small change of one entry, found by id, applied by the server (PATCH, add,
+    // delete, archive). One queue runs every write and every load in order; a failed write is retried,
+    // and after a few failures the queue pauses ("Nicht gespeichert · Erneut") instead of skipping
+    // ahead: a load never shows the server's old state over a change that has not arrived yet.
+    // Each opening of the editor has a token: a response for an earlier opening is never installed.
+    _api(url, opts = {}) {
+      const headers = Object.assign({ 'X-FK-Client': FK_CLIENT }, opts.headers || {});
+      if (opts.json !== undefined) { headers['Content-Type'] = 'application/json'; opts = Object.assign({}, opts, { body: JSON.stringify(opts.json) }); }
+      return fetch(url, Object.assign({}, opts, { headers }));
     },
+    _edUrl(setId, L, rest = '') { return `/api/sets/${encodeURIComponent(setId)}/letters/${encodeURIComponent(L)}${rest}`; },
     _newId() {
       const a = new Uint8Array(5);
       crypto.getRandomValues(a);
       return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
     },
     _edCopy(entries) {
-      return (entries || []).map(e => {
+      return (entries || []).filter(e => e && e.id).map(e => {
         const c = JSON.parse(JSON.stringify(e));
         delete c.sound; delete c._soundDesc;                 // read-only alias the server adds for old clients
         if (typeof c.word !== 'string') c.word = '';
-        if (!c._imageDesc) c._imageDesc = '';
+        if (typeof c._imageDesc !== 'string') c._imageDesc = '';
+        if (typeof c.image !== 'string') c.image = '';
         if (c.enabled === undefined) c.enabled = true;
-        if (!c.id) c.id = this._newId();
         this._ensureTracks(c);
         return c;
       });
     },
-    _edClean(e) {
-      const c = { id: e.id, word: (e.word || '').trim(), image: e.image || '', enabled: e.enabled !== false, tracks: this._cleanTracks(e.tracks) };
-      if ((e._imageDesc || '').trim()) c._imageDesc = e._imageDesc.trim();
-      return c;
+    _edEntryBody(e) {                                         // a whole entry, as the add endpoint takes it
+      const tracks = {};
+      for (const k of this.trackKinds) {
+        const t = e.tracks[k];
+        const v = parseInt(t && t.volume, 10);
+        if (t) tracks[k] = { file: t.file || '', enabled: t.enabled !== false, prompt: t.prompt || '', volume: Number.isFinite(v) ? Math.max(0, Math.min(200, v)) : 100 };
+      }
+      return { id: e.id, word: e.word || '', enabled: e.enabled !== false, image: e.image || '', _imageDesc: e._imageDesc || '', tracks };
     },
-    _edKey(setId, L) { return setId + '|' + L; },
     edCur() { return this.ed && !this.ed.loading ? (this.ed.entries.find(x => x.id === this.ed.sel) || null) : null; },
+    edOrder() {
+      const order = this.ed && Array.isArray(this.ed.trackOrder) && this.ed.trackOrder.length ? this.ed.trackOrder : ((this.activeSet && this.activeSet.track_order) || []);
+      const seen = new Set(), rows = [];
+      for (const c of order) if (this.trackKinds.includes(c.kind) && !seen.has(c.kind)) { seen.add(c.kind); rows.push({ kind: c.kind, enabled: !!c.enabled }); }
+      for (const k of this.trackKinds) if (!seen.has(k)) rows.push({ kind: k, enabled: false });
+      return rows;
+    },
+    edKinds() { return this.edOrder().filter(k => k.enabled).map(k => k.kind); },
+
+    // ── the queue ──
+    _edEnqueue(op) {
+      const last = this._edOps[this._edOps.length - 1];
+      if (op.type === 'patch' && last && last.type === 'patch' && !last.started && last.setId === op.setId && last.L === op.L && last.id === op.id) {
+        last.body = this._edMerge(last.body, op.body);    // consecutive changes of one entry travel together
+        return;
+      }
+      this._edOps.push(op);
+      this._edPump();
+    },
+    _edMerge(a, b) {
+      const out = Object.assign({}, a, b);
+      if (a.restore || b.restore) out.restore = true;
+      if (a.tracks || b.tracks) {
+        out.tracks = Object.assign({}, a.tracks || {});
+        for (const [k, t] of Object.entries(b.tracks || {})) out.tracks[k] = Object.assign({}, out.tracks[k] || {}, t);
+      }
+      return out;
+    },
+    async _edPump() {
+      if (this._edRunning || this._edPaused) return;
+      this._edRunning = true;
+      while (this._edOps.length && !this._edPaused) {
+        const op = this._edOps[0];
+        op.started = true;
+        if (op.type !== 'load' && op.type !== 'refresh') this.edSaveState = 'saving';
+        let res;
+        try { res = await op.run(op); } catch { res = false; }
+        if (res === true || res === 'drop') { this._edOps.shift(); this._edFails = 0; continue; }
+        op.started = false;
+        this._edFails++;
+        if (this._edFails >= 4) {
+          this._edPaused = true; this.edSaveState = 'error';
+          clearTimeout(this._edResumeTimer);                     // and tries again by itself, every 15 s
+          this._edResumeTimer = setTimeout(() => { if (this._edPaused) this.edSaveNow(); }, 15000);
+          break;
+        }
+        await new Promise(r => setTimeout(r, 700 * this._edFails));
+      }
+      this._edRunning = false;
+      if (!this._edPaused && !this._edOps.length) this.edSaveState = Object.keys(this._edDeb).length ? 'saving' : 'saved';
+      if (this._edPaused) this.edSaveState = 'error';
+      if (this._edNeedRefresh && !this._edPaused && !this._edOps.length && !Object.keys(this._edDeb).length) {
+        this._edNeedRefresh = false;
+        this._edRefreshSoon();
+      }
+    },
+    edSaveNow() {
+      clearTimeout(this._edResumeTimer);
+      this._edPaused = false; this._edFails = 0;
+      this._edFlushText();
+      this._edPump();
+    },
+    _edWrite(method, url, body, onOk) {                     // one write: true = done, 'drop' = refused for good, false = retry
+      return async () => {
+        let res;
+        try { res = await this._api(url, { method, json: body }); } catch { return false; }
+        const r = await res.json().catch(() => null);
+        if (res.ok && r && r.ok) { if (onOk) onOk(r); return true; }
+        if (res.status === 400 || res.status === 404 || res.status === 409) {
+          if (onOk && res.status === 404 && r && r.error === 'entry not found') onOk(null);
+          else {
+            this.showToast('Nicht gespeichert: ' + ((r && r.error) || 'HTTP ' + res.status), 'error');
+            this._edNeedRefresh = true;                        // show what the server has, not the refused change
+          }
+          return 'drop';
+        }
+        return false;
+      };
+    },
+    _edPatchOp(setId, L, id, body) {
+      this._edEnqueue({ type: 'patch', setId, L, id, body,
+        run: op => this._edWrite('PATCH', this._edUrl(setId, L, '/entries/' + encodeURIComponent(id)), op.body)() });
+    },
+
+    // ── open, switch, close, load ──
     openEditor(L, setId, sel) {
       setId = setId || this.activeSetId;
       if (!setId) return;
+      this._edFlushText();                                     // typed text of the previous word goes first
       this.plStop();
-      this.ed = { L, setId, entries: [], sel: null, loading: true, error: '' };
-      this.edSuggest = null; this.edNewWord = ''; this._edUndo = [];
-      this._edLoad(L, setId, sel);
+      if (!this.ed) this._edReturnFocus = document.activeElement;
+      const token = ++this._edToken;
+      this.ed = { L, setId, token, entries: [], sel: null, loading: true, loadError: '', trackOrder: [], blacklist: [] };
+      this.edSuggest = null; this.edNewWord = '';
+      this._edEnqueue({ type: 'load', run: () => this._edLoadRun(L, setId, token, sel) });
+      this.$nextTick(() => { const el = document.querySelector('.ui-ed [data-autofocus]'); if (el) el.focus(); });
     },
-    edSwitch(L) {
-      if (!this.ed || this.ed.L === L) return;
-      this.openEditor(L, this.ed.setId);
-    },
+    edSwitch(L) { if (this.ed && this.ed.L !== L) this.openEditor(L, this.ed.setId); },
     closeEditor() {
       if (!this.ed) return;
+      this._edFlushText();
       this.plStop();
       this.ed = null; this.edSuggest = null; this.lib = null;
-      this._edQueue(() => this._edFlush());                    // whatever is still unsaved goes now
+      const back = this._edReturnFocus;
+      this._edReturnFocus = null;
+      if (back && document.contains(back)) this.$nextTick(() => back.focus());
     },
-    _edLoad(L, setId, sel) {
-      return this._edQueue(async () => {
-        await this._edFlush();
-        let letter, bl = [];
-        try {
-          const res = await fetch(`/api/sets/${encodeURIComponent(setId)}/letters/${encodeURIComponent(L)}`);
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          letter = await res.json();
-          bl = await fetch('/api/blacklist/' + encodeURIComponent(L)).then(r => r.json()).catch(() => []);
-        } catch (err) {
-          if (this.ed && this.ed.L === L && this.ed.setId === setId) {
-            this.ed.loading = false; this.ed.error = 'Konnte nicht laden: ' + err.message;
-            this.showToast(`${L} konnte nicht geladen werden`, 'error');
-          }
-          return;
-        }
-        if (!this.ed || this.ed.L !== L || this.ed.setId !== setId) return;   // closed or switched meanwhile
-        const entries = this._edCopy(letter.entries);
-        this._blacklist = Array.isArray(bl) ? bl : [];
-        this.ed.entries = entries;
-        this.ed.sel = entries.some(e => e.id === sel) ? sel : (entries[0] ? entries[0].id : null);
-        this.ed.loading = false;
-        const k = this._edKey(setId, L);
-        this.edSaveState = this._edPend[k] ? 'error' : 'saved';
-      });
-    },
-    // A change in the open letter: remember the letter as it is now, save it shortly.
-    // msg: an undoable step to announce (the toast offers "Rückgängig").
-    edChanged(msg) {
-      if (!this.ed || this.ed.loading) return;
-      const k = this._edKey(this.ed.setId, this.ed.L);
-      this._edPend[k] = { setId: this.ed.setId, L: this.ed.L, entries: this.ed.entries.map(e => this._edClean(e)) };
-      this.edSaveState = 'saving';
-      clearTimeout(this._edTimer);
-      this._edTimer = setTimeout(() => this._edQueue(() => this._edFlush()), 600);
-      if (msg) this.showToast(msg, 'success', true);
-    },
-    edSaveNow() { clearTimeout(this._edTimer); this._edQueue(() => this._edFlush()); },
-    async _edFlush() {                                          // queued only
-      clearTimeout(this._edTimer); this._edTimer = null;
-      for (const k of Object.keys(this._edPend)) {
-        const p = this._edPend[k];
-        delete this._edPend[k];
-        try {
-          const res = await fetch(`/api/sets/${encodeURIComponent(p.setId)}/letters/${encodeURIComponent(p.L)}`, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entries: p.entries }) });
-          const r = await res.json().catch(() => ({}));
-          if (!res.ok || !r.ok) throw new Error(r.error || 'HTTP ' + res.status);
-          this._edRetry = 0;
-          this._edFollowIds(p, r.ids || []);
-          this._edMirror(p);
-        } catch (err) {
-          if (!this._edPend[k]) this._edPend[k] = p;           // a newer state of this letter wins; else retry this one
-          this.edSaveState = 'error';
-          if (!this.ed) this.showToast(`${p.L} wurde nicht gespeichert: ${err.message}`, 'error');
-          this._edRetry = Math.min((this._edRetry || 0) + 1, 6);
-          clearTimeout(this._edTimer);
-          this._edTimer = setTimeout(() => this._edQueue(() => this._edFlush()), 2000 * this._edRetry);
-          return false;
-        }
+    async _edLoadRun(L, setId, token, sel) {
+      if (!this.ed || this.ed.token !== token) return 'drop';     // closed or switched before its turn
+      let data;
+      try {
+        const res = await this._api(this._edUrl(setId, L));
+        if (res.status === 404) { if (this.ed && this.ed.token === token) { this.ed.loading = false; this.ed.loadError = 'Dieses Set gibt es nicht mehr.'; } return 'drop'; }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        data = await res.json();
+      } catch (err) {
+        if (this.ed && this.ed.token === token) this.ed.loadError = 'Konnte nicht laden (' + err.message + '). Neuer Versuch …';
+        return false;
       }
-      if (!Object.keys(this._edPend).length) this.edSaveState = 'saved';
+      let bl;
+      try {
+        const res = await this._api('/api/blacklist/' + encodeURIComponent(L));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        bl = await res.json();
+      } catch (err) {
+        if (this.ed && this.ed.token === token) this.ed.loadError = 'Konnte nicht laden (' + err.message + '). Neuer Versuch …';
+        return false;
+      }
+      if (!this.ed || this.ed.token !== token) return true;
+      this.ed.blacklist = Array.isArray(bl) ? bl.filter(w => typeof w === 'string') : [];
+      this._edInstall(data, sel);
       return true;
     },
-    _edFollowIds(p, ids) {
-      // the server replaces an id that is invalid or taken twice; follow it in the open copy
-      ids.forEach((nid, i) => {
-        const old = p.entries[i] && p.entries[i].id;
-        if (!old || old === nid) return;
-        if (this.ed && this.ed.setId === p.setId && this.ed.L === p.L) {
-          const e = this.ed.entries.find(x => x.id === old);
-          if (e) { e.id = nid; if (this.ed.sel === old) this.ed.sel = nid; }
+    _edInstall(data, sel) {
+      const entries = this._edCopy(data.entries);
+      const keep = sel || this.ed.sel;
+      this.ed.entries = entries;
+      this.ed.trackOrder = Array.isArray(data.track_order) ? data.track_order : [];
+      this.ed.sel = entries.some(e => e.id === keep) ? keep : (entries[0] ? entries[0].id : null);
+      this.ed.loading = false; this.ed.loadError = '';
+      // a new sound for the word in focus plays once, only if the server's entry really has it
+      const p = this._edPendingPlay;
+      if (p && p.setId === this.ed.setId && p.L === this.ed.L) {
+        this._edPendingPlay = null;
+        const e = entries.find(x => x.id === p.entryId);
+        if (e && Date.now() < p.until && e.tracks[p.kind] && e.tracks[p.kind].file === p.file && this.ed.sel === e.id && !this.pl.seq) {
+          this.plPlay(p.file, e.tracks[p.kind].volume);
         }
-      });
+      }
     },
-    _edMirror(p) {
-      // the grid shows what was saved, without fetching the whole set again
-      if (p.setId !== this.activeSetId || !this.activeSet) return;
-      const letters = Object.assign({}, this.activeSet.letters || {});
-      letters[p.L] = { entries: JSON.parse(JSON.stringify(p.entries)) };
-      this.activeSet = Object.assign({}, this.activeSet, { letters });
+    // another page (or a job) changed the open letter: take the server's state when nothing of ours is on the way
+    _edRefreshSoon() {
+      clearTimeout(this._edRefreshTimer);
+      this._edRefreshTimer = setTimeout(() => {
+        if (!this.ed) return;
+        if (this.ed.loading) { this._edNeedRefresh = true; return; }   // after the load, once the queue drains
+        const { L, setId, token } = this.ed;
+        this._edEnqueue({ type: 'refresh', run: async () => {
+          if (!this.ed || this.ed.token !== token) return 'drop';
+          if (Object.keys(this._edDeb).length || this._edOps.length > 1) { this._edNeedRefresh = true; return 'drop'; }
+          try {
+            const res = await this._api(this._edUrl(setId, L));
+            if (!res.ok) return 'drop';
+            const data = await res.json();
+            if (this.ed && this.ed.token === token && !Object.keys(this._edDeb).length && this._edOps.length <= 1) this._edInstall(data);
+            else this._edNeedRefresh = true;
+          } catch {}
+          return 'drop';
+        } });
+      }, 400);
     },
-    edSnap() {
+
+    // ── edits ──
+    // text: typed into the working copy (x-model), sent 500 ms after the last key
+    edText(e, field, now) {
       if (!this.ed || this.ed.loading) return;
-      this._edUndo.push({ L: this.ed.L, setId: this.ed.setId, sel: this.ed.sel, entries: JSON.stringify(this.ed.entries) });
+      const { setId, L } = this.ed, key = [setId, L, e.id, field].join('|');
+      const send = () => {
+        delete this._edDeb[key];
+        const parts = field.split('.');
+        const value = parts.length === 3 ? e.tracks[parts[1]].prompt : e[field];
+        const body = parts.length === 3 ? { tracks: { [parts[1]]: { prompt: value } } } : { [field]: value };
+        this._edPatchOp(setId, L, e.id, body);
+      };
+      if (this._edDeb[key]) clearTimeout(this._edDeb[key].timer);
+      if (!this._edPaused) this.edSaveState = 'saving';      // a paused queue keeps "Nicht gespeichert · Erneut"
+      this._edDeb[key] = { send, timer: setTimeout(send, now ? 0 : 500) };
+    },
+    _edFlushText() {
+      for (const d of Object.values(this._edDeb)) { clearTimeout(d.timer); d.send(); }
+    },
+    // a discrete change: apply here, send, and (with a label) offer undo
+    edSet(e, body, label) {
+      if (!this.ed || this.ed.loading) return;
+      const { setId, L, token } = this.ed;
+      const inverse = this._edInverse(e, body);
+      this._edApplyLocal(e, body);
+      this._edPatchOp(setId, L, e.id, body);
+      if (label) {
+        const id = e.id;
+        this._edPushUndo(() => {
+          const cur = this._edOpenEntry(setId, L, id);
+          if (cur) this._edApplyLocal(cur, inverse);
+          this._edPatchOp(setId, L, id, Object.assign({}, inverse, { restore: true }));
+        });
+        this.showToast(label, 'success', true);
+      }
+    },
+    _edInverse(e, body) {
+      const inv = {};
+      for (const k of ['word', 'enabled', 'image', '_imageDesc']) if (k in body) inv[k] = e[k];
+      if (body.tracks) {
+        inv.tracks = {};
+        for (const [k, t] of Object.entries(body.tracks)) {
+          inv.tracks[k] = {};
+          for (const f of Object.keys(t)) inv.tracks[k][f] = e.tracks[k][f];
+        }
+      }
+      return inv;
+    },
+    _edApplyLocal(e, body) {
+      for (const k of ['word', 'enabled', 'image', '_imageDesc']) if (k in body) e[k] = body[k];
+      for (const [k, t] of Object.entries(body.tracks || {})) Object.assign(e.tracks[k], t);
+    },
+    // an undo step knows its set, letter and entry: it works with the editor closed or on another letter
+    _edPushUndo(fn) {
+      this._edUndo.push({ fn });
       if (this._edUndo.length > 40) this._edUndo.shift();
     },
     edUndo() {
       const u = this._edUndo.pop();
-      this.toast = ''; this.toastUndo = false;
-      if (!u || !this.ed || this.ed.loading || this.ed.L !== u.L || this.ed.setId !== u.setId) return;
-      this.ed.entries = JSON.parse(u.entries);
-      this.ed.sel = this.ed.entries.some(e => e.id === u.sel) ? u.sel : (this.ed.entries[0] ? this.ed.entries[0].id : null);
-      this.edChanged();
+      this.toast = ''; this.toastUndo = false; this._undoUntil = 0;
+      if (!u) return;
+      u.fn();
+      if (this.ed) this._edNeedRefresh = true;               // once the undo is written: show what the server has
+    },
+    _edOpen(setId, L) { return !!(this.ed && !this.ed.loading && this.ed.setId === setId && this.ed.L === L); },
+    _edOpenEntry(setId, L, id) { return this._edOpen(setId, L) ? (this.ed.entries.find(x => x.id === id) || null) : null; },
+    // an explicit choice for a slot: a job still running for it only fills the library now
+    _edChoose(e, k) {
+      const key = this._slotKey(this.ed.setId, this.ed.L, e.id, k);
+      const s = this.edSlots[key];
+      if (s && (s.state === 'run' || s.state === 'cand') && s.job) {   // running: detach; offered: reviewed
+        const job = s.job;
+        this._edEnqueue({ type: 'detach', run: this._edWrite('POST', `/api/jobs/${encodeURIComponent(job)}/detach`, {}) });
+      }
+      this._setSlot(key, null);
+      this._slotRev[key] = (this._slotRev[key] || 0) + 1;
+    },
+    _edFileBody(k, f) { return k === 'IMG' ? { image: f } : { tracks: { [k]: { file: f, enabled: true } } }; },
+    edUnset(e, k) {
+      this._edChoose(e, k);
+      this.edSet(e, this._edFileBody(k, ''), k === 'IMG' ? 'Bild entfernt' : this.kindName(k) + ' entfernt');
+    },
+    edAddWord() {
+      if (!this.ed || this.ed.loading) return;
+      const w = this.edNewWord.trim();
+      if (!w) return;
+      const dup = this.ed.entries.find(e => e.word.trim().toLowerCase() === w.toLowerCase());
+      if (dup) { this.ed.sel = dup.id; this.edNewWord = ''; this.showToast(`„${w}“ gibt es schon`); return; }
+      const e = this._edCopy([{ id: this._newId(), word: w, image: '', enabled: true, tracks: {} }])[0];
+      this._edAdd(e, this.ed.entries.length, `„${w}“ hinzugefügt`);
+      this.edNewWord = '';
+    },
+    _edAdd(e, index, label, restore) {
+      const { setId, L } = this.ed;
+      this.ed.entries.splice(index, 0, e);
+      this.ed.sel = e.id;
+      this._edAddOp(setId, L, e, index, restore);
+      if (label) {
+        const id = e.id;
+        this._edPushUndo(() => this._edDelete(setId, L, id));
+        this.showToast(label, 'success', true);
+      }
+    },
+    _edAddOp(setId, L, e, index, restore) {
+      const body = Object.assign(this._edEntryBody(e), { index }, restore ? { restore: true } : {});
+      this._edEnqueue({ type: 'add', run: this._edWrite('POST', this._edUrl(setId, L, '/entries'), body, r => {
+        // the server keeps the id unless another entry has it: follow it
+        const cur = r && r.id !== e.id ? this._edOpenEntry(setId, L, e.id) : null;
+        if (cur) { if (this.ed.sel === cur.id) this.ed.sel = r.id; cur.id = r.id; }
+      }) });
+    },
+    _edDelete(setId, L, id) {
+      let i = -1;
+      if (this._edOpen(setId, L)) {
+        i = this.ed.entries.findIndex(x => x.id === id);
+        if (i >= 0) {
+          this.ed.entries.splice(i, 1);
+          const next = this.ed.entries[Math.min(i, this.ed.entries.length - 1)];
+          if (this.ed.sel === id) this.ed.sel = next ? next.id : null;
+        }
+      }
+      this._edEnqueue({ type: 'del', run: this._edWrite('DELETE', this._edUrl(setId, L, '/entries/id/' + encodeURIComponent(id)), undefined, () => {}) });
+      return i;
+    },
+    _edRemoveLocal(id, setId, L) { return this._edDelete(setId, L, id); },
+    edRemove(e) {
+      const { setId, L } = this.ed;
+      const snapshot = JSON.parse(JSON.stringify(e));
+      const i = this._edDelete(setId, L, e.id);
+      this._edPushUndo(() => {
+        const back = this._edCopy([snapshot])[0];
+        const at = Math.max(0, i);
+        if (this._edOpen(setId, L)) {
+          this.ed.entries.splice(Math.min(at, this.ed.entries.length), 0, back);
+          this.ed.sel = back.id;
+        }
+        this._edAddOp(setId, L, back, at, true);
+      });
+      this.showToast(`„${e.word}“ entfernt`, 'success', true);
+    },
+    async _edBlacklistPut(L, words) {
+      const res = await this._api('/api/blacklist/' + encodeURIComponent(L), { method: 'PUT', json: { words } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+    },
+    edReject(e) {
+      if (!this.ed || this.ed.loading) return;
+      const { setId, L } = this.ed, w = e.word.trim();
+      const words = w && !this.ed.blacklist.includes(w) ? this.ed.blacklist.concat([w]) : this.ed.blacklist;
+      this.ed.blacklist = words;
+      // the blacklist first, then the entry: if the first fails, the queue stops before the second
+      this._edEnqueue({ type: 'blacklist', run: async () => { try { await this._edBlacklistPut(L, words); return true; } catch { return false; } } });
+      this._edRemoveLocal(e.id, setId, L);
+      this.showToast(`„${w}“ abgelehnt: wird nicht mehr vorgeschlagen`);
+    },
+    edUnblacklist(w) {
+      if (!this.ed || this.ed.loading) return;
+      const L = this.ed.L, words = this.ed.blacklist.filter(x => x !== w);
+      this.ed.blacklist = words;
+      this._edEnqueue({ type: 'blacklist', run: async () => { try { await this._edBlacklistPut(L, words); return true; } catch { return false; } } });
+    },
+    edArchive(e) {
+      if (!confirm(`„${e.word}“ archivieren? Bild und Töne, die sonst nirgends vorkommen, kommen ins Archiv.`)) return;
+      const { setId, L } = this.ed, id = e.id, word = e.word;
+      e._archiving = true;
+      this._edEnqueue({ type: 'archive', run: async () => {
+        let res;
+        try { res = await this._api(this._edUrl(setId, L, '/entries/' + encodeURIComponent(id) + '/archive'), { method: 'POST', json: {} }); } catch { return false; }
+        const r = await res.json().catch(() => null);
+        const gone = res.status === 404 && r && r.error === 'entry not found';
+        if ((res.ok && r && r.ok) || gone) {
+          const i = this.ed && this.ed.setId === setId && this.ed.L === L ? this.ed.entries.findIndex(x => x.id === id) : -1;
+          if (i >= 0) {
+            this.ed.entries.splice(i, 1);
+            const next = this.ed.entries[Math.min(i, this.ed.entries.length - 1)];
+            if (this.ed.sel === id) this.ed.sel = next ? next.id : null;
+          }
+          this.showToast(`„${word}“ archiviert` + (r && r.kept && r.kept.length ? ` (${r.kept.length} Datei(en) werden noch woanders benutzt und bleiben)` : ''));
+          this._refreshLists();
+          return true;
+        }
+        if (res.status >= 400 && res.status < 500) { e._archiving = false; this.showToast('Archivieren abgelehnt: ' + ((r && r.error) || res.status), 'error'); return 'drop'; }
+        return false;
+      } });
     },
     edSummary() {
-      if (!this.ed || this.ed.loading) return this.ed && this.ed.error ? this.ed.error : 'Lädt …';
+      if (!this.ed) return '';
+      if (this.ed.loading) return this.ed.loadError || 'Lädt …';
       const n = this.ed.entries.length;
       if (!n) return 'Noch keine Wörter';
       const miss = this.edMissingVoices().length;
-      return (n === 1 ? '1 Wort' : n + ' Wörter') + (miss ? ` · ${miss} ohne Stimme` : ' · Stimmen vollständig');
+      return (n === 1 ? '1 Wort' : n + ' Wörter') + (miss ? ` · ${miss} ohne Stimme` : this.edKinds().includes('DE') ? ' · Stimmen vollständig' : '');
     },
     edMissingVoices() {
-      if (!this.ed || this.ed.loading || !this.setKinds().includes('DE')) return [];
+      if (!this.ed || this.ed.loading || !this.edKinds().includes('DE')) return [];
       return this.ed.entries.filter(e => e.word.trim() && !e.tracks.DE.file && this.edSlot(e, 'DE').state !== 'run');
     },
     edGenMissingVoices() { for (const e of this.edMissingVoices()) this.edGen(e, 'DE'); },
     edRowStatus(e) {
+      if (e._archiving) return 'wird archiviert …';
       if (!e.enabled) return 'ausgeschaltet';
-      const kinds = ['IMG'].concat(this.setKinds());
+      const kinds = ['IMG'].concat(this.edKinds());
       const run = kinds.find(k => this.edSlot(e, k).state === 'run');
       if (run) return this.kindName(run) + ' wird erzeugt …';
       if (kinds.some(k => this.edSlot(e, k).state === 'cand')) return 'Neue Version zum Prüfen';
@@ -3770,7 +4038,7 @@ function funkeykid() {
       return has ? k.toLowerCase() : 'miss';
     },
     edSlotSub(e, k) {
-      const kinds = this.setKinds();
+      const kinds = this.edKinds();
       if (!kinds.includes(k)) return 'Im Set aus';
       const pos = kinds.indexOf(k) + 1;
       const order = pos === 1 ? 'spielt zuerst' : `spielt als ${pos}.`;
@@ -3779,111 +4047,51 @@ function funkeykid() {
       return (said ? `sagt „${said}“ · ` : '') + order;
     },
     edHasFiles(e) { return !!e.image || this.trackKinds.some(k => e.tracks[k] && e.tracks[k].file); },
-    edAddWord() {
-      if (!this.ed || this.ed.loading) return;
-      const w = this.edNewWord.trim();
-      if (!w) return;
-      const dup = this.ed.entries.find(e => e.word.trim().toLowerCase() === w.toLowerCase());
-      if (dup) { this.ed.sel = dup.id; this.edNewWord = ''; this.showToast(`„${w}“ gibt es schon`); return; }
-      this.edSnap();
-      const e = this._edCopy([{ id: this._newId(), word: w, image: '', enabled: true, tracks: {} }])[0];
-      this.ed.entries.push(e);
-      this.ed.sel = e.id; this.edNewWord = '';
-      this.edChanged(`„${w}“ hinzugefügt`);
-    },
-    edRemove(e) {
-      const i = this.ed.entries.indexOf(e);
-      if (i < 0) return;
-      this.edSnap();
-      this.ed.entries.splice(i, 1);
-      const next = this.ed.entries[Math.min(i, this.ed.entries.length - 1)];
-      this.ed.sel = next ? next.id : null;
-      this.edChanged(`„${e.word}“ entfernt`);
-    },
-    async _edBlacklist(L, words) {
-      this._blacklist = words;
-      try {
-        await fetch('/api/blacklist/' + encodeURIComponent(L), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ words }) });
-      } catch (err) { this.showToast('Ablehnen nicht gespeichert: ' + err.message, 'error'); }
-    },
-    async edReject(e) {
-      const L = this.ed.L, w = e.word.trim();
-      if (w && !this._blacklist.includes(w)) await this._edBlacklist(L, this._blacklist.concat([w]));
-      if (!this.ed || this.ed.L !== L) return;
-      const i = this.ed.entries.indexOf(e);
-      if (i < 0) return;
-      this.ed.entries.splice(i, 1);
-      const next = this.ed.entries[Math.min(i, this.ed.entries.length - 1)];
-      this.ed.sel = next ? next.id : null;
-      this.edChanged();
-      this.showToast(`„${w}“ abgelehnt: wird nicht mehr vorgeschlagen`);
-    },
-    edUnblacklist(w) { if (this.ed) this._edBlacklist(this.ed.L, this._blacklist.filter(x => x !== w)); },
-    async edArchive(e) {
-      if (!confirm(`„${e.word}“ archivieren? Bild und Töne kommen ins Archiv und sind dann nicht mehr in der Bibliothek.`)) return;
-      const L = this.ed.L, setId = this.ed.setId;
-      const files = [];
-      if (e.image) files.push({ type: 'image', filename: e.image });
-      for (const k of this.trackKinds) if (e.tracks[k] && e.tracks[k].file) files.push({ type: 'sound', filename: e.tracks[k].file });
-      for (const f of files) {
-        try { await fetch('/api/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f) }); } catch {}
-      }
-      if (!this.ed || this.ed.L !== L || this.ed.setId !== setId) return;
-      const i = this.ed.entries.indexOf(e);
-      if (i >= 0) this.ed.entries.splice(i, 1);
-      const next = this.ed.entries[Math.min(Math.max(i, 0), this.ed.entries.length - 1)];
-      this.ed.sel = next ? next.id : null;
-      this.edChanged();
-      this.showToast(`„${e.word}“ archiviert`);
-      this._refreshLists();
-    },
-    edUnset(e, k) {
-      this.edSnap();
-      e.tracks[k].file = '';
-      this.edChanged(this.kindName(k) + ' entfernt');
-    },
 
     // ── suggestions ──
     async edRunSuggest(persist) {
       if (!this.ed || this.ed.loading) return;
-      const L = this.ed.L, setId = this.ed.setId;
+      const { L, token } = this.ed;
       const prompt = (this._suggestPrompt || '').trim();
       if (persist && prompt) {
         if (!this.settings.ai_prompts) this.settings.ai_prompts = {};
         this.settings.ai_prompts.suggest = prompt;
-        try { await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.settings) }); } catch {}
+        try {
+          const res = await this._api('/api/settings', { method: 'PUT', json: this.settings });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+        } catch (err) { this.showToast('Anweisung nicht gespeichert: ' + err.message, 'error'); }
       }
-      this.edSuggest = { busy: true };
+      this.edSuggest = { busy: true, token };
       let r;
       try {
-        const res = await fetch('/api/suggest-word', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(prompt ? { letter: L, user_prompt: prompt } : { letter: L }) });
+        const res = await this._api('/api/suggest-word', { method: 'POST', json: prompt ? { letter: L, user_prompt: prompt } : { letter: L } });
         r = await res.json().catch(() => ({}));
       } catch { r = { error: 'Keine Verbindung zum Server.' }; }
-      if (!this.ed || this.ed.L !== L || this.ed.setId !== setId) return;
-      this.edSuggest = r && r.word ? { busy: false, data: r } : { busy: false, error: (r && r.error) || 'Kein Vorschlag' };
+      if (!this.ed || this.ed.token !== token || !this.edSuggest || this.edSuggest.token !== token) return;
+      this.edSuggest = r && r.word ? { busy: false, token, data: r } : { busy: false, token, error: (r && r.error) || 'Kein Vorschlag' };
     },
     edAcceptSuggest() {
-      if (!this.ed || !this.edSuggest || !this.edSuggest.data) return;
+      if (!this.ed || this.ed.loading || !this.edSuggest || !this.edSuggest.data) return;
       const d = this.edSuggest.data;
       this.edSuggest = null;
       const w = (d.word || '').trim();
       if (!w) return;
-      this.edSnap();
       const e = this._edCopy([{ id: this._newId(), word: w, image: '', enabled: true, _imageDesc: d.image_description || '', tracks: {} }])[0];
       if (d.sound_description) e.tracks.FX.prompt = d.sound_description;
       if (d.word_en) e.tracks.EN.prompt = d.word_en;
-      this.ed.entries.push(e);
-      this.ed.sel = e.id;
-      this.edChanged(`„${w}“ hinzugefügt`);
+      this._edAdd(e, this.ed.entries.length, `„${w}“ hinzugefügt`);
       // picture and every sound the set plays, at once; each lands on its slot when it is done
       this.edGen(e, 'IMG');
-      for (const k of this.setKinds()) if (k !== 'EN' || e.tracks.EN.prompt) this.edGen(e, k);
+      for (const k of this.edKinds()) if (k !== 'EN' || e.tracks.EN.prompt) this.edGen(e, k);
     },
-    async edRejectSuggest() {
+    edRejectSuggest() {
       if (!this.ed || !this.edSuggest || !this.edSuggest.data) return;
-      const w = this.edSuggest.data.word;
-      if (w && !this._blacklist.includes(w)) await this._edBlacklist(this.ed.L, this._blacklist.concat([w]));
+      const w = this.edSuggest.data.word, L = this.ed.L;
+      if (w && !this.ed.blacklist.includes(w)) {
+        const words = this.ed.blacklist.concat([w]);
+        this.ed.blacklist = words;
+        this._edEnqueue({ type: 'blacklist', run: async () => { try { await this._edBlacklistPut(L, words); return true; } catch { return false; } } });
+      }
       this.edRunSuggest(false);
     },
 
@@ -3900,105 +4108,121 @@ function funkeykid() {
     },
     edClearSlot(e, k) { this._setSlot(this._slotKey(this.ed.setId, this.ed.L, e.id, k), null); },
     edElapsed(s) { return s && s.t0 ? Math.max(0, Math.floor((this.clockNow - s.t0) / 1000)) + ' s' : ''; },
-    async edGen(e, k) {
+    edGen(e, k) {
       if (!this.ed || this.ed.loading || !e) return;
       const word = e.word.trim();
       if (!word) return;
-      const setId = this.ed.setId, L = this.ed.L, key = this._slotKey(setId, L, e.id, k);
+      const { setId, L } = this.ed, key = this._slotKey(setId, L, e.id, k);
       if ((this.edSlots[key] || {}).state === 'run') return;
       if (k === 'EN' && !(e.tracks.EN.prompt || '').trim()) {
         this._setSlot(key, { state: 'err', msg: 'Trag zuerst unter „Gesprochener Text“ das englische Wort ein.', detail: '' });
         return;
       }
-      const had = k === 'IMG' ? !!e.image : !!e.tracks[k].file;
-      const t0 = Date.now();
-      this._setSlot(key, { state: 'run', t0, job: null });
-      let r;
-      try {
-        let res;
-        if (k === 'IMG') {
-          res = await fetch('/api/generate/image', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ word, description: (e._imageDesc || '').trim() || word, filename: `${this.fileSlug(L)}_${this.fileSlug(word)}.png` }) });
-        } else {
-          const body = { kind: k, word, slug_prefix: this.fileSlug(L) };
-          if ((e.tracks[k].prompt || '').trim()) body.prompt = e.tracks[k].prompt.trim();
-          res = await fetch('/api/generate/track', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        }
-        r = await res.json().catch(() => ({}));
-      } catch { r = { error: 'Keine Verbindung zum Server.' }; }
-      if (!r || !r.ok || !r.job_id) {
-        if ((this.edSlots[key] || {}).t0 === t0) this._setSlot(key, { state: 'err', msg: (r && r.error) || 'Konnte nicht starten.', detail: '' });
-        return;
+      this._edFlushText();                                     // the prompt as typed travels first
+      const prev = this.edSlots[key];
+      if (prev && prev.state === 'cand' && prev.job) {        // "Nochmal": the offered version counts as reviewed
+        const old = prev.job;
+        this._edEnqueue({ type: 'detach', run: this._edWrite('POST', `/api/jobs/${encodeURIComponent(old)}/detach`, {}) });
       }
-      this.edJobs[r.job_id] = { setId, L, entryId: e.id, kind: k, had, word, key };
-      if (!this.jobSeen[r.job_id]) this.jobSeen[r.job_id] = t0;
-      if ((this.edSlots[key] || {}).t0 === t0) this._setSlot(key, { state: 'run', t0, job: r.job_id });
-      const known = this.genJobs[r.job_id];                   // it may have ended before this response
-      if (known && (known.status === 'done' || known.status === 'error')) this._edJobEnded(known);
+      const t0 = Date.now(), rev = (this._slotRev[key] || 0) + 1;
+      this._slotRev[key] = rev;
+      this._setSlot(key, { state: 'run', t0, job: null });
+      const target = { set_id: setId, letter: L, entry_id: e.id };
+      const prompt = k === 'IMG' ? '' : (e.tracks[k].prompt || '').trim();
+      const desc = (e._imageDesc || '').trim();
+      // queued: after the entry and its prompt are on the server (a new word's add comes first)
+      this._edEnqueue({ type: 'gen', run: async () => {
+        if (this._slotRev[key] !== rev) return 'drop';        // the parent chose something else meanwhile
+        let res, r;
+        try {
+          if (k === 'IMG') {
+            res = await this._api('/api/generate/image', { method: 'POST', json: { word, description: desc || word, filename: `${this.fileSlug(L)}_${this.fileSlug(word)}.png`, target } });
+          } else {
+            const body = { kind: k, word, slug_prefix: this.fileSlug(L), target };
+            if (prompt) body.prompt = prompt;
+            res = await this._api('/api/generate/track', { method: 'POST', json: body });
+          }
+          r = await res.json().catch(() => ({}));
+        } catch { r = { error: 'Keine Verbindung zum Server.' }; }
+        if (!r || !r.ok || !r.job_id) {                        // never retried: a lost answer could mean a job already runs
+          if (this._slotRev[key] === rev) this._setSlot(key, { state: 'err', msg: (r && r.error) || 'Konnte nicht starten.', detail: '' });
+          return 'drop';
+        }
+        if (this.edJobs[r.job_id] && this._slotRev[key] === this.edJobs[r.job_id].rev) {
+          return true;                                           // adopted from its first event: already in place
+        }
+        this.edJobs[r.job_id] = { setId, L, entryId: e.id, kind: k, word, key, rev };
+        if (!this.jobSeen[r.job_id]) this.jobSeen[r.job_id] = t0;
+        if (this._slotRev[key] === rev) this._setSlot(key, { state: 'run', t0, job: r.job_id });
+        else this._edEnqueue({ type: 'detach', run: this._edWrite('POST', `/api/jobs/${encodeURIComponent(r.job_id)}/detach`, {}) });
+        const known = this.genJobs[r.job_id];                 // it may have ended before this answer
+        if (known) this._edJobEnded(known);
+        return true;
+      } });
     },
     _edJobEnded(d) {
       const j = this.edJobs[d.id];
-      if (!j || j.ended) return;
+      if (!j || j.ended || (d.status !== 'done' && d.status !== 'error')) return;
       j.ended = true;
       const slot = this.edSlots[j.key];
-      const mine = !!slot && slot.state === 'run' && slot.job === d.id;   // a later run of the slot wins
+      const mine = !!slot && slot.state === 'run' && slot.job === d.id && this._slotRev[j.key] === j.rev;
       if (d.status === 'error') {
         if (mine) this._setSlot(j.key, { state: 'err', msg: d.error || 'Unbekannter Fehler', detail: d.error_detail || '' });
         return;
       }
-      if (!d.filename) return;
       this._refreshLists();
-      if (j.had) {                                             // replacing: the parent compares and chooses
-        if (mine) this._setSlot(j.key, { state: 'cand', cand: d.filename });
+      if (d.applied) {                                         // the server put it on the entry
+        if (mine) this._setSlot(j.key, null);
+        const open = this.ed && this.ed.setId === j.setId && this.ed.L === j.L;
+        if (open) {
+          // never written into the local copy: the entry may have changed since (another page removed
+          // the file); the server's entry decides, read after this page's own writes
+          if (j.kind !== 'IMG' && this._slotRev[j.key] === j.rev) {
+            this._edPendingPlay = { setId: j.setId, L: j.L, entryId: j.entryId, kind: j.kind, file: d.filename, until: Date.now() + 8000 };
+          }
+          this._edRefreshSoon();
+        } else if (mine) {
+          this.showToast(`${this.kindName(j.kind)} für „${j.word}“ ist da`);
+        }
         return;
       }
-      this._edQueue(async () => {
-        const res = await this._edApply(j, d.filename);
-        const still = this.edSlots[j.key];
-        const stillMine = !!still && still.state === 'run' && still.job === d.id;
-        if (res === 'occupied') { if (stillMine) this._setSlot(j.key, { state: 'cand', cand: d.filename }); return; }
-        if (res === 'failed') { if (stillMine) this._setSlot(j.key, { state: 'err', msg: 'Die Datei ist fertig, konnte aber nicht eingetragen werden. Du findest sie in der Bibliothek.', detail: d.filename }); return; }
-        if (stillMine) this._setSlot(j.key, null);
-        if (res === 'local' && j.kind !== 'IMG' && this.ed && this.ed.sel === j.entryId && !this.pl.seq) {
-          const e = this.ed.entries.find(x => x.id === j.entryId);
-          if (e) this.plPlay(d.filename, e.tracks[j.kind].volume);
-        }
-        if (res === 'applied') this.showToast(`${this.kindName(j.kind)} für „${j.word}“ ist da`);
-      });
+      if (mine) this._setSlot(j.key, { state: 'cand', cand: d.filename, job: d.id });   // the slot had a file: compare
     },
-    // queued: put a finished file on its entry if that slot is still empty
-    async _edApply(j, file) {
-      if (this.ed && !this.ed.loading && this.ed.setId === j.setId && this.ed.L === j.L) {
-        const e = this.ed.entries.find(x => x.id === j.entryId);
-        if (!e) return 'gone';
-        const cur = j.kind === 'IMG' ? e.image : e.tracks[j.kind].file;
-        if (cur) return 'occupied';
-        if (j.kind === 'IMG') e.image = file;
-        else { e.tracks[j.kind].file = file; e.tracks[j.kind].enabled = true; }
-        this.edChanged();
-        return 'local';
-      }
-      await this._edFlush();                                   // that letter's own saves first
-      try {
-        const res = await fetch(`/api/sets/${encodeURIComponent(j.setId)}/letters/${encodeURIComponent(j.L)}/entries/${encodeURIComponent(j.entryId)}/media`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: j.kind, file, if_empty: true }) });
-        const r = await res.json().catch(() => ({}));
-        if (res.status === 404 && r.error === 'entry not found') return 'gone';
-        if (!res.ok) return 'failed';
-        return r.applied ? 'applied' : 'occupied';
-      } catch { return 'failed'; }
+    // a job this page did not start (another page, or before a reload) takes its slot here too,
+    // if it still runs or waits for review; true if it was adopted
+    _edAdopt(j) {
+      const t = j && j.target;
+      if (!t || this.edJobs[j.id]) return false;
+      const ended = j.status === 'done' || j.status === 'error';
+      if (ended && !(j.status === 'done' && j.applied === false)) return false;
+      const key = this._slotKey(t.set_id, t.letter, t.entry_id, t.kind);
+      const cur = this.edSlots[key];
+      if (cur && cur.state === 'run' && !cur.job) return false;   // this page is starting its own job here: its answer registers it
+      const rev = (this._slotRev[key] || 0) + 1;
+      this._slotRev[key] = rev;
+      this.edJobs[j.id] = { setId: t.set_id, L: t.letter, entryId: t.entry_id, kind: t.kind, word: j.word || '', key, rev };
+      if (!this.jobSeen[j.id]) this.jobSeen[j.id] = Date.now();
+      this._setSlot(key, { state: 'run', t0: this.jobSeen[j.id], job: j.id });
+      return true;
+    },
+    // reviewed or detached on another page: its "current vs new" goes away here too
+    _edJobDetached(d) {
+      const j = this.edJobs[d.id];
+      if (!j || d.target) return;
+      const s = this.edSlots[j.key];
+      if (s && s.job === d.id && (s.state === 'cand' || (s.state === 'run' && (d.status === 'done' || d.status === 'error')))) this._setSlot(j.key, null);
     },
     edTake(e, k) {
       const s = this.edSlot(e, k);
       if (s.state !== 'cand' || !s.cand) return;
-      this.edSnap();
-      if (k === 'IMG') e.image = s.cand;
-      else { e.tracks[k].file = s.cand; e.tracks[k].enabled = true; }
-      this.edClearSlot(e, k);
+      const f = s.cand;
+      this._edChoose(e, k);
       this.plStop();
-      this.edChanged('Neue Version übernommen');
+      this.edSet(e, this._edFileBody(k, f), 'Neue Version übernommen');
     },
     edDiscard(e, k) {
+      const s = this.edSlot(e, k);
+      if (s.job) this._edEnqueue({ type: 'detach', run: this._edWrite('POST', `/api/jobs/${encodeURIComponent(s.job)}/detach`, {}) });
       this.edClearSlot(e, k);
       this.plStop();
       this.showToast('Verworfen: die neue Datei bleibt in der Bibliothek');
@@ -4012,7 +4236,19 @@ function funkeykid() {
     },
 
     // ── library + upload ──
-    libOpen(e, k) { this.plStop(); this.lib = { kind: k, entryId: e.id, q: '' }; this._refreshLists(); },
+    libOpen(e, k) {
+      this.plStop();
+      this._libReturn = document.activeElement;
+      this.lib = { kind: k, entryId: e.id, q: '', token: this.ed.token };
+      this._refreshLists();
+    },
+    libClose() {
+      this.lib = null;
+      this.plStop();
+      const back = this._libReturn;
+      this._libReturn = null;
+      if (back && document.contains(back)) this.$nextTick(() => back.focus());
+    },
     libItems() {
       if (!this.lib) return [];
       const list = this.lib.kind === 'IMG' ? this.images : this.sounds;
@@ -4024,38 +4260,33 @@ function funkeykid() {
     },
     libPick(f) {
       const l = this.lib;
-      this.lib = null;
-      this.plStop();
-      if (!l || !this.ed || this.ed.loading) return;
+      this.libClose();
+      if (!l || !this.ed || this.ed.loading || this.ed.token !== l.token) return;
       const e = this.ed.entries.find(x => x.id === l.entryId);
       if (!e) return;
-      this.edSnap();
-      if (l.kind === 'IMG') e.image = f;
-      else { e.tracks[l.kind].file = f; e.tracks[l.kind].enabled = true; }
-      this._setSlot(this._slotKey(this.ed.setId, this.ed.L, e.id, l.kind), null);
-      this.edChanged(`${this.kindName(l.kind)}: ${f}`);
+      this._edChoose(e, l.kind);
+      this.edSet(e, this._edFileBody(l.kind, f), `${this.kindName(l.kind)}: ${f}`);
     },
     async edUpload(ev, e, k) {
       const file = ev.target.files && ev.target.files[0];
       ev.target.value = '';
-      if (!file || !this.ed) return;
-      const setId = this.ed.setId, L = this.ed.L, id = e.id;
+      if (!file || !this.ed || this.ed.loading) return;
+      const { setId, L, token } = this.ed, id = e.id, key = this._slotKey(setId, L, id, k);
+      this._edChoose(e, k);
+      const rev = this._slotRev[key];
       const form = new FormData();
       form.append('file', file);
       this.showToast('Lädt hoch …');
+      let r;
       try {
-        const res = await fetch(`/api/${k === 'IMG' ? 'images' : 'sounds'}/upload`, { method: 'POST', body: form });
-        const r = await res.json().catch(() => ({}));
+        const res = await fetch(`/api/${k === 'IMG' ? 'images' : 'sounds'}/upload`, { method: 'POST', body: form, headers: { 'X-FK-Client': FK_CLIENT } });
+        r = await res.json().catch(() => ({}));
         if (!res.ok || !r.file) { this.showToast(r.error || 'Hochladen fehlgeschlagen', 'error'); return; }
-        this._refreshLists();
-        if (!this.ed || this.ed.loading || this.ed.setId !== setId || this.ed.L !== L) { this.showToast(`Hochgeladen als ${r.file} (in der Bibliothek)`); return; }
-        const cur = this.ed.entries.find(x => x.id === id);
-        if (!cur) return;
-        this.edSnap();
-        if (k === 'IMG') cur.image = r.file;
-        else { cur.tracks[k].file = r.file; cur.tracks[k].enabled = true; }
-        this.edChanged(`Hochgeladen: ${r.file}`);
-      } catch (err) { this.showToast('Hochladen fehlgeschlagen: ' + err.message, 'error'); }
+      } catch (err) { this.showToast('Hochladen fehlgeschlagen: ' + err.message, 'error'); return; }
+      this._refreshLists();
+      const cur = this.ed && this.ed.token === token && !this.ed.loading ? this.ed.entries.find(x => x.id === id) : null;
+      if (!cur || this._slotRev[key] !== rev) { this.showToast(`Hochgeladen als ${r.file}: liegt in der Bibliothek`); return; }   // a newer choice wins
+      this.edSet(cur, this._edFileBody(k, r.file), `Hochgeladen: ${r.file}`);
     },
 
     // ── listening ──
@@ -4084,7 +4315,8 @@ function funkeykid() {
       this.plStop(keepSeq);
       if (!f) return;
       const a = new Audio('/sounds/' + encodeURIComponent(f));
-      a.volume = Math.max(0, Math.min(1, (parseInt(vol, 10) || 100) / 100));
+      const v = parseInt(vol, 10);
+      a.volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v / 100)) : 1;   // 0 % is silent
       this._plAudio = a; this.pl.f = f; this.pl.frac = 0;
       a.addEventListener('timeupdate', () => { if (this._plAudio === a && a.duration) this.pl.frac = a.currentTime / a.duration; });
       a.addEventListener('ended', () => { if (this._plAudio !== a) return; this._plAudio = null; this.pl.f = null; this.pl.frac = 0; if (onEnd) onEnd(); });
@@ -4099,7 +4331,7 @@ function funkeykid() {
     edPlaySeq(e) {
       if (this.pl.seq) { this.plStop(); return; }
       if (!e) return;
-      const ks = this.setKinds().filter(k => e.tracks[k] && e.tracks[k].file && e.tracks[k].enabled !== false);
+      const ks = this.edKinds().filter(k => e.tracks[k] && e.tracks[k].file && e.tracks[k].enabled !== false);
       if (!ks.length) { this.showToast('Noch nichts zum Abspielen'); return; }
       const run = ++this._plRun;
       this.pl.seq = true;
@@ -4158,25 +4390,44 @@ function funkeykid() {
       this.acHidden = h;
       if (!this.acJobs().length) this.ui.acOpen = false;
     },
-    async loadJobs() {
+    async loadJobs(initial) {
       try {
-        const list = await fetch('/api/jobs').then(r => r.json());
-        const map = {}, hidden = Object.assign({}, this.acHidden);
+        const knownBefore = new Set(Object.keys(this.genJobs));
+        const res = await fetch('/api/jobs');
+        const boot = res.headers.get('X-FK-Boot') || '';
+        const list = await res.json();
+        const restarted = !!(this._jobsBoot && boot && boot !== this._jobsBoot);
+        if (boot) this._jobsBoot = boot;
+        const ended = j => j && (j.status === 'done' || j.status === 'error');
+        const merged = Object.assign({}, this.genJobs), hidden = Object.assign({}, this.acHidden);
         for (const j of list || []) {
           if (!j || !j.id) continue;
-          map[j.id] = j;
-          if (j.status === 'done' || j.status === 'error') hidden[j.id] = true;   // finished before this page: not news
+          const had = merged[j.id];
+          if (!had || ended(j) || !ended(had)) merged[j.id] = j;   // a job only moves toward its end
+          const review = j.target && j.status === 'done' && j.applied === false;   // a replacement nobody reviewed
+          if (initial && ended(j) && !had && !review) hidden[j.id] = true;        // finished before this page: not news
           else if (!this.jobSeen[j.id]) this.jobSeen[j.id] = Date.now();
         }
-        this.genJobs = Object.assign(map, this.genJobs);
+        // the server restarted: a job this page knew as running that it no longer lists was lost
+        const listed = new Set((list || []).filter(j => j && j.id).map(j => j.id));
+        for (const [jid, j] of Object.entries(merged)) {
+          if (restarted && knownBefore.has(jid) && !listed.has(jid) && j && !ended(j)) {
+            merged[jid] = Object.assign({}, j, { status: 'error', error: 'Unterbrochen: funkeykid wurde neu gestartet. Bitte nochmal erzeugen.', error_detail: '' });
+          }
+        }
+        this.genJobs = merged;
         this.acHidden = hidden;
+        for (const j of Object.values(merged)) if (j && this.edJobs[j.id]) { this._edJobDetached(j); this._edJobEnded(j); }
+        // after a reload: running jobs find their slots again, from the merged (newest) state;
+        // finished ones are handled at once (a replacement becomes "current vs new" again)
+        for (const j of Object.values(merged)) if (j && this._edAdopt(j) && ended(j)) this._edJobEnded(j);
       } catch {}
     },
 
     // ── keys while the editor is open ──
     onKeyGlobal(ev) {
       if (!this.ed) return;
-      if (this.lib) { if (ev.key === 'Escape') { this.lib = null; ev.preventDefault(); } return; }
+      if (this.lib) { if (ev.key === 'Escape') { this.libClose(); ev.preventDefault(); } return; }
       const t = ev.target || {};
       const tag = (t.tagName || '').toUpperCase();
       const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || t.isContentEditable;
@@ -4238,6 +4489,7 @@ function funkeykid() {
     },
 
     async init() {
+      this.$watch('ed?.sel', (n, o) => { if (n !== o) { this.plStop(); this._edPendingPlay = null; } });
       // The number editor is always in the DOM (x-show): give its empty state the track
       // objects its bindings read, before Alpine renders them (FUNK-61: ~1000 TypeErrors per load).
       this._ensureTracks(this.editNumberData);
@@ -4257,7 +4509,11 @@ function funkeykid() {
       this.loadQuiz();                       // FUNK-39: a quiz may already run
       this.loadProgress();                   // FUNK-40
       this.connectSSE();
-      this.loadJobs();                       // FUNK-72: AI jobs still running after a reload
+      this.loadJobs(true);                   // FUNK-72: AI jobs still running after a reload
+      window.addEventListener('beforeunload', (ev) => {       // FUNK-72: changes still on their way
+        this._edFlushText();
+        if (this._edOps.length || Object.keys(this._edDeb).length || this._orderPending) { ev.preventDefault(); ev.returnValue = ''; }
+      });
       this.loadDiagnostics();  // fills the keyboard picker in Settings
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
       setInterval(() => this.pollStatus(), 10000);
@@ -4269,7 +4525,13 @@ function funkeykid() {
     connectSSE() {
       const es = new EventSource('/api/events');
       // every (re)connect: quiz and progress events may have been missed, or the server restarted
-      es.onopen = () => { this.loadQuiz(); this.loadProgress(); if (this.tab === 'overview') this.loadDashboard(); };
+      es.onopen = () => {
+        this.loadQuiz(); this.loadProgress(); if (this.tab === 'overview') this.loadDashboard();
+        // FUNK-72: job ends and letter changes may have been missed while disconnected
+        this.loadJobs().then(() => { for (const id of Object.keys(this.edJobs)) if (this.genJobs[id]) this._edJobEnded(this.genJobs[id]); });
+        if (this.ed && !this.ed.loading) this._edRefreshSoon();
+        this._scheduleSetReload();
+      };
       es.addEventListener('status', (e) => {
         const s = JSON.parse(e.data);
         Object.assign(this.hw, s);
@@ -4348,7 +4610,8 @@ function funkeykid() {
         if (!this.jobSeen[d.id]) this.jobSeen[d.id] = Date.now();
         // FUNK-72: a job the entry editor started goes to its slot (by job id, never by word);
         // the activity list shows it, no toast
-        if (this.edJobs[d.id]) { this._edJobEnded(d); return; }
+        if (!this.edJobs[d.id]) this._edAdopt(d);           // started on another page
+        if (this.edJobs[d.id]) { this._edJobDetached(d); this._edJobEnded(d); return; }
         if (d.status === 'done') {
           this.showToast((d.type === 'sound' ? 'Sound' : 'Bild') + ' "' + d.word + '" fertig ✓');
           Promise.all([
@@ -4377,6 +4640,8 @@ function funkeykid() {
       es.addEventListener('letter', (e) => {
         const d = JSON.parse(e.data);
         if (d.set_id === this.activeSetId) this._scheduleSetReload();
+        // the open letter changed elsewhere (another page, a job): take it when nothing of ours is pending
+        if (this.ed && d.origin !== FK_CLIENT && d.set_id === this.ed.setId && d.letter === this.ed.L) this._edRefreshSoon();
       });
       es.addEventListener('ai_log', (e) => {
         const d = JSON.parse(e.data);
@@ -4433,6 +4698,7 @@ function funkeykid() {
         // Battery warning threshold (FUNK-58), 0 = off
         if (s.battery_low_threshold === undefined) s.battery_low_threshold = 20;
         const setId = s.active_set || Object.keys(sets)[0] || '';
+        const rev0 = this._setWriteRev, prevSid = this.activeSetId;
         const setData = setId ? await fetch(`/api/sets/${setId}`).then(r => r.json()) : null;
         // id and content change together: an editor opening meanwhile never pairs
         // one set's content with another set's id (FUNK-62 review)
@@ -4441,7 +4707,8 @@ function funkeykid() {
         this.sounds = snd;
         this.images = img;
         this.activeSetId = setId;
-        if (setData) this.activeSet = setData;
+        if (setData && ((rev0 === this._setWriteRev && !this._orderSaving) || setId !== prevSid)) this.activeSet = setData;
+        else if (setData) this._scheduleSetReload();
       } catch (e) {
         this.showToast('Verbindung fehlgeschlagen', 'error');
       }
@@ -4676,7 +4943,8 @@ function funkeykid() {
         if (!t) continue;
         const file = t.file || '';
         const prompt = t.prompt || '';
-        const volume = Math.max(0, Math.min(200, parseInt(t.volume, 10) || 100));
+        const vol = parseInt(t.volume, 10);
+        const volume = Number.isFinite(vol) ? Math.max(0, Math.min(200, vol)) : 100;   // 0 % stays 0 % (FUNK-72)
         if (!file && !prompt && volume === 100) continue;
         out[k] = { file, enabled: t.enabled !== false, prompt, volume };
       }
@@ -4726,31 +4994,45 @@ function funkeykid() {
     },
 
     // ── track_order editor (Sets tab) ──
-    _orderSaving: false,
+    _orderSaving: false, _setWriteRev: 0, _setReloadTimer: null, _orderPending: 0, _orderQ: Promise.resolve(),
     async moveOrderRow(idx, delta) {
       if (!this.activeSet || !this.activeSet.track_order) return;
       const order = this.activeSet.track_order;
       const j = idx + delta;
       if (j < 0 || j >= order.length) return;
       [order[idx], order[j]] = [order[j], order[idx]];
-      await this._saveTrackOrder();
+      return this._saveTrackOrder();
     },
     async setOrderRowEnabled(idx, enabled) {
       if (!this.activeSet || !this.activeSet.track_order) return;
       this.activeSet.track_order[idx].enabled = !!enabled;
-      await this._saveTrackOrder();
+      return this._saveTrackOrder();
     },
-    async _saveTrackOrder() {
-      if (!this.activeSetId || !this.activeSet) return;
+    // FUNK-72: one write at a time, each with the order as it is when it is sent; while any is pending,
+    // background reads of the set wait (they could install an order from before the change)
+    _saveTrackOrder() {
+      if (!this.activeSetId || !this.activeSet) return Promise.resolve();
+      const sid = this.activeSetId, order = JSON.parse(JSON.stringify(this.activeSet.track_order || []));
+      this._setWriteRev++;
+      this._orderPending++;
       this._orderSaving = true;
-      try {
-        await fetch(`/api/sets/${this.activeSetId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ track_order: this.activeSet.track_order }),
-        });
-      } catch (e) { this.showToast(e.message, 'error'); }
-      this._orderSaving = false;
+      const run = this._orderQ.then(async () => {
+        try {
+          const res = await fetch(`/api/sets/${sid}`, {     // its own set and order, even after a set switch
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ track_order: order }),
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+        } catch (e) { this.showToast('Reihenfolge nicht gespeichert: ' + e.message, 'error'); }
+        finally {
+          this._orderPending--;
+          this._setWriteRev++;
+          if (!this._orderPending) this._orderSaving = false;
+        }
+      });
+      this._orderQ = run.catch(() => {});
+      return run;
     },
 
 
@@ -4892,7 +5174,8 @@ function funkeykid() {
       // HTML audio.volume is clamped 0-1. Per-track volume goes 0-200%,
       // so we cap at 1.0 for preview (no amplification in-browser) but
       // still apply the user's trim for quiet clips.
-      const v = Math.max(0, Math.min(1, (parseInt(volumePct, 10) || 100) / 100));
+      const pct = parseInt(volumePct, 10);
+      const v = Number.isFinite(pct) ? Math.max(0, Math.min(1, pct / 100)) : 1;
       this._previewAudio.volume = v;
       this._previewAudio.play().catch(() => {});
     },
@@ -4906,10 +5189,13 @@ function funkeykid() {
     _scheduleSetReload() {
       clearTimeout(this._setReloadTimer);
       this._setReloadTimer = setTimeout(async () => {
-        const sid = this.activeSetId;
+        const sid = this.activeSetId, rev = this._setWriteRev;
+        if (this._orderSaving) { this._scheduleSetReload(); return; }
         try {
           const data = await fetch(`/api/sets/${encodeURIComponent(sid)}`).then(r => r.ok ? r.json() : null);
-          if (data && sid === this.activeSetId) this.activeSet = data;
+          if (!data || sid !== this.activeSetId) return;
+          if (rev !== this._setWriteRev || this._orderSaving) { this._scheduleSetReload(); return; }   // a write came meanwhile
+          this.activeSet = data;
         } catch {}
       }, 800);
     },
@@ -4985,10 +5271,23 @@ function funkeykid() {
       } catch (e) { this.showToast('Hochladen fehlgeschlagen: ' + e.message, 'error'); }
     },
 
+    // FUNK-72: an undo stays reachable for its 6 s. A message that comes meanwhile waits for the end
+    // of that window (an error shows at once and keeps the undo button).
     showToast(msg, type = 'success', undo = false) {
-      this.toast = msg; this.toastType = type; this.toastUndo = !!undo;
+      const now = Date.now();
+      const undoOpen = this._undoUntil > now && this.toastUndo && this._edUndo.length > 0;
+      if (!undo && undoOpen && type !== 'error') { this._toastNext = { msg, type }; return; }
+      if (undo) { this._undoUntil = now + 6000; this._toastNext = null; }
+      const keepUndo = !undo && undoOpen;
+      this.toast = msg; this.toastType = type; this.toastUndo = !!undo || keepUndo;
       clearTimeout(this._toastTimer);
-      this._toastTimer = setTimeout(() => { this.toast = ''; this.toastUndo = false; }, undo || type === 'error' ? 6000 : 3000);
+      const ms = Math.max(undo || type === 'error' ? 6000 : 3000, keepUndo ? this._undoUntil - now : 0);
+      this._toastTimer = setTimeout(() => {
+        this.toast = ''; this.toastUndo = false; this._undoUntil = 0;
+        const next = this._toastNext;
+        this._toastNext = null;
+        if (next) this.showToast(next.msg, next.type);
+      }, ms);
     },
   };
 }

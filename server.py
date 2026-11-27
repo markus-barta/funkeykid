@@ -322,6 +322,7 @@ flat_pos = -1
 favorites = []
 # AI generation jobs tracking
 gen_jobs = {}  # {job_id: {type, kind, word, status, filename, started, finished, error, error_code, error_detail}}
+BOOT_ID = uuid.uuid4().hex[:12]   # this server process: a page sees from it that the server restarted (jobs are in memory)
 GEN_JOBS_KEEP = 300        # finished jobs kept for the activity list (FUNK-72); running ones always stay
 
 
@@ -1961,7 +1962,8 @@ async def api_get_letter(request):
         alias = _copy.deepcopy(e)
         _add_legacy_sound_alias(alias, "FX")
         out_entries.append(alias)
-    return web.json_response({**letter_cfg, "entries": out_entries})
+    return web.json_response({**letter_cfg, "entries": out_entries,
+                              "track_order": _normalize_track_order(sets[set_id].get("track_order"))})
 
 
 async def api_put_letter(request):
@@ -1992,11 +1994,258 @@ async def api_put_letter(request):
     _ensure_entry_ids(cleaned)                # the editor sends its own ids; a bad or repeated one is replaced
     sets[set_id]["letters"][letter] = {"entries": cleaned}
     save_settings()
-    sse_broadcast("letter", {"set_id": set_id, "letter": letter})
+    _letter_changed(request, set_id, letter)
     return web.json_response({"ok": True, "ids": [e["id"] for e in cleaned]})
 
 
 MEDIA_KINDS = ("IMG",) + tuple(TRACK_KINDS)
+ENTRY_WORD_MAX, ENTRY_DESC_MAX, TRACK_PROMPT_MAX = 60, 500, 300
+
+
+def _letter_entries(set_id, letter, create=False):
+    """The entry list of a set's letter, or None (no such set, or no such letter and not create)."""
+    sets = settings.get("sets", {})
+    if set_id not in sets or not isinstance(sets[set_id], dict):
+        return None
+    letters = sets[set_id].setdefault("letters", {})
+    cfg = letters.get(letter)
+    if not isinstance(cfg, dict):
+        if not create:
+            return None
+        cfg = letters[letter] = {"entries": []}
+    if not isinstance(cfg.get("entries"), list):
+        cfg["entries"] = []
+    return cfg["entries"]
+
+
+def _find_entry(entries, entry_id):
+    for i, e in enumerate(entries or []):
+        if isinstance(e, dict) and e.get("id") == entry_id:
+            return i, e
+    return -1, None
+
+
+def _entry_patch(data, require_files=True):
+    # an undo (require_files=False) restores what an entry already had: a set import allows longer
+    # text (setbundle.WORD_MAX / MAX_TEXT), so a restore must too, or the word could not come back
+    word_max = ENTRY_WORD_MAX if require_files else setbundle.WORD_MAX
+    text_max = (ENTRY_DESC_MAX, TRACK_PROMPT_MAX) if require_files else (setbundle.MAX_TEXT, setbundle.MAX_TEXT)
+    """Check the fields of an entry change (FUNK-72); returns them or raises ValueError.
+
+    word, enabled, image ("" or a picture in the library), _imageDesc, and tracks:
+    {KIND: {file ("" or a sound in the library), enabled, prompt, volume 0-200}}.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("body must be an object")
+    unknown = set(data) - {"word", "enabled", "image", "_imageDesc", "tracks"}
+    if unknown:
+        raise ValueError(f"unknown field: {sorted(unknown)[0]}")
+    out = {}
+    if "word" in data:
+        if not isinstance(data["word"], str) or len(data["word"]) > word_max:
+            raise ValueError(f"word must be text (at most {word_max} characters)")
+        out["word"] = data["word"]
+    if "enabled" in data:
+        if not isinstance(data["enabled"], bool):
+            raise ValueError("enabled must be true or false")
+        out["enabled"] = data["enabled"]
+    if "_imageDesc" in data:
+        if not isinstance(data["_imageDesc"], str) or len(data["_imageDesc"]) > text_max[0]:
+            raise ValueError(f"_imageDesc must be text (at most {text_max[0]} characters)")
+        out["_imageDesc"] = data["_imageDesc"]
+    if "image" in data:
+        out["image"] = _library_name(data["image"], IMAGES_DIR, "image", require_files)
+    if "tracks" in data:
+        if not isinstance(data["tracks"], dict):
+            raise ValueError("tracks must be an object")
+        tracks = {}
+        for kind, t in data["tracks"].items():
+            if kind not in TRACK_KINDS or not isinstance(t, dict):
+                raise ValueError(f"tracks: unknown kind {kind!r}")
+            if set(t) - {"file", "enabled", "prompt", "volume"}:
+                raise ValueError(f"tracks.{kind}: unknown field")
+            tt = {}
+            if "file" in t:
+                tt["file"] = _library_name(t["file"], SOUNDS_DIR, f"tracks.{kind}.file", require_files)
+            if "enabled" in t:
+                if not isinstance(t["enabled"], bool):
+                    raise ValueError(f"tracks.{kind}.enabled must be true or false")
+                tt["enabled"] = t["enabled"]
+            if "prompt" in t:
+                if not isinstance(t["prompt"], str) or len(t["prompt"]) > text_max[1]:
+                    raise ValueError(f"tracks.{kind}.prompt must be text (at most {text_max[1]} characters)")
+                tt["prompt"] = t["prompt"]
+            if "volume" in t:
+                v = t["volume"]
+                if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 200:
+                    raise ValueError(f"tracks.{kind}.volume must be 0-200")
+                tt["volume"] = v
+            tracks[kind] = tt
+        out["tracks"] = tracks
+    return out
+
+
+def _library_name(value, folder, what, require=True):
+    """"" or the plain name of a file that exists in folder; else ValueError. An undo restores what an
+    entry had (require=False): a plain name is enough there, the file may be missing (an import)."""
+    if value == "":
+        return ""
+    if not isinstance(value, str) or not _MEDIA_NAME.fullmatch(value) or value.startswith("."):
+        raise ValueError(f"{what}: invalid file name")
+    if require and not os.path.isfile(os.path.join(folder, value)):
+        raise ValueError(f"{what}: no such file in the library")
+    return value
+
+
+def _apply_entry_patch(entry, patch):
+    _normalize_letter_entry(entry)
+    for k in ("word", "enabled", "image", "_imageDesc"):
+        if k in patch:
+            entry[k] = patch[k]
+    for kind, t in patch.get("tracks", {}).items():
+        track = entry["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
+        track.update(t)
+    _normalize_letter_entry(entry)
+
+
+class _SaveFailed(Exception):
+    pass
+
+
+def _save_or_restore(entries, snapshot):
+    """save_settings(), or put the entry list back as it was and raise _SaveFailed (FUNK-72):
+    memory never keeps a change the file does not have (a retry would then wrongly succeed)."""
+    try:
+        save_settings()
+    except Exception as e:
+        entries[:] = snapshot
+        print(f"[settings] save failed, change undone: {e}", flush=True)
+        raise _SaveFailed() from e
+
+
+_SAVE_FAILED = {"error": "Die Einstellungen konnten nicht gespeichert werden; nichts wurde geändert"}
+
+
+def _detach_jobs_for(set_id, letter, entry_id, kinds):
+    """An explicit choice for a slot, from any page: running jobs for that slot only fill the library."""
+    for j in gen_jobs.values():
+        t = j.get("target")
+        if (t and j.get("status") in ("queued", "generating") and t["set_id"] == set_id and t["letter"] == letter
+                and t["entry_id"] == entry_id and t["kind"] in kinds):
+            j["target"] = None
+
+
+def _letter_changed(request, set_id, letter, entry_id=None):
+    """Tell every page a letter changed; origin = the page that changed it (it ignores its own echo)."""
+    origin = (request.headers.get("X-FK-Client", "") if request is not None and hasattr(request, "headers") else "")[:40]
+    data = {"set_id": set_id, "letter": letter, "origin": origin}
+    if entry_id:
+        data["entry_id"] = entry_id
+    sse_broadcast("letter", data)
+
+
+async def api_patch_entry(request):
+    """Change some fields of one entry, found by id (FUNK-72): every edit in the editor is one
+    of these, so two pages editing different words or fields never overwrite each other."""
+    set_id = request.match_info["set_id"]
+    letter = keymap.norm_letter(request.match_info["letter"])
+    entry_id = request.match_info["entry_id"]
+    try:
+        data = await request.json()
+        restore = isinstance(data, dict) and data.get("restore") is True
+        if isinstance(data, dict):
+            data = {k: v for k, v in data.items() if k != "restore"}
+        patch = _entry_patch(data, require_files=not restore)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    entries = _letter_entries(set_id, letter)
+    _, entry = _find_entry(entries, entry_id)
+    if entry is None:
+        return web.json_response({"error": "entry not found"}, status=404)
+    import copy as _copy
+    snapshot = _copy.deepcopy(entries)
+    _apply_entry_patch(entry, patch)
+    try:
+        _save_or_restore(entries, snapshot)
+    except _SaveFailed:
+        return web.json_response(_SAVE_FAILED, status=500)
+    chosen = (["IMG"] if "image" in patch else []) + [k for k, t in patch.get("tracks", {}).items() if "file" in t]
+    if chosen:
+        _detach_jobs_for(set_id, letter, entry_id, chosen)
+    _letter_changed(request, set_id, letter, entry_id)
+    return web.json_response({"ok": True, "entry": _copy.deepcopy(entry)})
+
+
+async def api_delete_entry_by_id(request):
+    """Remove one entry, found by id (FUNK-72); its files stay in the library."""
+    set_id = request.match_info["set_id"]
+    letter = keymap.norm_letter(request.match_info["letter"])
+    entries = _letter_entries(set_id, letter)
+    i, entry = _find_entry(entries, request.match_info["entry_id"])
+    if entry is None:
+        return web.json_response({"error": "entry not found"}, status=404)
+    snapshot = list(entries)
+    entries.pop(i)
+    try:
+        _save_or_restore(entries, snapshot)
+    except _SaveFailed:
+        return web.json_response(_SAVE_FAILED, status=500)
+    _letter_changed(request, set_id, letter, entry["id"])
+    return web.json_response({"ok": True, "index": i, "entry": entry})
+
+
+def _names_used_elsewhere(skip):
+    """Every string in the sets and key maps except inside the object skip."""
+    out, stack = set(), [settings.get("sets"), settings.get("keymaps")]
+    while stack:
+        v = stack.pop()
+        if v is skip:
+            continue
+        if isinstance(v, dict):
+            stack.extend(v.values())
+        elif isinstance(v, list):
+            stack.extend(v)
+        elif isinstance(v, str):
+            out.add(v)
+    return out
+
+
+async def api_archive_entry(request):
+    """Archive one entry (FUNK-72): its files go to the archive (only those nothing else uses),
+    then the entry goes. All or nothing: if a file cannot be archived, the ones already
+    moved come back and the entry stays."""
+    set_id = request.match_info["set_id"]
+    letter = keymap.norm_letter(request.match_info["letter"])
+    entries = _letter_entries(set_id, letter)
+    i, entry = _find_entry(entries, request.match_info["entry_id"])
+    if entry is None:
+        return web.json_response({"error": "entry not found"}, status=404)
+    _normalize_letter_entry(entry)
+    files = ([("image", entry["image"])] if entry.get("image") else []) + \
+            [("sound", t["file"]) for t in entry["tracks"].values() if t.get("file")]
+    used = _names_used_elsewhere(entry)
+    moved, kept = [], []
+    for file_type, name in dict.fromkeys(files):
+        folder = SOUNDS_DIR if file_type == "sound" else IMAGES_DIR
+        if name in used or not os.path.isfile(os.path.join(folder, name)):
+            kept.append(name)
+            continue
+        try:
+            moved.append((file_type, name, _archive_one(file_type, name)))
+        except _ArchiveError as e:
+            for ft, n, dst in reversed(moved):
+                _unarchive(ft, n, dst)
+            return web.json_response({"error": f"{name}: {e.msg}"}, status=e.status)
+    snapshot = list(entries)
+    entries.pop(i)
+    try:
+        _save_or_restore(entries, snapshot)
+    except _SaveFailed:
+        for ft, n, dst in reversed(moved):                # the entry stays: its files come back too
+            _unarchive(ft, n, dst)
+        return web.json_response(_SAVE_FAILED, status=500)
+    _letter_changed(request, set_id, letter, entry["id"])
+    return web.json_response({"ok": True, "archived": [n for _, n, _ in moved], "kept": kept})
 
 
 async def api_entry_media(request):
@@ -2018,6 +2267,8 @@ async def api_entry_media(request):
     if not isinstance(data, dict):
         return web.json_response({"error": "body must be an object"}, status=400)
     kind, fname = data.get("kind"), data.get("file")
+    if "if_empty" in data and not isinstance(data["if_empty"], bool):
+        return web.json_response({"error": "if_empty must be true or false"}, status=400)
     if kind not in MEDIA_KINDS:
         return web.json_response({"error": f"kind must be one of {', '.join(MEDIA_KINDS)}"}, status=400)
     if not isinstance(fname, str) or not _MEDIA_NAME.fullmatch(fname) or fname.startswith("."):
@@ -2039,37 +2290,69 @@ async def api_entry_media(request):
         current = (entry["tracks"].get(kind) or {}).get("file") or ""
     if data.get("if_empty") is True and current:
         return web.json_response({"ok": True, "applied": False, "current": current})
+    import copy as _copy
+    snapshot = _copy.deepcopy(entries)
     if kind == "IMG":
         entry["image"] = fname
     else:
         track = entry["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
         track["file"] = fname
         track["enabled"] = True
-    save_settings()
-    sse_broadcast("letter", {"set_id": set_id, "letter": letter, "entry_id": entry_id})
+    try:
+        _save_or_restore(entries, snapshot)
+    except _SaveFailed:
+        return web.json_response(_SAVE_FAILED, status=500)
+    if data.get("if_empty") is not True:
+        _detach_jobs_for(set_id, letter, entry_id, [kind])
+    _letter_changed(request, set_id, letter, entry_id)
     return web.json_response({"ok": True, "applied": True})
 
 
 async def api_add_entry(request):
-    """Add a new entry to a letter."""
+    """Add an entry to a letter (FUNK-72): {id?, index?, word, enabled?, image?, _imageDesc?, tracks?}.
+
+    The editor sends its own id (kept when valid and free, else a new one) and, to undo a
+    removal, the position the entry had."""
     set_id = request.match_info["set_id"]
     letter = keymap.norm_letter(request.match_info["letter"])
-    data = await request.json()
-    sets = settings.get("sets", {})
-    if set_id not in sets:
+    try:
+        data = await request.json()
+    except ValueError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "body must be an object"}, status=400)
+    data = dict(data)
+    eid, index = data.pop("id", None), data.pop("index", None)
+    restore = data.pop("restore", None) is True             # an undo: the entry as it was, files may be missing
+    if index is not None and (isinstance(index, bool) or not isinstance(index, int)):
+        return web.json_response({"error": "index must be a number"}, status=400)
+    try:
+        patch = _entry_patch(data, require_files=not restore)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    entries = _letter_entries(set_id, letter, create=True)
+    if entries is None:
         return web.json_response({"error": "Set not found"}, status=404)
-    letters = sets[set_id].setdefault("letters", {})
-    letter_data = letters.setdefault(letter, {"entries": []})
-    entry = {
-        "word": data.get("word", ""),
-        "sound": data.get("sound", ""),
-        "image": data.get("image", ""),
-        "enabled": data.get("enabled", True),
-    }
-    letter_data["entries"].append(entry)
-    _ensure_entry_ids(letter_data["entries"])
-    save_settings()
-    return web.json_response({"ok": True, "index": len(letter_data["entries"]) - 1, "id": entry["id"]})
+    if isinstance(eid, str) and _ENTRY_ID.fullmatch(eid):
+        i, have = _find_entry(entries, eid)
+        if have is not None:                    # a repeat of an add whose answer got lost: nothing twice
+            import copy as _copy
+            return web.json_response({"ok": True, "id": eid, "index": i, "existed": True, "entry": _copy.deepcopy(have)})
+    entry = {"word": "", "image": "", "enabled": True, "tracks": {}}
+    if isinstance(eid, str) and _ENTRY_ID.fullmatch(eid):
+        entry["id"] = eid
+    _apply_entry_patch(entry, patch)
+    i = len(entries) if index is None else max(0, min(index, len(entries)))
+    snapshot = list(entries)
+    entries.insert(i, entry)
+    _ensure_entry_ids(entries)
+    try:
+        _save_or_restore(entries, snapshot)
+    except _SaveFailed:
+        return web.json_response(_SAVE_FAILED, status=500)
+    _letter_changed(request, set_id, letter, entry["id"])
+    import copy as _copy
+    return web.json_response({"ok": True, "id": entry["id"], "index": i, "entry": _copy.deepcopy(entry)})
 
 
 # ── Numbers (per set) ────────────────────────────────────────────────────────
@@ -2981,15 +3264,19 @@ THUMB_SIZES = (160, 480)
 
 
 def _make_thumb(src, dst, size, pixel):
-    """Write dst: an AI original scaled down to fit size×size (JPEG), or a small library
-    picture (the Pixoo's 64×64) scaled up by whole pixels, so it stays sharp (PNG)."""
+    """Write dst: an AI original scaled down to fit size×size (JPEG), or a library picture as PNG:
+    a small one (the Pixoo's 64×64) scaled up by whole pixels, so it stays sharp; a big one
+    (an uploaded photo) scaled down to fit."""
     from PIL import Image
     with Image.open(src) as im:
         if pixel:
             im = im.convert("RGBA")
-            n = max(1, size // max(im.size))
-            im = im.resize((im.width * n, im.height * n), Image.NEAREST)
-            fmt, opts = "PNG", {}
+            if max(im.size) > size:
+                im.thumbnail((size, size), Image.LANCZOS)
+            else:
+                n = max(1, size // max(im.size))
+                im = im.resize((im.width * n, im.height * n), Image.NEAREST)
+            fmt, opts = "PNG", {"optimize": True}
         else:
             im = im.convert("RGB")
             im.thumbnail((size, size), Image.LANCZOS)
@@ -3013,10 +3300,12 @@ async def serve_thumb(request):
     name = request.match_info["filename"]
     if size not in THUMB_SIZES or not isinstance(name, str) or not _MEDIA_NAME.fullmatch(name) or name.startswith("."):
         return web.Response(status=404)
-    orig, lib = os.path.join(AI_IMAGES_ORIG_DIR, name), os.path.join(IMAGES_DIR, name)
-    if os.path.isfile(orig):
+    orig, lib = _safe_file(AI_IMAGES_ORIG_DIR, name), _safe_file(IMAGES_DIR, name)   # FUNK-73 containment
+    if orig and lib and os.path.getmtime(lib) - os.path.getmtime(orig) > 60:
+        orig = None                             # the library picture was replaced later (a set import): it wins
+    if orig:
         src, pixel = orig, False
-    elif os.path.isfile(lib):
+    elif lib:
         src, pixel = lib, True
     else:
         return web.Response(status=404)
@@ -3030,7 +3319,7 @@ async def serve_thumb(request):
         print(f"[thumbs] {name}: {e}", flush=True)
         return web.FileResponse(src)
     resp = web.FileResponse(dst)
-    resp.headers["Cache-Control"] = "public, max-age=86400"
+    resp.headers["Cache-Control"] = "no-cache"   # revalidated each time (304 if unchanged): a replaced picture shows at once
     return resp
 
 
@@ -3250,6 +3539,106 @@ def _job_failed(job_id, provider, exc, action, model, prompt):
     _ai_log_entry(action, model, prompt, f"{code or ''} {detail or exc}".strip(), "error")
 
 
+class _TargetError(Exception):
+    def __init__(self, status, msg):
+        super().__init__(msg)
+        self.status, self.msg = status, msg
+
+
+def _job_target(raw, kind):
+    """Where a job's file goes when it is done (FUNK-72): {set_id, letter, entry_id} → with kind.
+
+    Checked when the job starts (the entry must exist); applied by _apply_job_target only if
+    that slot is still empty then. None when the request names no target."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict) or not all(isinstance(raw.get(k), str) for k in ("set_id", "letter", "entry_id")):
+        raise _TargetError(400, "target must be {set_id, letter, entry_id}")
+    letter = keymap.norm_letter(raw["letter"])
+    if _find_entry(_letter_entries(raw["set_id"], letter), raw["entry_id"])[1] is None:
+        raise _TargetError(404, "entry not found")
+    return {"set_id": raw["set_id"], "letter": letter, "entry_id": raw["entry_id"], "kind": kind}
+
+
+def _job_finished(job_id):
+    """A worker's last word on its job (from its thread). A successful job becomes "done" only on
+    the event loop (_finalize_job), where every settings write runs: until then it is still
+    "generating" and a parent's explicit choice can detach it (FUNK-72). A failed job is announced."""
+    job = gen_jobs.get(job_id)
+    if job is not None and (job.get("_done") or job.get("status") == "done"):
+        if _loop is not None:
+            _loop.call_soon_threadsafe(_finalize_job, job_id)
+        else:
+            _finalize_job(job_id)
+        return
+    sse_broadcast("gen_update", job)
+
+
+def _finalize_job(job_id):
+    """On the event loop: mark the job done and, if it still has a target, put its file on that
+    entry when the slot is empty; then tell the pages, with applied true/false."""
+    job = gen_jobs.get(job_id)
+    if job is None:
+        return
+    job.pop("_done", None)
+    job["status"] = "done"
+    t, applied = job.get("target"), False       # a detached job has no target any more
+    if t:
+        _, e = _find_entry(_letter_entries(t["set_id"], t["letter"]), t["entry_id"])
+        fname, kind = job.get("filename"), t["kind"]
+        folder = IMAGES_DIR if kind == "IMG" else SOUNDS_DIR
+        if e is not None and fname and os.path.isfile(os.path.join(folder, fname)):
+            _normalize_letter_entry(e)
+            current = e.get("image") if kind == "IMG" else (e["tracks"].get(kind) or {}).get("file")
+            if not current:
+                before = json.dumps(e)
+                if kind == "IMG":
+                    e["image"] = fname
+                else:
+                    track = e["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
+                    track["file"], track["enabled"] = fname, True
+                try:
+                    save_settings()
+                    applied = True
+                except Exception as ex:
+                    e.clear()
+                    e.update(json.loads(before))
+                    print(f"[gen] {job_id}: could not save the file on its entry: {ex}", flush=True)
+                if applied:
+                    sse_broadcast("letter", {"set_id": t["set_id"], "letter": t["letter"], "entry_id": t["entry_id"], "origin": "job"})
+    if "target" in job:
+        job["applied"] = applied
+    job["finished"] = job.get("finished") or time.time()
+    sse_broadcast("gen_update", job)
+
+
+_apply_job_target = _finalize_job              # the name the tests and the docs used first
+
+
+async def api_get_jobs(request):
+    """Every generation job this server process knows; X-FK-Boot names the process (FUNK-72)."""
+    resp = web.json_response(list(gen_jobs.values()))
+    resp.headers["X-FK-Boot"] = BOOT_ID
+    return resp
+
+
+async def api_job_detach(request):
+    """The parent chose something else for the slot (FUNK-72): the running job keeps going, but its
+    file only lands in the library. Runs on the event loop like _apply_job_target: never both at once."""
+    job = gen_jobs.get(request.match_info["job_id"])
+    if job is None:
+        return web.json_response({"error": "job not found"}, status=404)
+    running = job.get("status") in ("queued", "generating")
+    had = job.get("target") is not None
+    # finished: the parent took or discarded its file ("reviewed"), so no page offers it again
+    job["target"] = None
+    if had:
+        sse_broadcast("gen_update", job)
+    if running:
+        return web.json_response({"ok": True, "detached": True})
+    return web.json_response({"ok": True, "detached": False, "status": job.get("status")})
+
+
 def _gen_sound_worker(job_id, word, prompt, duration, filename):
     """Background worker for sound generation."""
     import urllib.request, shutil
@@ -3267,14 +3656,14 @@ def _gen_sound_worker(job_id, word, prompt, duration, filename):
         if len(audio_data) < 1000:
             raise ValueError("Generierung fehlgeschlagen (zu klein)")
         normed = _store_generated_sound(audio_data, filename)      # FUNK-73: staged, published exclusively
-        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}",
+        gen_jobs[job_id].update({"_done": True, "size": len(audio_data), "path": f"/sounds/{filename}",
                                  "normalized": normed, "finished": time.time()})
         _ai_log_entry("sound", "elevenlabs/sfx", prompt,
                       f"OK: {len(audio_data)} bytes → {filename}" + (" (normalized)" if normed else ""),
                       "ok")
     except Exception as e:
         _job_failed(job_id, "elevenlabs", e, "sound", "elevenlabs/sfx", prompt)
-    sse_broadcast("gen_update", gen_jobs[job_id])
+    _job_finished(job_id)
 
 
 async def api_generate_sound(request):
@@ -3345,12 +3734,12 @@ def _gen_image_worker(job_id, word, prompt, filename, model=None):
         finally:
             _remove_quiet(orig)
             _remove_quiet(small)
-        gen_jobs[job_id].update({"status": "done", "size": len(img_data), "path": f"/images/{filename}",
+        gen_jobs[job_id].update({"_done": True, "size": len(img_data), "path": f"/images/{filename}",
                                  "finished": time.time()})
         _ai_log_entry("image", model, prompt, f"OK: {len(img_data)}b → {filename}", "ok")
     except Exception as e:
         _job_failed(job_id, "openrouter", e, "image", model, prompt)
-    sse_broadcast("gen_update", gen_jobs[job_id])
+    _job_finished(job_id)
 
 
 async def api_generate_image(request):
@@ -3363,11 +3752,15 @@ async def api_generate_image(request):
     if not filename:
         return web.json_response({"error": "invalid filename"}, status=400)
     model = data.get("model")
+    try:
+        target = _job_target(data.get("target"), "IMG")
+    except _TargetError as e:
+        return web.json_response({"error": e.msg}, status=e.status)
     if not os.environ.get("OPENROUTER_API_KEY"):
         return web.json_response({"error": "OPENROUTER_API_KEY nicht gesetzt"}, status=500)
     job_id = f"img_{uuid.uuid4().hex[:8]}"
     _register_job({"id": job_id, "type": "image", "kind": "IMG", "word": word, "filename": filename,
-                        "status": "queued", "started": time.time()})
+                   "status": "queued", "started": time.time(), "target": target})
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
     threading.Thread(target=_gen_image_worker, args=(job_id, word, prompt, filename, model), daemon=True).start()
@@ -3402,14 +3795,14 @@ def _gen_tts_worker(job_id, text, voice_id, filename):
         if len(audio_data) < 1000:
             raise ValueError("TTS-Ausgabe zu klein")
         normed = _store_generated_sound(audio_data, filename)      # FUNK-73: staged, published exclusively
-        gen_jobs[job_id].update({"status": "done", "size": len(audio_data), "path": f"/sounds/{filename}",
+        gen_jobs[job_id].update({"_done": True, "size": len(audio_data), "path": f"/sounds/{filename}",
                                  "normalized": normed, "finished": time.time()})
         _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text,
                       f"OK: {len(audio_data)}b → {filename}" + (" (normalized)" if normed else ""),
                       "ok")
     except Exception as e:
         _job_failed(job_id, "elevenlabs", e, "tts", f"elevenlabs/tts/{voice_id}", text)
-    sse_broadcast("gen_update", gen_jobs[job_id])
+    _job_finished(job_id)
 
 
 async def api_generate_tts(request):
@@ -3459,6 +3852,10 @@ async def api_generate_track(request):
     prefix = (data.get("slug_prefix") or "").strip().lower()
     slug = _slugify(word)
     base = f"{prefix}_{slug}_{kind.lower()}" if prefix else f"{slug}_{kind.lower()}"
+    try:
+        target = _job_target(data.get("target"), kind)
+    except _TargetError as e:
+        return web.json_response({"error": e.msg}, status=e.status)
     filename = _claim_media_name(data.get("filename"), base, "mp3", SOUND_DIRS)
     if not filename:
         return web.json_response({"error": "invalid filename"}, status=400)
@@ -3469,7 +3866,8 @@ async def api_generate_track(request):
         prompt = data.get("prompt") or _get_sound_prompt().format(word=word)
         duration = data.get("duration", 4)
         job_id = f"trk_{uuid.uuid4().hex[:8]}"
-        _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind, "status": "queued", "started": time.time()})
+        _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind,
+                       "status": "queued", "started": time.time(), "target": target})
         sse_broadcast("gen_update", gen_jobs[job_id])
         threading.Thread(target=_gen_sound_worker, args=(job_id, word, prompt, duration, filename), daemon=True).start()
         return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
@@ -3482,7 +3880,8 @@ async def api_generate_track(request):
         text = (data.get("prompt") or word).strip()
         voice_id = data.get("voice_id") or _voice_for_kind(kind)
         job_id = f"trk_{uuid.uuid4().hex[:8]}"
-        _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind, "status": "queued", "started": time.time()})
+        _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind,
+                       "status": "queued", "started": time.time(), "target": target})
         sse_broadcast("gen_update", gen_jobs[job_id])
         threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
         return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
@@ -3688,43 +4087,42 @@ async def api_put_blacklist(request):
     return web.json_response({"ok": True})
 
 
-async def api_archive_file(request):
-    """Move a sound or image to the archive folder."""
-    data = await request.json()
-    file_type = data.get("type")  # "sound" or "image"
-    filename = data.get("filename", "")
+class _ArchiveError(Exception):
+    def __init__(self, status, msg):
+        super().__init__(msg)
+        self.status, self.msg = status, msg
 
-    if not filename or file_type not in ("sound", "image"):
-        return web.json_response({"error": "type und filename erforderlich"}, status=400)
-    # a plain library name only (FUNK-73): "../settings.json" moved any file the process can move
+
+def _archive_one(file_type, filename):
+    """Move one library file into the archive; returns the archive path (FUNK-73).
+
+    A plain name only, never a symlink; the file is taken away atomically first, so a set
+    import writing the name right after keeps its new file; an archived file is never
+    overwritten. Raises _ArchiveError(status, message).
+    """
+    import stat
     if not isinstance(filename, str) or not _MEDIA_NAME.fullmatch(filename) or filename.startswith("."):
-        return web.json_response({"error": "ungültiger Dateiname"}, status=400)
-
+        raise _ArchiveError(400, "ungültiger Dateiname")
     archive_dir = os.path.join(DATA_DIR, "archive", f"{file_type}s")
     os.makedirs(archive_dir, exist_ok=True)
-
-    import stat
     src = os.path.join(SOUNDS_DIR if file_type == "sound" else IMAGES_DIR, filename)
     try:
         st = os.lstat(src)
     except (OSError, ValueError):
         st = None
-    if st is None or not stat.S_ISREG(st.st_mode):           # a symlink is not archived (it would take its target)
-        return web.json_response({"error": f"Datei nicht gefunden: {filename}"}, status=404)
-
-    # Take the file away first, atomically: whatever is at that name at this instant is what gets
-    # archived. A set import writing the name right after leaves its new file alone (FUNK-73).
+    if st is None or not stat.S_ISREG(st.st_mode):
+        raise _ArchiveError(404, f"Datei nicht gefunden: {filename}")
     try:
         held = _staging(filename.rpartition(".")[2] or "bin")
         os.rename(src, held)
     except FileNotFoundError:
-        return web.json_response({"error": f"Datei nicht gefunden: {filename}"}, status=404)
+        raise _ArchiveError(404, f"Datei nicht gefunden: {filename}")
     except OSError:
-        return web.json_response({"error": "Archivieren fehlgeschlagen"}, status=507)
+        raise _ArchiveError(507, "Archivieren fehlgeschlagen")
     stem, dot, ext = filename.rpartition(".")
     dst = None
     try:
-        for n in range(1, 1000):                            # an earlier archived file of that name stays
+        for n in range(1, 1000):
             cand = os.path.join(archive_dir, filename if n == 1 else (f"{stem}-{n}.{ext}" if dot and stem else f"{filename}-{n}"))
             try:
                 _publish_exact(held, cand)
@@ -3738,10 +4136,38 @@ async def api_archive_file(request):
         try:
             _publish_exact(held, src)
         except OSError:
-            return web.json_response({"error": "Archivieren fehlgeschlagen; die Datei liegt in /data/.staging"}, status=507)
+            raise _ArchiveError(507, "Archivieren fehlgeschlagen; die Datei liegt in /data/.staging")
         _remove_quiet(held)
-        return web.json_response({"error": "Archivieren fehlgeschlagen"}, status=507)
+        raise _ArchiveError(507, "Archivieren fehlgeschlagen")
     _remove_quiet(held)
+    return dst
+
+
+def _unarchive(file_type, filename, dst):
+    """Undo _archive_one (best effort): the archived file back under its library name."""
+    try:
+        _publish_exact(dst, os.path.join(SOUNDS_DIR if file_type == "sound" else IMAGES_DIR, filename))
+        os.unlink(dst)
+    except OSError as e:
+        print(f"[archive] could not restore {filename}: {e}", flush=True)
+
+
+async def api_archive_file(request):
+    """Move a sound or image to the archive folder."""
+    try:
+        data = await request.json()
+    except ValueError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "type und filename erforderlich"}, status=400)
+    file_type = data.get("type")  # "sound" or "image"
+    filename = data.get("filename", "")
+    if not filename or file_type not in ("sound", "image"):
+        return web.json_response({"error": "type und filename erforderlich"}, status=400)
+    try:
+        dst = _archive_one(file_type, filename)
+    except _ArchiveError as e:
+        return web.json_response({"error": e.msg}, status=e.status)
     return web.json_response({"ok": True, "archived": filename, "to": dst})
 
 
@@ -3890,6 +4316,10 @@ def create_app():
     app.router.add_put("/api/sets/{set_id}/letters/{letter}", api_put_letter)
     app.router.add_post("/api/sets/{set_id}/letters/{letter}/entries", api_add_entry)
     app.router.add_post("/api/sets/{set_id}/letters/{letter}/entries/{entry_id}/media", api_entry_media)
+    app.router.add_patch("/api/sets/{set_id}/letters/{letter}/entries/{entry_id}", api_patch_entry)
+    app.router.add_delete("/api/sets/{set_id}/letters/{letter}/entries/id/{entry_id}", api_delete_entry_by_id)
+    app.router.add_post("/api/sets/{set_id}/letters/{letter}/entries/{entry_id}/archive", api_archive_entry)
+    app.router.add_post("/api/jobs/{job_id}/detach", api_job_detach)
     app.router.add_delete("/api/sets/{set_id}/letters/{letter}/entries/{index}", api_delete_entry)
     # Numbers within a set
     app.router.add_get("/api/sets/{set_id}/numbers", api_get_numbers)
@@ -3939,7 +4369,7 @@ def create_app():
     app.router.add_post("/api/suggest-word", api_suggest_word)
     app.router.add_get("/api/blacklist/{letter}", api_get_blacklist)
     app.router.add_put("/api/blacklist/{letter}", api_put_blacklist)
-    app.router.add_get("/api/jobs", lambda r: web.json_response(list(gen_jobs.values())))
+    app.router.add_get("/api/jobs", api_get_jobs)
     app.router.add_get("/api/ai-log", lambda r: web.json_response(ai_log))
     app.router.add_get("/api/integrations/status", api_integrations_status)
     app.router.add_get("/api/favorites", lambda r: web.json_response(favorites))

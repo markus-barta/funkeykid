@@ -513,14 +513,34 @@ Fallback: 10s polling for robustness.
 Clicking a letter opens the editor: the letter's words on the left (picture, word, what is missing as dots), one word in focus on the right. Shift+←/→ switches letters, ↑/↓ words, Space plays the word, Esc closes.
 
 - **Entry ids.** Every letter entry has an `id` (10 hex chars), unique within its letter. The server gives missing or repeated ids at startup, on reads and on every write (`_ensure_entry_ids`). The editor makes its own for new words. Jobs and the editor find an entry by id, never by word or position.
-- **Saves by itself.** Every change records the letter as it is now and saves it 600 ms later with `PUT /api/sets/{id}/letters/{L}`. One queue (`_edQueue`) runs every save and every load in order: a load never overtakes a save, and switching or closing never loses a change. A failed save is kept and retried (the header says "Nicht gespeichert · Erneut"). Undo: discrete steps (add, remove, switch off, take a new version, pick from the library) show "Rückgängig" in the toast.
-- **Picture.** Shown from `/thumbs/{160|480}/{name}`: the AI original scaled down (JPEG), or the 64 × 64 library picture scaled up by whole pixels (PNG), cached in `ai-generated/thumbs/` and rebuilt when the picture is newer. "So sieht es auf dem Pixoo aus" shows the real 64 × 64 file.
+- **Saves by itself, one entry at a time.** The editor never writes a whole letter. Every change is a small write to one entry, found by id:
+  - `PATCH /api/sets/{id}/letters/{L}/entries/{entry_id}`: field-level, validated; files must exist in the library;
+  - `POST …/entries`: with the editor's id and position; a repeat returns the existing entry;
+  - `DELETE …/entries/id/{entry_id}`;
+  - `POST …/entries/{entry_id}/archive`: files nothing else uses go to the archive, then the entry goes, all or nothing.
+
+  Two pages editing different words or fields never overwrite each other. Text is sent 500 ms after the last key.
+- **One queue.** One queue (`_edOps`) runs every write and every load in order. A failed write is retried; after 4 failures the queue pauses ("Nicht gespeichert · Erneut", and it retries by itself every 15 s) rather than skipping ahead. Each opening of the editor has a token, so a load for an earlier opening is never shown. A refused write (400) shows its reason, and the letter is reloaded from the server. Leaving the page with writes still pending asks first.
+- **Nothing half-saved.** Every entry write snapshots the letter and restores it if `save_settings()` fails (500). An archive also brings its files back. So a retry really saves.
+- **Changes from elsewhere.** `letter` events carry the writing page's id (`X-FK-Client`). A page ignores its own and reloads the open letter on others' changes when nothing of its own is pending.
+- **Undo.** Discrete steps (switch on/off, choose / take / remove a file, add, remove a word) show "Rückgängig" in the toast. An undo step knows its set, letter and entry, so it also works after closing the editor or switching letters. It writes with `"restore": true`: file names must still be plain library names but need not exist, and text may be as long as a set import allows.
+- **Picture.** Shown from `/thumbs/{160|480}/{name}` (both sources through `_safe_file`), cached in `ai-generated/thumbs/`, rebuilt when the picture is newer, and served with `Cache-Control: no-cache` (revalidated, so a replaced picture shows at once). The sources:
+  - the AI original, scaled down (JPEG);
+  - a library picture (PNG): a small one, like the 64 × 64, scaled up by whole pixels; a larger one, like an uploaded photo, scaled down.
+
+  A library picture more than 60 s newer than its original (a set import replaced it) wins. "So sieht es auf dem Pixoo aus" shows the real 64 × 64 file.
 - **So hört es dein Kind.** It plays the tracks the set has switched on, in the set's order, with their volume (capped at 100 % in the browser). Each track shows its real waveform (decoded in the browser).
-- **Generation.** A slot (picture or a track) never points at a file that does not exist yet. That was the broken picture while generating, and a failed job left the entry pointing at nothing. The states:
+- **Generation.** A slot (picture or a track) never points at a file that does not exist yet. That was the broken picture while generating, and a failed job left the entry pointing at nothing. A job carries a target `{set_id, letter, entry_id}`. When it is done, the server puts its file on that entry on the event loop, only if the slot is still empty (`_finalize_job`); `gen_update` says `applied`. Explicit choices detach a running job (`POST /api/jobs/{id}/detach`), so it then only fills the library. The states:
   - **run:** the current file stays visible and playable.
-  - **done, slot empty:** the file goes on the entry. If the letter is open, through the editor's own save. If not, through `POST /api/sets/{id}/letters/{L}/entries/{entry_id}/media` with `if_empty`, queued after that letter's saves.
+  - **done, slot was empty:** the file is on the entry, even if no page was open.
   - **done, slot filled:** "current vs new". The parent compares and takes, discards (the file stays in the library) or runs it again.
-  - **error:** the reason, inline, from the server.
+  - **error:** the reason, inline.
+
+  Workers store their result; the job becomes `done` only on the event loop (`_finalize_job`), so a parent's explicit choice detaches it until the very end. Choosing a file for a slot (PATCH or media without `if_empty`) detaches running jobs for that slot on the server, from any page.
+
+  A finished job whose file did not go on (`applied: false`) waits for review. Every page (and a reloaded one) shows it as "current vs new". Taking, discarding or "Nochmal" detaches it (= reviewed), and the other pages drop it too.
+
+  After a reconnect the page reads `/api/jobs` and catches up on ended jobs. The response carries `X-FK-Boot` (one id per server process): when it changed, jobs the page knew as running and the server no longer lists were lost, and they show "Unterbrochen …" with a retry.
 - **Errors in plain words.** `_provider_error()` turns a failed ElevenLabs/OpenRouter call into a German sentence: 401 key, 402 paid plan or credit, 403, 429, 5xx, no connection. The provider's own words go into `error_detail` (≤ 300 chars) and the AI log; an HTML error page is never echoed.
 - **Activity.** A button bottom right lists every AI job of the server (running, to check, failed) with "Prüfen" / "Öffnen". `/api/jobs` keeps the newest 300 finished jobs (`GEN_JOBS_KEEP`).
 - **Also:** suggest a word (accept → picture and every track the set plays are generated at once; reject → never suggested again), the suggestion prompt, rejected words, library picker with search and preview, upload, archive (files to the archive), remove.

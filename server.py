@@ -3952,15 +3952,85 @@ async def api_job_detach(request):
     return web.json_response({"ok": True, "detached": False, "status": job.get("status")})
 
 
+# ── Sound-effect instructions in English (FUNK-83) ──────────────────────────
+# ElevenLabs' sound-effect model only understands English. Every sound instruction goes through one small
+# rewrite to short, concrete English right before it is sent ("unchanged if already English"); no guessing
+# at the language. Results are cached per text, so regenerating costs nothing extra. Suggestions get their
+# descriptions rewritten the same way. The entry keeps its own text; voices (TTS) are never touched.
+TRANSLATE_MODEL = "openai/gpt-4.1-mini"
+_EN_CACHE_KEEP = 500
+_en_cache = {}                 # (what, text) → English
+
+
+def _to_english(text, what="sound"):
+    """Short, concrete English for a sound or picture description, or None (see _to_english_ex)."""
+    return _to_english_ex(text, what)[0]
+
+
+def _to_english_ex(text, what="sound"):
+    """(English, None) via OpenRouter, unchanged if it already is English; or (None, the exception) so a
+    caller can tell the parent why (credit, key, connection). Blocking: call from a worker thread or an
+    executor."""
+    import urllib.request
+    if not isinstance(text, str) or not text.strip():
+        return None, ValueError("leere Anweisung")
+    key = (what, text.strip())
+    if key in _en_cache:
+        return _en_cache[key], None
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        return None, ValueError("OPENROUTER_API_KEY nicht gesetzt")
+    kind = "a sound effect (for a sound-effect generator)" if what == "sound" else "a picture (for an image generator)"
+    prompt = (f"Rewrite this description of {kind} as short, concrete English. If it is already English, "
+              f"return it unchanged. Answer with the text only, no quotes, no explanation.\n\n{text.strip()}")
+    try:
+        payload = json.dumps({"model": TRANSLATE_MODEL, "messages": [{"role": "user", "content": prompt}],
+                              "temperature": 0.2}).encode()
+        req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions", data=payload,
+                                     headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            d = json.load(resp)
+        out = (d["choices"][0]["message"]["content"] or "").strip().strip('"').strip("„“").strip()
+    except Exception as e:
+        _ai_log_entry("translate", TRANSLATE_MODEL, text, f"failed: {type(e).__name__}", "error")
+        return None, e
+    if not out or len(out) > 400:
+        return None, ValueError("keine brauchbare Übersetzung erhalten")
+    if len(_en_cache) >= _EN_CACHE_KEEP:
+        _en_cache.pop(next(iter(_en_cache)))
+    _en_cache[key] = out
+    if out != text.strip():
+        _ai_log_entry("translate", TRANSLATE_MODEL, text, out, "ok")
+    return out, None
+
+
+def _english_sfx_prompt(prompt):
+    """(text to send, exception): English via _to_english_ex. Without an OpenRouter key the text goes as it
+    is (nothing to translate with); with a key, a failed rewrite stops the job with OpenRouter's own reason
+    (credit, key, connection) instead of paying for a prompt the sound model does not understand."""
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        return prompt, None
+    return _to_english_ex(prompt, "sound")
+
+
 def _gen_sound_worker(job_id, word, prompt, duration, filename):
     """Background worker for sound generation."""
     import urllib.request, shutil
     gen_jobs[job_id]["status"] = "generating"
     sse_broadcast("gen_update", gen_jobs[job_id])
     api_key = os.environ.get("ELEVENLABS_API_KEY", "")
-    _ai_log_entry("sound", "elevenlabs/sfx", prompt, None, "sending")
     try:
         os.makedirs(AI_SOUNDS_DIR, exist_ok=True)      # inside: a failure ends the job (FUNK-75)
+        sent, err = _english_sfx_prompt(prompt)         # FUNK-83: the sound model understands English
+        if err is not None:                             # the rewrite failed: nothing is paid for, the reason shows
+            _job_failed(job_id, "openrouter", err, "translate", TRANSLATE_MODEL, prompt)
+            gen_jobs[job_id]["error"] = "Übersetzung ins Englische: " + gen_jobs[job_id]["error"]
+            _job_finished(job_id)
+            return
+        if sent != prompt:
+            gen_jobs[job_id]["prompt_sent"] = sent
+        prompt = sent
+        _ai_log_entry("sound", "elevenlabs/sfx", prompt, None, "sending")
         payload = json.dumps({"text": prompt, "duration_seconds": duration, "prompt_influence": 0.6}).encode()
         req = urllib.request.Request("https://api.elevenlabs.io/v1/sound-generation",
             data=payload, headers={"xi-api-key": api_key, "Content-Type": "application/json"})
@@ -4536,6 +4606,11 @@ async def api_suggest_word(request):
         user_msg = user_tpl.replace("{letter}", letter).replace("{excluded}", excluded_str)
     except Exception:
         user_msg = default_user_tpl.replace("{letter}", letter).replace("{excluded}", excluded_str)
+    # FUNK-83: whatever the (editable) prompt says, the descriptions come in English: the sound-effect
+    # model only understands English, and English pictures come out best
+    user_msg += ("\n\nWICHTIG: \"word_en\" ist das englische Wort. \"sound_description\" und \"image_description\" "
+                 "IMMER auf Englisch, kurz und konkret (z.B. \"branch cracking and snapping\", "
+                 "\"several branches with small green leaves\"). Nur \"word\" ist Deutsch.")
     rule = "die mit einem bestimmten Buchstaben beginnen"
     if letter == "ß":
         # no German word starts with ß (FUNK-46): ask for one that contains it, whatever the template says
@@ -4585,6 +4660,13 @@ Wenn du eines der verbotenen Wörter vorschlägst, wird deine Antwort verworfen.
                 continue  # auto-retry
 
             _ai_log_entry("suggest", model, user_msg, f"OK: {suggested_word} (attempt {attempt+1})", "ok")
+            # FUNK-83: both descriptions as short English (unchanged if they already are); kept if that fails
+            loop = asyncio.get_running_loop()
+            for field, what in (("sound_description", "sound"), ("image_description", "picture")):
+                if isinstance(suggestion.get(field), str) and suggestion[field].strip():
+                    en = await loop.run_in_executor(None, _to_english, suggestion[field], what)
+                    if en:
+                        suggestion[field] = en
             return web.json_response(suggestion)
 
         except Exception as e:

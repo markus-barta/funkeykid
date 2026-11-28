@@ -570,6 +570,17 @@ The Dateien tab shows these uses as chips. A click opens the word or digit in th
 
 Only unused files offer "Archivieren", with a two-step confirm. `POST /api/archive` refuses a name that `_referenced_names()` still finds anywhere in the sets or key maps: 409, naming the first uses. So an entry, digit or key can no longer end up pointing at a missing file. The entry editor's own archive (FUNK-72) is unchanged: it archives only files nothing else uses.
 
+### Sound-effect instructions in English (FUNK-83)
+
+ElevenLabs' sound-effect model only understands English. No guessing at the language: every sound instruction is rewritten to short, concrete English right before it is sent (`_to_english`, OpenRouter `TRANSLATE_MODEL`, "unchanged if already English").
+- The rewrite is cached per text (`_en_cache`), so regenerating costs nothing extra.
+- The default instruction "Clear, distinct {word} sound effect" gets the English word too.
+- The job records `prompt_sent`; the AI log shows `translate` when the text changed.
+- The entry keeps its own text. Voices (TTS) are never touched.
+- Without an OpenRouter key the instruction is sent as it is. With a key, a failed rewrite stops the job before ElevenLabs (nothing paid) with OpenRouter's own reason (`_to_english_ex` keeps the exception; `_provider_error`: credit, key, connection), prefixed "Übersetzung ins Englische: ".
+
+Suggestions: `api_suggest_word` always appends a fixed rule after the (editable, often German) prompt: `word_en`, `sound_description` and `image_description` in English. Both descriptions then go through the same rewrite, in an executor; if that fails, they are kept.
+
 ### Dialogs (FUNK-80)
 
 The page uses no `prompt()`/`confirm()`. `ask({title, text, input, value, max, ok, danger})` opens the app's own dialog and resolves `true` (or the trimmed name for an input) or `null`.

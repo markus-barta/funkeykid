@@ -146,6 +146,7 @@ def test_a_voice_test_is_made_once_then_served_from_the_cache(env, monkeypatch):
     r2 = body(asyncio.run(server.api_voice_test(Req({"lang": "de", "voice_id": LEA, "voice_name": "Lea"}))))
     assert r1["cached"] is False and r2["cached"] is True and r1["url"] == r2["url"] and len(made) == 1
     assert made[0][0] == "Bär. Eis. Ball. Bagger." and made[0][1]["voice_id"] == LEA and made[0][1]["lang"] == "de"
+    assert r1["voice_id"] == LEA and r1["model"] == "eleven_v4" and r1["lang"] == "de"      # what was spoken (FUNK-87)
     r3 = body(asyncio.run(server.api_voice_test(Req({"lang": "de"}))))       # the saved (Rachel) voice: another file
     assert r3["url"] != r1["url"] and len(made) == 2
     name = r1["url"].rsplit("/", 1)[1]
@@ -211,7 +212,7 @@ def test_a_fill_run_takes_the_voice_as_it_is_at_each_word(env, monkeypatch):
         {"id": "e1", "word": "Affe", "tracks": {}}, {"id": "e2", "word": "Ast", "tracks": {}}]}}}}
     used = []
 
-    async def one(run, letter, entry_id, word, text, profile):
+    async def one(run, letter, entry_id, word, text, profile, replace=None, hold=False):
         used.append(profile["voice_id"])
         if len(used) == 1:                  # the parent picks Lea while the first word is being made
             server.settings["voice_languages"]["de"]["voice_id"] = LEA
@@ -222,3 +223,18 @@ def test_a_fill_run_takes_the_voice_as_it_is_at_each_word(env, monkeypatch):
            "failed": 0, "failed_words": [], "current": "", "current_letter": "", "error": "", "seq": 0}
     asyncio.run(server._fill_worker(run, [("A", "e1"), ("A", "e2")]))
     assert used == [RACHEL, LEA]
+
+
+def test_bulk_generation_needs_an_approved_voice(env, monkeypatch):
+    import threading
+    monkeypatch.setattr(server, "gen_jobs", {})
+    monkeypatch.setattr(server, "_register_job", lambda j: server.gen_jobs.__setitem__(j["id"], j))
+    monkeypatch.setattr(threading, "Thread", lambda *a, **k: type("T", (), {"start": lambda self: None})())
+    monkeypatch.setattr(server, "_claim_media_name", lambda *a, **k: "b_ball_de.mp3")
+    body = {"kind": "DE", "word": "Ball", "slug_prefix": "b", "bulk": True}
+    r = asyncio.run(server.api_generate_track(Req(body)))
+    assert r.status == 409 and json.loads(r.body)["error_code"] == "voice_unapproved" and server.gen_jobs == {}
+    single = asyncio.run(server.api_generate_track(Req(dict(body, bulk=False))))       # one word by click: allowed
+    assert single.status == 200
+    server.settings["voice_languages"]["de"]["approved"] = {"voice_id": RACHEL, "model": "eleven_v4"}
+    assert asyncio.run(server.api_generate_track(Req(body))).status == 200

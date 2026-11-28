@@ -3,13 +3,65 @@
   "product": "funkeykid",
   "repository": "markus-barta/funkeykid",
   "version_scheme": "inspr-calver-3",
-  "generated_at": "2026-11-28T16:41:31Z",
+  "generated_at": "2026-11-28T17:01:51Z",
   "source": "git",
   "releases": [
     {
       "version_scheme": "inspr-calver-3",
       "notes": {
-        "source": "release-notes/261128164128.0.0.json",
+        "source": "release-notes/261128170149.0.0.json",
+        "snapshot_sha256": "76c5c30f0485b70f77f3a237c0a8545ae933feef4aaac73517bc6ad5e98c9202",
+        "captured_at": "2026-11-28T17:01:49Z",
+        "release_revision": 0,
+        "items": [
+          {
+            "key": "FUNK-89",
+            "pill_en": "Wrong-voice warning",
+            "pill_de": "Warnung bei falscher Stimme",
+            "benefit_en": "Before many voices are made, the app warns if the chosen voice does not speak that language natively, so no credits go to an English accent again.",
+            "benefit_de": "Bevor viele Stimmen entstehen, warnt die App, wenn die gewählte Stimme die Sprache nicht als Muttersprache spricht, damit kein Guthaben mehr an einen englischen Akzent geht.",
+            "group": "features"
+          }
+        ],
+        "gaps": [],
+        "hidden": 0
+      },
+      "presentation": {
+        "headline": "Wrong-voice warning",
+        "intro": ""
+      },
+      "version": "261128170149.0.0",
+      "tag": "",
+      "release_channel": "stable",
+      "release_sequence": 30,
+      "state": "reserved",
+      "reserved_at": "2026-11-28T17:01:49Z",
+      "tagged_at": null,
+      "published_at": null,
+      "headline": "Wrong-voice warning",
+      "tickets": [
+        "FUNK-89"
+      ],
+      "changes": [],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "",
+        "source_url": "",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build.",
+          "No annotated release tag was recorded; publication is pending confirmation.",
+          "No source commit was found in main's first-parent VERSION history for this reservation."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "v261128164128.0.0:release-notes/261128164128.0.0.json",
         "snapshot_sha256": "9f888444c6746bfd35782afce33141083cf36c0c2e52af453cd82cf71cdad3de",
         "captured_at": "2026-11-28T16:41:28Z",
         "release_revision": 0,
@@ -39,31 +91,62 @@
         "intro": ""
       },
       "version": "261128164128.0.0",
-      "tag": "",
+      "tag": "v261128164128.0.0",
       "release_channel": "stable",
       "release_sequence": 29,
-      "state": "reserved",
+      "state": "published",
       "reserved_at": "2026-11-28T16:41:28Z",
-      "tagged_at": null,
+      "tagged_at": "2026-11-28T16:42:45Z",
       "published_at": null,
       "headline": "Backup before migrations · Version history page",
       "tickets": [
         "FUNK-86",
         "FUNK-88"
       ],
-      "changes": [],
+      "changes": [
+        {
+          "commit": "f7d2c6357464dc2c08e67b28687ef5433a3c9df0",
+          "subject": "feat: version history like the other INSPR projects (FUNK-88) (#33)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-88"
+          ],
+          "at": "2026-11-28T17:42:38+01:00",
+          "group": "features",
+          "linked_tickets": [
+            {
+              "key": "FUNK-88",
+              "pill_en": "Version history page",
+              "pill_de": "Seite mit Versionsverlauf",
+              "benefit_en": "You can see which version runs and what changed in each release, the same way as in the other projects.",
+              "benefit_de": "Du siehst, welche Version läuft und was sich in jedem Release geändert hat, so wie in den anderen Projekten.",
+              "group": "features"
+            }
+          ]
+        },
+        {
+          "commit": "daa254f68bdf9216d740c45b3e3facf22f547709",
+          "subject": "docs: backup and locked roll for releases that migrate settings or data (FUNK-86) (#32)",
+          "type": "docs",
+          "scope": "",
+          "tickets": [
+            "FUNK-86"
+          ],
+          "at": "2026-11-28T17:12:28+01:00",
+          "group": "other"
+        }
+      ],
       "changes_omitted": 0,
       "evidence": {
-        "source_commit": "",
-        "source_url": "",
+        "source_commit": "f7d2c6357464dc2c08e67b28687ef5433a3c9df0",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/f7d2c6357464dc2c08e67b28687ef5433a3c9df0",
         "image": null,
         "ci": null,
         "release_run": null,
         "release_url": "",
         "unavailable": [
-          "GitHub publication time, image digest and CI runs were not recorded for this build.",
-          "No annotated release tag was recorded; publication is pending confirmation.",
-          "No source commit was found in main's first-parent VERSION history for this reservation."
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
         ]
       }
     },
@@ -2147,7 +2230,7 @@
     }
   ],
   "pending": {
-    "base_version": "261128164128.0.0",
+    "base_version": "261128170149.0.0",
     "source_commit": "",
     "source_ref": "",
     "changes": [],

@@ -1,0 +1,21 @@
+{
+  "schema": "inspr.release-note-snapshot.v1",
+  "version": "261128170149.0.0",
+  "version_scheme": "inspr-calver-3",
+  "captured_at": "2026-11-28T17:01:49Z",
+  "membership_source": "release-manifest-tickets",
+  "field_source": "nodes.fields",
+  "frozen": true,
+  "items": [
+    {
+      "key": "FUNK-89",
+      "pill_en": "Wrong-voice warning",
+      "pill_de": "Warnung bei falscher Stimme",
+      "benefit_en": "Before many voices are made, the app warns if the chosen voice does not speak that language natively, so no credits go to an English accent again.",
+      "benefit_de": "Bevor viele Stimmen entstehen, warnt die App, wenn die gewählte Stimme die Sprache nicht als Muttersprache spricht, damit kein Guthaben mehr an einen englischen Akzent geht.",
+      "group": "features"
+    }
+  ],
+  "hidden": 0,
+  "gaps": []
+}

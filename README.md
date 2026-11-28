@@ -51,7 +51,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **Letters tab** — 26-tile grid with first-entry thumbnail + FX/DE/EN presence dots.
 - **Letter modal** — two-pane, responsive card grid; each entry gets image track + three sound tracks with per-track dropdown / prompt / volume / Generieren.
 - **Header nav** — `◀ [A ▼] ▶` plus `Shift+←/→` to walk letters; auto-saves on jump.
-- **Numbers tab + editor** — same multi-track treatment plus the background-image gallery (cycling on repeat-press).
+- **Zahlen tab (FUNK-76)** — the same tiles and editor as Buchstaben: saves by itself, undo, voice/sound slots with "current vs new", plus a backgrounds strip (switch, remove, library, upload, KI-Hintergrund; the digit shows on an active background, pressing again switches).
 - **Sets tab** — multiple content packs; Aktivieren / Duplizieren / Umbenennen / Löschen; active set exposes its Wiedergabe-Reihenfolge editor (reorder ↑↓ + per-kind toggle, auto-saves).
 - **Blacklist per letter** — rejected KI suggestions remembered so they don't come back.
 - **Editable AI prompts** — system prompt for word suggestion, sound description template, image style prompt, all in Settings.

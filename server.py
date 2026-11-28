@@ -2403,7 +2403,275 @@ async def api_put_number(request):
     _strip_legacy_sound(new_cfg)
     numbers[digit] = new_cfg
     save_settings()
+    for key in [k for k in _bg_tokens if k[:2] == (set_id, digit)]:
+        _bg_tokens.pop(key, None)            # whatever is there now was not put there by an add (FUNK-76)
     return web.json_response({"ok": True})
+
+
+# ── Numbers in the entry editor (FUNK-76) ───────────────────────────────────
+# The Zahlen tab uses the letters' editor (FUNK-72): a digit is shown as one entry with the fixed id
+# "number" (word; picture idea = image_subject; tracks), plus its backgrounds. Writes are small and
+# by field, validated like the entries', and never kept when the save fails. Generation jobs target
+# {set_id, letter: <digit>, entry_id: "number"}: a track fills only an empty slot, a picture job
+# adds a background. The whole-digit PUT above stays for scripts/.
+NUMBER_ENTRY_ID = "number"
+NUMBER_BG_MAX = 60
+_bg_ops = {}                # op id of an add, switch or removal → its first answer: a retry answers the same
+BG_OPS_KEEP = 500
+# (set_id, digit, image) → the token of the insertion that put that background there (in memory): an undo
+# of an add deletes only that insertion, never one another page made after removing it
+_bg_tokens = {}
+
+
+def _bg_token_new(set_id, digit, image):
+    tok = uuid.uuid4().hex[:12]
+    _bg_tokens[(set_id, digit, image)] = tok
+    return tok
+
+
+def _number_entry_view(n):
+    import copy as _copy
+    _normalize_number_entry(n)
+    return {"id": NUMBER_ENTRY_ID, "word": n.get("word") if isinstance(n.get("word"), str) else "",
+            "enabled": True, "image": "",
+            "_imageDesc": n.get("image_subject") if isinstance(n.get("image_subject"), str) else "",
+            "tracks": _copy.deepcopy(n.get("tracks") or {})}
+
+
+def _number_bgs(n):
+    """The backgrounds as the editor shows them: plain names only, enabled true/false."""
+    out = []
+    for b in n.get("backgrounds") or [] if isinstance(n.get("backgrounds"), list) else []:
+        if isinstance(b, dict) and isinstance(b.get("image"), str) and b["image"]:
+            out.append({"image": b["image"], "enabled": b.get("enabled", True) is not False})
+    return out
+
+
+def _number_slot(set_id, digit):
+    """(numbers dict of the set, the digit's config or None); (None, None) if the set does not exist."""
+    sets = settings.get("sets", {})
+    if digit not in NUMBER_KEYS or set_id not in sets or not isinstance(sets[set_id], dict):
+        return None, None
+    nums = sets[set_id].get("numbers")
+    if not isinstance(nums, dict):
+        nums = sets[set_id]["numbers"] = {}
+    n = nums.get(digit)
+    return nums, (n if isinstance(n, dict) else None)
+
+
+def _number_for_write(set_id, digit):
+    """(numbers dict, the digit's config, snapshot to restore); the config is created when missing."""
+    import copy as _copy
+    nums, n = _number_slot(set_id, digit)
+    if nums is None:
+        return None, None, None
+    snapshot = _copy.deepcopy(n) if n is not None else None
+    if n is None:
+        n = nums[digit] = {"word": "", "image_subject": "", "tracks": {}, "backgrounds": []}
+    _normalize_number_entry(n)
+    _strip_legacy_sound(n)
+    if not isinstance(n.get("backgrounds"), list):
+        n["backgrounds"] = []
+    return nums, n, snapshot
+
+
+def _number_save_or_restore(nums, digit, snapshot):
+    """save_settings(), or put the digit back as it was and raise _SaveFailed (like _save_or_restore)."""
+    try:
+        save_settings()
+    except Exception as e:
+        if snapshot is None:
+            nums.pop(digit, None)
+        else:
+            nums[digit] = snapshot
+        print(f"[settings] save failed, number change undone: {e}", flush=True)
+        raise _SaveFailed() from e
+
+
+def _number_route(request):
+    set_id, digit = request.match_info["set_id"], request.match_info["digit"]
+    if digit not in NUMBER_KEYS:
+        return None, None, web.json_response({"error": "Invalid digit"}, status=400)
+    if set_id not in settings.get("sets", {}):
+        return None, None, web.json_response({"error": "Set not found"}, status=404)
+    return set_id, digit, None
+
+
+async def api_get_number(request):
+    """One digit for the editor: {entries: [the digit as an entry], backgrounds, track_order}."""
+    set_id, digit, err = _number_route(request)
+    if err:
+        return err
+    _, n = _number_slot(set_id, digit)
+    n = n if n is not None else {"word": "", "image_subject": "", "tracks": {}, "backgrounds": []}
+    return web.json_response({"entries": [_number_entry_view(n)], "backgrounds": _number_bgs(n),
+                              "track_order": _normalize_track_order(settings["sets"][set_id].get("track_order"))})
+
+
+async def api_patch_number(request):
+    """Change some fields of a digit (word, _imageDesc, tracks), like PATCH of an entry."""
+    set_id, digit, err = _number_route(request)
+    if err:
+        return err
+    if request.match_info["entry_id"] != NUMBER_ENTRY_ID:
+        return web.json_response({"error": "entry not found"}, status=404)
+    try:
+        data = await request.json()
+        restore = isinstance(data, dict) and data.get("restore") is True
+        if isinstance(data, dict):
+            data = {k: v for k, v in data.items() if k != "restore"}
+        patch = _entry_patch(data, require_files=not restore)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    if "image" in patch or "enabled" in patch:
+        return web.json_response({"error": "a number has backgrounds, not one picture, and is always on"}, status=400)
+    nums, n, snapshot = _number_for_write(set_id, digit)
+    if "word" in patch:
+        n["word"] = patch["word"]
+    if "_imageDesc" in patch:
+        n["image_subject"] = patch["_imageDesc"]
+    for kind, t in patch.get("tracks", {}).items():
+        n["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100}).update(t)
+    _normalize_number_entry(n)
+    try:
+        _number_save_or_restore(nums, digit, snapshot)
+    except _SaveFailed:
+        return web.json_response(_SAVE_FAILED, status=500)
+    chosen = [k for k, t in patch.get("tracks", {}).items() if "file" in t]
+    if chosen:
+        _detach_jobs_for(set_id, digit, NUMBER_ENTRY_ID, chosen)
+    _letter_changed(request, set_id, digit, NUMBER_ENTRY_ID)
+    return web.json_response({"ok": True, "entry": _number_entry_view(n)})
+
+
+def _bg_index(n, image):
+    for i, b in enumerate(n.get("backgrounds") or []):
+        if isinstance(b, dict) and b.get("image") == image:
+            return i
+    return -1
+
+
+async def api_number_bg_add(request):
+    """Add a background by name: {image, enabled?, index?, restore?}. Already there → existed: true."""
+    set_id, digit, err = _number_route(request)
+    if err:
+        return err
+    try:
+        data = await request.json()
+    except ValueError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    if not isinstance(data, dict) or set(data) - {"image", "enabled", "index", "restore", "op"}:
+        return web.json_response({"error": "body must be {image, enabled?, index?, restore?, op?}"}, status=400)
+    op = data.get("op")
+    if op is not None and (not isinstance(op, str) or not 6 <= len(op) <= 40):
+        return web.json_response({"error": "op must be an id"}, status=400)
+    if op is not None and op in _bg_ops:
+        return web.json_response(_bg_ops[op])          # the same add again (a retry): its first answer
+    restore = data.get("restore") is True
+    try:
+        image = _library_name(data.get("image"), IMAGES_DIR, "image", require=not restore)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=400)
+    enabled, index = data.get("enabled", True), data.get("index")
+    if not image or not isinstance(enabled, bool) or (index is not None and (isinstance(index, bool) or not isinstance(index, int))):
+        return web.json_response({"error": "image, enabled (true/false) and index (a number) please"}, status=400)
+    nums, n, snapshot = _number_for_write(set_id, digit)
+    if _bg_index(n, image) >= 0:
+        return web.json_response(_bg_answer(op, {"ok": True, "existed": True}))
+    if len(n["backgrounds"]) >= NUMBER_BG_MAX and not restore:   # an undo puts back what was just there
+        return web.json_response({"error": f"Diese Zahl hat schon {NUMBER_BG_MAX} Hintergründe. Entferne zuerst einen."}, status=400)
+    at = len(n["backgrounds"]) if index is None else max(0, min(index, len(n["backgrounds"])))
+    n["backgrounds"].insert(at, {"image": image, "enabled": enabled})
+    try:
+        _number_save_or_restore(nums, digit, snapshot)
+    except _SaveFailed:
+        return web.json_response(_SAVE_FAILED, status=500)
+    _letter_changed(request, set_id, digit, NUMBER_ENTRY_ID)
+    return web.json_response(_bg_answer(op, {"ok": True, "index": at, "token": _bg_token_new(set_id, digit, image)}))
+
+
+def _bg_answer(op, answer):
+    if op is not None:
+        _bg_ops[op] = answer
+        while len(_bg_ops) > BG_OPS_KEEP:
+            _bg_ops.pop(next(iter(_bg_ops)))
+    return answer
+
+
+async def api_number_bg_patch(request):
+    """Switch a background on or off: {enabled, op?, if_enabled?, if_token?}. Answers whether it changed, what
+    it was and the background's identity token; with if_enabled and if_token (an undo) it switches only if it
+    is still that background (not a removed-and-added-again one) and still as that page left it."""
+    set_id, digit, err = _number_route(request)
+    if err:
+        return err
+    try:
+        data = await request.json()
+    except ValueError:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+    if (not isinstance(data, dict) or not {"enabled"} <= set(data) <= {"enabled", "op", "if_enabled", "if_token"}
+            or not isinstance(data["enabled"], bool) or not isinstance(data.get("if_enabled", True), bool)
+            or not isinstance(data.get("if_token", ""), str)):
+        return web.json_response({"error": "body must be {enabled: true|false, op?, if_enabled?, if_token?}"}, status=400)
+    op = data.get("op")
+    if op is not None and (not isinstance(op, str) or not 6 <= len(op) <= 40):
+        return web.json_response({"error": "op must be an id"}, status=400)
+    if op is not None and op in _bg_ops:
+        return web.json_response(_bg_ops[op])          # a retry never re-applies a choice made since
+    nums, n = _number_slot(set_id, digit)
+    i = _bg_index(n, request.match_info["image"]) if n is not None else -1
+    if i < 0:
+        return web.json_response({"error": "background not found"}, status=404)
+    image = request.match_info["image"]
+    tok = _bg_tokens.get((set_id, digit, image)) or _bg_token_new(set_id, digit, image)   # its identity
+    was = n["backgrounds"][i].get("enabled", True) is not False
+    if (was == data["enabled"] or ("if_enabled" in data and was != data["if_enabled"])
+            or ("if_token" in data and data["if_token"] != tok)):
+        # nothing to do, or changed (or replaced) by someone else since: no write, nothing for an undo
+        return web.json_response(_bg_answer(op, {"ok": True, "changed": False, "was": was, "token": tok}))
+    nums, n, snapshot = _number_for_write(set_id, digit)
+    n["backgrounds"][i]["enabled"] = data["enabled"]
+    try:
+        _number_save_or_restore(nums, digit, snapshot)
+    except _SaveFailed:
+        return web.json_response(_SAVE_FAILED, status=500)
+    _letter_changed(request, set_id, digit, NUMBER_ENTRY_ID)
+    return web.json_response(_bg_answer(op, {"ok": True, "changed": True, "was": was, "token": tok}))
+
+
+async def api_number_bg_delete(request):
+    """Take a background off the digit (the picture stays in the library). Not there → removed: false.
+    Body (optional): {op, if_token}: a retry with the same op gets the first answer; with if_token
+    (an undo of an add) only the insertion with that token is taken off."""
+    set_id, digit, err = _number_route(request)
+    if err:
+        return err
+    try:
+        data = await request.json()
+    except Exception:
+        data = None
+    op = data.get("op") if isinstance(data, dict) else None
+    if op is not None and (not isinstance(op, str) or not 6 <= len(op) <= 40):
+        return web.json_response({"error": "op must be an id"}, status=400)
+    if op is not None and op in _bg_ops:
+        return web.json_response(_bg_ops[op])
+    if_token = data.get("if_token") if isinstance(data, dict) else None
+    if if_token is not None and not isinstance(if_token, str):
+        return web.json_response({"error": "if_token must be text"}, status=400)
+    image = request.match_info["image"]
+    nums, n = _number_slot(set_id, digit)
+    i = _bg_index(n, image) if n is not None else -1
+    if i < 0 or (if_token is not None and _bg_tokens.get((set_id, digit, image)) != if_token):
+        return web.json_response(_bg_answer(op, {"ok": True, "removed": False}))
+    nums, n, snapshot = _number_for_write(set_id, digit)
+    gone = n["backgrounds"].pop(i)
+    try:
+        _number_save_or_restore(nums, digit, snapshot)
+    except _SaveFailed:
+        return web.json_response(_SAVE_FAILED, status=500)
+    _bg_tokens.pop((set_id, digit, image), None)
+    _letter_changed(request, set_id, digit, NUMBER_ENTRY_ID)
+    return web.json_response(_bg_answer(op, {"ok": True, "removed": True, "index": i, "enabled": gone.get("enabled", True) is not False}))
 
 
 async def api_delete_entry(request):
@@ -3555,9 +3823,23 @@ def _job_target(raw, kind):
     if not isinstance(raw, dict) or not all(isinstance(raw.get(k), str) for k in ("set_id", "letter", "entry_id")):
         raise _TargetError(400, "target must be {set_id, letter, entry_id}")
     letter = keymap.norm_letter(raw["letter"])
-    if _find_entry(_letter_entries(raw["set_id"], letter), raw["entry_id"])[1] is None:
+    if _slot_entry(raw["set_id"], letter, raw["entry_id"]) is None:
         raise _TargetError(404, "entry not found")
+    if letter in NUMBER_KEYS and kind == "IMG":
+        kind = "BG"                          # a number's picture job adds a background (FUNK-76)
+        bgs = _slot_entry(raw["set_id"], letter, raw["entry_id"]).get("backgrounds")
+        if isinstance(bgs, list) and len(bgs) >= NUMBER_BG_MAX:
+            raise _TargetError(400, f"Diese Zahl hat schon {NUMBER_BG_MAX} Hintergründe. Entferne zuerst einen.")
     return {"set_id": raw["set_id"], "letter": letter, "entry_id": raw["entry_id"], "kind": kind}
+
+
+def _slot_entry(set_id, letter, entry_id):
+    """The entry a job target names: a letter's entry by id, or a digit's config (id "number")."""
+    if letter in NUMBER_KEYS:
+        if entry_id != NUMBER_ENTRY_ID:
+            return None
+        return _number_slot(set_id, letter)[1]
+    return _find_entry(_letter_entries(set_id, letter), entry_id)[1]
 
 
 def _job_finished(job_id):
@@ -3584,19 +3866,31 @@ def _finalize_job(job_id):
     job["status"] = "done"
     t, applied = job.get("target"), False       # a detached job has no target any more
     if t:
-        _, e = _find_entry(_letter_entries(t["set_id"], t["letter"]), t["entry_id"])
+        e = _slot_entry(t["set_id"], t["letter"], t["entry_id"])
         fname, kind = job.get("filename"), t["kind"]
-        folder = IMAGES_DIR if kind == "IMG" else SOUNDS_DIR
+        folder = IMAGES_DIR if kind in ("IMG", "BG") else SOUNDS_DIR
         if e is not None and job.get("batch") and (not _fill_wanted(e, kind) or _fill_text(e, kind) != job.get("text")):
             # FUNK-75: a fill run's voice for a word that changed meanwhile (renamed, new spoken text,
             # switched off or filled): it only goes to the library, and no page offers it for review
             job["target"] = None
         elif e is not None and fname and os.path.isfile(os.path.join(folder, fname)):
-            _normalize_letter_entry(e)
-            current = e.get("image") if kind == "IMG" else (e["tracks"].get(kind) or {}).get("file")
+            if t["letter"] in NUMBER_KEYS:
+                _normalize_number_entry(e)
+                if not isinstance(e.get("backgrounds"), list):
+                    e["backgrounds"] = []
+            else:
+                _normalize_letter_entry(e)
+            if kind == "BG":                 # a background is added, never replaces one (FUNK-76)
+                # already there: done; the digit full: it waits for review ("current vs new")
+                current = fname if _bg_index(e, fname) >= 0 else ("full" if len(e["backgrounds"]) >= NUMBER_BG_MAX else "")
+            else:
+                current = e.get("image") if kind == "IMG" else (e["tracks"].get(kind) or {}).get("file")
             if not current:
                 before = json.dumps(e)
-                if kind == "IMG":
+                if kind == "BG":
+                    e["backgrounds"].append({"image": fname, "enabled": True})
+                    _bg_token_new(t["set_id"], t["letter"], fname)
+                elif kind == "IMG":
                     e["image"] = fname
                 else:
                     track = e["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
@@ -3611,6 +3905,8 @@ def _finalize_job(job_id):
                     print(f"[gen] {job_id}: could not save the file on its entry: {ex}", flush=True)
                 if applied:
                     sse_broadcast("letter", {"set_id": t["set_id"], "letter": t["letter"], "entry_id": t["entry_id"], "origin": "job"})
+            elif kind == "BG" and current == fname:
+                applied = True               # that background is already on the digit
     if "target" in job:
         job["applied"] = applied
     job["finished"] = job.get("finished") or time.time()
@@ -4616,6 +4912,11 @@ def create_app():
     # Numbers within a set
     app.router.add_get("/api/sets/{set_id}/numbers", api_get_numbers)
     app.router.add_put("/api/sets/{set_id}/numbers/{digit}", api_put_number)
+    app.router.add_get("/api/sets/{set_id}/numbers/{digit}", api_get_number)
+    app.router.add_patch("/api/sets/{set_id}/numbers/{digit}/entries/{entry_id}", api_patch_number)
+    app.router.add_post("/api/sets/{set_id}/numbers/{digit}/backgrounds", api_number_bg_add)
+    app.router.add_patch("/api/sets/{set_id}/numbers/{digit}/backgrounds/{image}", api_number_bg_patch)
+    app.router.add_delete("/api/sets/{set_id}/numbers/{digit}/backgrounds/{image}", api_number_bg_delete)
     # Files
     app.router.add_get("/api/sounds", api_get_sounds)
     app.router.add_post("/api/sounds/upload", api_upload_sound)

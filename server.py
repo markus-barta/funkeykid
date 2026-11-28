@@ -10,6 +10,7 @@ import re
 import tempfile
 import threading
 import time
+import unicodedata
 import uuid
 import weakref
 from pathlib import Path
@@ -4559,6 +4560,32 @@ async def api_fill_stop(request):
     return web.json_response({"ok": True, "run": _fill_public(run), "seq": _fill_seq})
 
 
+_UMLAUT_BASE = {"Ä": "A", "Ö": "O", "Ü": "U"}
+
+
+_ARTICLE_RE = re.compile(r"^(der|die|das|ein|eine|einen|the|a|an)\s+(?=\S)", re.IGNORECASE)
+
+
+def _suggested_word(raw):
+    """The word as the app stores it: NFC (Ö is one character, not O + ¨), trimmed, without a leading
+    article ("die Ölkanne" → "Ölkanne"), FUNK-84."""
+    w = unicodedata.normalize("NFC", raw if isinstance(raw, str) else "").strip()
+    return _ARTICLE_RE.sub("", w, count=1).strip()
+
+
+def _fits_letter(word, letter):
+    """True if a suggested word belongs to the letter (FUNK-84): it starts with it (Ä is not A),
+    or, for ß, contains it (ẞ counts). Letters without a rule (digits, symbols) always fit."""
+    w = _suggested_word(word)
+    if not w:
+        return False
+    if letter == "ß":
+        return "ß" in w.lower()                     # "ẞ".lower() is "ß"; casefold() would turn ß into ss
+    if not (isinstance(letter, str) and len(letter) == 1 and letter.isalpha()):
+        return True
+    return keymap.norm_letter(w[0]) == letter
+
+
 async def api_suggest_word(request):
     """AI-suggest a fitting German word for a letter, not already used."""
     data = await request.json()
@@ -4617,6 +4644,12 @@ async def api_suggest_word(request):
         user_msg += ("\n\nWICHTIG: Kein deutsches Wort beginnt mit ß. Schlage ein Wort vor, "
                      "in dem ein ß vorkommt (z.B. Fuß, Straße, Strauß), und das Kinder kennen.")
         rule = "in denen ein ß vorkommt"
+    elif letter in _UMLAUT_BASE:
+        # FUNK-84: few German words start with an umlaut, so models drift to A/O/U words
+        base = _UMLAUT_BASE[letter]
+        user_msg += (f"\n\nWICHTIG: {letter} ist ein eigener Buchstabe (Umlaut). Das Wort MUSS mit {letter} "
+                     f"beginnen. Wörter, die mit {base} beginnen, sind FALSCH.")
+        rule = f"die mit dem Umlaut {letter} beginnen (nicht mit {base})"
 
     system_msg = f"""Du bist ein Kinderwort-Generator. Du schlägst deutsche Wörter vor, {rule}.
 STRENG VERBOTEN sind diese Wörter — du darfst sie NIEMALS vorschlagen:
@@ -4626,15 +4659,19 @@ Wenn du eines der verbotenen Wörter vorschlägst, wird deine Antwort verworfen.
 
     _ai_log_entry("suggest", model, f"SYSTEM: {system_msg[:200]}...\nUSER: {user_msg}", None, "sending")
 
-    # Auto-retry up to 3 times if model returns excluded word
+    # Auto-retry up to 3 times if the model returns an excluded word or one for another letter;
+    # each retry tells the model what was wrong (FUNK-84)
     import urllib.request, re
+    corrections = []
+    wrong_letter = 0
+    excluded_norm = {_suggested_word(w).lower() for w in all_excluded} - {""}
     for attempt in range(3):
         try:
             payload = json.dumps({
                 "model": model,
                 "messages": [
                     {"role": "system", "content": system_msg},
-                    {"role": "user", "content": user_msg},
+                    {"role": "user", "content": user_msg + ("\n\n" + "\n".join(corrections) if corrections else "")},
                 ],
                 "temperature": 1.0 + attempt * 0.1,  # increase randomness on retry
             }).encode()
@@ -4653,10 +4690,19 @@ Wenn du eines der verbotenen Wörter vorschlägst, wird deine Antwort verworfen.
                 continue
 
             suggestion = json.loads(json_match.group())
-            suggested_word = suggestion.get("word", "")
+            suggested_word = _suggested_word(suggestion.get("word", ""))      # FUNK-84: NFC, no article
+            suggestion["word"] = suggested_word
 
-            if suggested_word.lower() in [w.lower() for w in all_excluded]:
+            if suggested_word.lower() in excluded_norm:     # FUNK-84: stored words compared the same way
                 _ai_log_entry("suggest", model, user_msg, f"REJECTED #{attempt+1}: {suggested_word}", "rejected")
+                corrections.append(f"NICHT „{suggested_word}“: das ist verboten. Schlage ein anderes Wort vor.")
+                continue  # auto-retry
+            if not _fits_letter(suggested_word, letter):
+                wrong_letter += 1
+                _ai_log_entry("suggest", model, user_msg, f"REJECTED #{attempt+1}: {suggested_word} (Buchstabe {letter})", "rejected")
+                first = (suggested_word.strip()[:1] or "?").upper()
+                corrections.append(f"NICHT „{suggested_word}“: es enthält kein ß." if letter == "ß" else
+                                   f"NICHT „{suggested_word}“: es beginnt mit {first}, nicht mit {letter}.")
                 continue  # auto-retry
 
             _ai_log_entry("suggest", model, user_msg, f"OK: {suggested_word} (attempt {attempt+1})", "ok")
@@ -4674,8 +4720,12 @@ Wenn du eines der verbotenen Wörter vorschlägst, wird deine Antwort verworfen.
             _ai_log_entry("suggest", model, user_msg, f"{code or ''} {detail or e}".strip(), "error")
             return web.json_response({"error": msg, "error_code": code, "error_detail": detail}, status=502)
 
-    # All 3 attempts returned excluded words
+    # All 3 attempts returned excluded words or words for another letter: say so instead of showing one
     _ai_log_entry("suggest", model, user_msg, f"FAILED after 3 attempts", "error")
+    if wrong_letter:
+        return web.json_response({
+            "error": f"Die KI fand nach 3 Versuchen kein passendes Wort mit {letter}. Nochmal versuchen oder selbst eintippen.",
+        })
     return web.json_response({
         "error": f"KI konnte nach 3 Versuchen kein neues Wort für {letter} finden. Evtl. zu viele ausgeschlossene Wörter.",
     })

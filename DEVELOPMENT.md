@@ -570,6 +570,14 @@ The Dateien tab shows these uses as chips. A click opens the word or digit in th
 
 Only unused files offer "Archivieren", with a two-step confirm. `POST /api/archive` refuses a name that `_referenced_names()` still finds anywhere in the sets or key maps: 409, naming the first uses. So an entry, digit or key can no longer end up pointing at a missing file. The entry editor's own archive (FUNK-72) is unchanged: it archives only files nothing else uses.
 
+### Suggestions belong to their letter (FUNK-84)
+
+`api_suggest_word` checks every answer with `_fits_letter`: the word starts with the letter (Ä is not A), and for ß it contains ß.
+- For Ä/Ö/Ü the prompt states that the umlaut is its own letter.
+- A wrong or excluded word is retried with a precise correction ("NICHT „Uhr“: es beginnt mit U, nicht mit Ü.").
+- After 3 attempts the parent gets an honest error, never a wrong word.
+- The editor's suggestion card shows the whole word (wrapping), its sound idea, and the buttons on their own line.
+
 ### Sound-effect instructions in English (FUNK-83)
 
 ElevenLabs' sound-effect model only understands English. No guessing at the language: every sound instruction is rewritten to short, concrete English right before it is sent (`_to_english`, OpenRouter `TRANSLATE_MODEL`, "unchanged if already English").

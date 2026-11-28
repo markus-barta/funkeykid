@@ -415,7 +415,7 @@ GET  /api/files/usage Returns: {"sounds": {name: [use]}, "images": {name: [use]}
 | Übersicht | What the child played: tiles, 30-day chart, keyboard heat map, top keys, play sessions, CSV export (FUNK-42) |
 | Sets | Set cards (FUNK-81): Aktiv badge, counts, "Aktivieren", a ⋯ menu with Duplizieren / Umbenennen / Exportieren (ZIP) / Löschen (not the last set); "So spielt dieses Set": the track order of the active set with up/down and on/off, numbered by play position; Neues Set and ZIP import in the bar |
 | Tastatur | Key map on the drawn keyboard, keyboard profiles, virtual QWERTZ keyboard for testing |
-| Einstellungen | Keyboard language, volume, display mode, random sounds, AI prompts; Fortschritt: "gelernt" threshold and reset (FUNK-40) |
+| Einstellungen | Five cards (FUNK-82): Tastatur (language, device with refresh, debounce, battery warning), Ton (volume, random sounds, loudness normalization with target and normalize-all), Pixoo-Anzeige (mode, IP), KI-Anweisungen (sound/picture prompts, suggestion model and prompt), Fortschritt (mastery, reset). Every change saves by itself (autoSave) |
 | Dateien | Töne and Bilder: what uses each file (click opens it), filters Alle, Benutzt and Unbenutzt, search, upload; archive only unused files (FUNK-78) |
 | KI & Dienste | AI log and integration status |
 

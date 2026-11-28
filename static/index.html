@@ -517,6 +517,8 @@
     .ui-danger-line { color: var(--ui-err); border-color: rgba(255,97,112,.4); }
     .ui-danger-line:hover { background: var(--ui-err-soft); }
     select.ui-inp { cursor: pointer; }
+    .ui-scard input[type=range].ui-range { width: 100%; flex: none; margin: 8px 0 2px; }
+    .ui-scard .ui-field label { gap: 12px; } .ui-scard .ui-field label span { text-align: right; }
     .ui-cols { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
     .ui-card { background: var(--ui-s2); border: 1px solid var(--ui-line); border-radius: 20px; }
     .ui-pic { padding: 14px; }
@@ -1723,8 +1725,9 @@
             <span class="ui-hint">funkeykid übernimmt das Gerät exklusiv (alle Eingabeknoten): der Rechner sieht keine Tastendrücke. Die Host-Isolation in nixcfg muss zum selben Gerät passen.</span>
           </div>
           <div class="ui-field">
-            <label for="st-debounce">Entprellen <span>Sekunden zwischen zwei Drücken derselben Taste</span></label>
-            <input id="st-debounce" type="number" class="ui-inp" style="max-width:120px" x-model.number="settings.debounce_seconds" @change="autoSave()" step="0.1" min="0.1" max="3">
+            <label for="st-debounce">Entprellen <span>Sekunden</span></label>
+            <input id="st-debounce" type="number" class="ui-inp" style="max-width:120px" x-model.number="settings.debounce_seconds" @change="autoSave()" step="0.1" min="0.1" max="3" placeholder="0.8">
+            <span class="ui-hint">Nach einem Tastendruck wird jede weitere Taste so lange ignoriert, auch eine andere (Lautstärke, Leertaste, Eingabetaste und Pfeile ausgenommen). So wird wildes Hämmern nicht zum Dauerfeuer.</span>
           </div>
           <div class="ui-field">
             <label for="battery-low">Akku-Warnung ab <span class="num" x-text="(settings.battery_low_threshold ?? 20) > 0 ? (settings.battery_low_threshold ?? 20) + ' %' : 'aus'"></span></label>
@@ -1746,7 +1749,7 @@
           </div>
           <div class="ui-srow">
             <div><b>Gleiche Lautheit</b><span class="ui-hint">Neue und hochgeladene Töne bekommen automatisch dieselbe wahrgenommene Lautstärke (EBU R128).</span></div>
-            <label class="ui-switch"><input type="checkbox" role="switch" x-model="settings.audio_normalize" @change="autoSave()" aria-label="Lautheits-Normalisierung"><span class="tr"></span></label>
+            <label class="ui-switch"><input type="checkbox" role="switch" x-model="settings.audio_normalize" @change="autoSave()" aria-label="Gleiche Lautheit"><span class="tr"></span></label>
           </div>
           <template x-if="settings.audio_normalize">
             <div style="display:flex;flex-direction:column;gap:10px">
@@ -1786,6 +1789,7 @@
           <p class="ui-hint" style="margin:0">Gelten für alle Wörter. Für ein einzelnes Wort gibt es eigene Anweisungen im Editor. Stand und Verbrauch: <button type="button" class="ui-link" @click="go('ailog')">KI &amp; Dienste</button>.</p>
           <div class="ui-field">
             <label for="st-psound">Geräusch <span>Platzhalter {word}</span></label>
+            <span class="ui-hint" style="margin:0 0 6px">Die Geräusch-KI versteht nur Englisch. Mit OpenRouter wird jede Anweisung vor dem Erzeugen ins Englische gebracht, ohne OpenRouter bitte Englisch schreiben.</span>
             <textarea id="st-psound" class="ui-inp ui-mono" rows="2" x-model="settings.ai_prompts.sound" @change="autoSave()" placeholder="Sound-Prompt mit {word} Platzhalter"></textarea>
           </div>
           <div class="ui-field">

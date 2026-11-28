@@ -449,6 +449,13 @@
     .ui-addrow { display: flex; gap: 8px; }
     .ui-suggest { display: flex; align-items: center; gap: 8px; padding: 10px; border-radius: 13px; border: 1px dashed var(--ui-pri-line); background: var(--ui-pri-soft); min-width: 0; }
     .ui-suggest b { font-size: 15px; }
+    /* FUNK-84: the whole suggested word, its sound idea, then the buttons on their own line */
+    .ui-sugg-res { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+    .ui-sugg-res .w { display: flex; align-items: flex-start; gap: 8px; }
+    .ui-sugg-res .w b { overflow-wrap: anywhere; hyphens: auto; line-height: 1.3; }
+    .ui-sugg-res .w svg.ui-i { flex: none; margin-top: 2px; }
+    .ui-sugg-res .d { margin: 0; font-size: 12px; color: var(--ui-tx3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .ui-sugg-res .a { display: flex; justify-content: flex-end; gap: 6px; }
     .ui-gapcall { display: flex; align-items: center; gap: 10px; margin: 0 10px 6px; padding: 8px 8px 8px 12px; border-radius: 12px; background: rgba(245,185,65,.08);
       border: 1px solid rgba(245,185,65,.2); font-size: 12.5px; color: #f3d79b; }
     .ui-shimmer { position: relative; overflow: hidden; background: var(--ui-s3); }
@@ -685,6 +692,7 @@
       .ui-wrow { flex: none; width: auto; padding: 6px 10px 6px 6px; }
       .ui-wrow img, .ui-wrow .ph { width: 34px; height: 34px; border-radius: 9px; }
       .ui-wrow .ws, .ui-wrow .ui-pips { display: none; }
+      .ui-wlist .ui-suggest { flex: none; width: min(300px, calc(100vw - 48px)); }   /* FUNK-84: never squeezed by the word chips */
       .ui-wlist { scrollbar-width: none; } .ui-wlist::-webkit-scrollbar { display: none; }
       .ui-wfoot { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 8px 10px; }
       .ui-wfoot .ui-addrow { flex: 1; min-width: 0; }
@@ -2250,11 +2258,13 @@
                       </div>
                     </template>
                     <template x-if="!edSuggest.busy && !edSuggest.error">
-                      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-                        <span x-html="ui.ic.sparkle" style="color:var(--ui-pri-hi)" aria-hidden="true"></span><b class="ui-trunc" x-text="edSuggest.data.word"></b>
-                        <span class="ui-sp"></span>
-                        <button type="button" class="ui-btn xs ui-btn-ghost" @click="edRejectSuggest()" title="Nicht mehr vorschlagen">Nein</button>
-                        <button type="button" class="ui-btn xs ui-btn-pri" @click="edAcceptSuggest()">Übernehmen</button>
+                      <div class="ui-sugg-res">
+                        <div class="w"><span x-html="ui.ic.sparkle" style="color:var(--ui-pri-hi)" aria-hidden="true"></span><b x-text="edSuggest.data.word"></b></div>
+                        <p class="d" x-show="edSuggest.data.sound_description" x-text="'Geräusch: ' + edSuggest.data.sound_description" :title="edSuggest.data.sound_description"></p>
+                        <div class="a">
+                          <button type="button" class="ui-btn xs ui-btn-ghost" @click="edRejectSuggest()" title="Nicht mehr vorschlagen">Nein</button>
+                          <button type="button" class="ui-btn xs ui-btn-pri" @click="edAcceptSuggest()">Übernehmen</button>
+                        </div>
                       </div>
                     </template>
                   </div>

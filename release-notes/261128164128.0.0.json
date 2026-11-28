@@ -1,0 +1,29 @@
+{
+  "schema": "inspr.release-note-snapshot.v1",
+  "version": "261128164128.0.0",
+  "version_scheme": "inspr-calver-3",
+  "captured_at": "2026-11-28T16:41:28Z",
+  "membership_source": "release-manifest-tickets",
+  "field_source": "nodes.fields",
+  "frozen": true,
+  "items": [
+    {
+      "key": "FUNK-86",
+      "pill_en": "Backup before migrations",
+      "pill_de": "Sicherung vor Migrationen",
+      "benefit_en": "A release that changes the stored settings can be rolled back exactly, from a copy made right before it.",
+      "benefit_de": "Ein Release, das gespeicherte Einstellungen umbaut, lässt sich exakt zurückrollen, aus einer Kopie von direkt davor.",
+      "group": "features"
+    },
+    {
+      "key": "FUNK-88",
+      "pill_en": "Version history page",
+      "pill_de": "Seite mit Versionsverlauf",
+      "benefit_en": "You can see which version runs and what changed in each release, the same way as in the other projects.",
+      "benefit_de": "Du siehst, welche Version läuft und was sich in jedem Release geändert hat, so wie in den anderen Projekten.",
+      "group": "features"
+    }
+  ],
+  "hidden": 0,
+  "gaps": []
+}

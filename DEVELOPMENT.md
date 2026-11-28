@@ -570,6 +570,15 @@ The Dateien tab shows these uses as chips. A click opens the word or digit in th
 
 Only unused files offer "Archivieren", with a two-step confirm. `POST /api/archive` refuses a name that `_referenced_names()` still finds anywhere in the sets or key maps: 409, naming the first uses. So an entry, digit or key can no longer end up pointing at a missing file. The entry editor's own archive (FUNK-72) is unchanged: it archives only files nothing else uses.
 
+### Dialogs (FUNK-80)
+
+The page uses no `prompt()`/`confirm()`. `ask({title, text, input, value, max, ok, danger})` opens the app's own dialog and resolves `true` (or the trimmed name for an input) or `null`.
+- It is used by: archive in the editor; Sets new / duplicate / rename / delete; Tastatur duplicate / rename / delete; Fortschritt zurücksetzen; Lautheit normalisieren.
+- Focus goes to the name field, or to "Abbrechen" for destructive questions (a red button), and returns afterwards. Enter confirms, Esc cancels.
+- Keys typed in the dialog never reach the page's own key handling. While a dialog is open, every other part of the page is `inert` (no Tab, no click), and `onKeyGlobal` gives Escape to the dialog first. Focus returns to where it was, or to `returnTo` if that place is hidden by then (archive: "Mehr Aktionen").
+- A second `ask` cancels the first.
+- A dialog never runs inside a queue: callers ask first, then queue the work (FUNK-63). The editor's archive checks after the answer that the same opening (token) and word are still there.
+
 ### Fehlende Stimmen erzeugen (FUNK-75)
 
 The Buchstaben tab shows "Fehlende Stimmen erzeugen" with a count when words of the active set have no German voice and the set plays DE. A confirmation shows the ElevenLabs characters it will use, compared with what is left, and roughly how long it takes. Then `POST /api/sets/{id}/fill-voices` (`{kind: "DE"}`) starts one run on the server.

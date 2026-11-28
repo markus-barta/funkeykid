@@ -466,6 +466,17 @@
       color: var(--ui-tx); background: none; border: 0; cursor: pointer; }
     .ui-menu button:hover { background: rgba(255,255,255,.06); }
     .ui-menu button.danger { color: var(--ui-err); }
+    /* FUNK-80: the app's own dialog instead of prompt()/confirm() */
+    .ui-dlg-scrim { animation: ui-dlg-fade .14s ease-out; }
+    .ui-dlg { animation: ui-dlg-in .16s var(--ui-ease); }
+    @keyframes ui-dlg-fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes ui-dlg-in { from { transform: translateY(6px) scale(.98); } to { transform: none; } }
+    .ui-dlg { width: min(440px, calc(100vw - 32px)); padding: 22px; border-radius: 20px; background: var(--ui-s2); border: 1px solid var(--ui-line2);
+      box-shadow: 0 24px 60px rgba(0,0,0,.55); display: flex; flex-direction: column; gap: 12px; }
+    .ui-dlg h3 { margin: 0; font-size: 17px; font-weight: 750; }
+    .ui-dlg p { margin: 0; font-size: 13.5px; color: var(--ui-tx2); line-height: 1.5; }
+    .ui-dlg .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+    .ui-btn-danger { background: var(--ui-err); color: #fff; } .ui-btn-danger:hover { background: #ff7a87; }
     .ui-menu hr { border: 0; border-top: 1px solid var(--ui-line); margin: 5px 4px; }
     .ui-cols { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
     .ui-card { background: var(--ui-s2); border: 1px solid var(--ui-line); border-radius: 20px; }
@@ -654,9 +665,10 @@
 
 <div x-data="funkeykid()" x-init="init()" class="ui-app" @keydown.window="onKeyGlobal($event)"
      x-effect="const sh = $root.querySelector('.ui-shell'), bn = $root.querySelector('.ui-bnav'), ed2 = $root.querySelector('.ui-ed');
-               const ac = $root.querySelector('.ui-ac'), to = $root.querySelector('.ui-toast');
-               if (sh) sh.inert = !!ed || !!lib; if (bn) bn.inert = !!ed || !!lib; if (ed2) ed2.inert = !!lib;
-               if (ac) ac.inert = !!lib; if (to) to.inert = !!lib;">
+               const ac = $root.querySelector('.ui-ac'), to = $root.querySelector('.ui-toast'), open = !!dlg;
+               for (const c of $root.children) if (!c.classList.contains('ui-dlg-scrim')) c.inert = open;   /* FUNK-80: only the dialog */
+               if (!open) { if (sh) sh.inert = !!ed || !!lib; if (bn) bn.inert = !!ed || !!lib; if (ed2) ed2.inert = !!lib;
+                            if (ac) ac.inert = !!lib; if (to) to.inert = !!lib; }">
 
   <div class="ui-shell">
   <!-- ── Sidebar (FUNK-72): navigation in groups, the active set, the keyboard and the speaker ── -->
@@ -2574,6 +2586,26 @@
     </div>
   </div>
 
+  <!-- ═══ The app's own dialog (FUNK-80): a question, maybe a name, Abbrechen / a named answer ═══ -->
+  <div class="ui-scrim ui-dlg-scrim" style="z-index:95;padding:16px" x-show="dlg" x-cloak @mousedown.self="dlgAnswer(false)">
+    <template x-if="dlg">
+      <!-- keys typed here never reach the page's own key handling (editor shortcuts, the Tastatur tab) -->
+      <form class="ui-dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle" :aria-describedby="dlg.text ? 'dlgText' : null"
+            @submit.prevent="dlgAnswer(true)" @keydown.escape.stop.prevent="dlgAnswer(false)" @keydown.stop>
+        <h3 id="dlgTitle" x-text="dlg.title"></h3>
+        <p id="dlgText" x-show="dlg.text" x-text="dlg.text"></p>
+        <template x-if="dlg.input">
+          <input class="ui-inp" data-dlg-focus x-model="dlg.value" :maxlength="dlg.max" aria-labelledby="dlgTitle" autocomplete="off">
+        </template>
+        <div class="acts">
+          <button type="button" class="ui-btn sm ui-btn-ghost" :data-dlg-focus="!dlg.input && dlg.danger ? '' : null" @click="dlgAnswer(false)">Abbrechen</button>
+          <button type="submit" class="ui-btn sm" :class="dlg.danger ? 'ui-btn-danger' : 'ui-btn-pri'" :data-dlg-focus="!dlg.input && !dlg.danger ? '' : null"
+                  :disabled="dlg.input && !(dlg.value || '').trim()" x-text="dlg.ok"></button>
+        </div>
+      </form>
+    </template>
+  </div>
+
   <!-- ═══ Library picker (FUNK-72) ═══ -->
   <div class="ui-scrim" style="z-index:75" x-show="lib" x-cloak x-transition.opacity @mousedown.self="libClose()">
     <template x-if="lib">
@@ -2662,6 +2694,7 @@
 // ── FUNK-72: icons (fixed SVG strings), navigation, filters. Outside the component: never reactive. ──
 const FK_I = d => '<svg class="ui-i" viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg>';
 const FK_AUDIO = { ctx: null };
+const SET_NAME_MAX = 60;   // FUNK-80: a set name as the dialog takes it (sets from an import may be longer)
 const FK_CLIENT = Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, '0')).join('');   // this page, for SSE echoes            // one AudioContext for waveforms; not part of Alpine's state
 const FK_UI = {
   ic: {
@@ -2753,6 +2786,7 @@ function funkeykid() {
     fill: null, _fillSeq: 0, fillAsk: false, fillBusy: false, fillHidden: '',   // FUNK-75
     files: { kind: 'sounds', use: 'all', q: '', limit: 200, usage: null, archiveOpen: false, archive: null, confirm: '' },   // FUNK-78
     _fileUsageSeq: 0,
+    dlg: null, _dlgReturn: null,   // FUNK-80
     fileFilters: [{ id: 'all', label: 'Alle' }, { id: 'used', label: 'Benutzt' }, { id: 'unused', label: 'Unbenutzt' }],
     integrations: { elevenlabs: null, openrouter: null },
     integrationsLoading: false,
@@ -2923,8 +2957,10 @@ function funkeykid() {
         this.prog.mastery = this._progMastery;             // what the server holds now
       });
     },
-    progReset() {
-      if (!confirm('Den Fortschritt aller Buchstaben und Ziffern löschen? Tastendrücke, Quiz-Antworten und „gelernt“ fangen wieder bei null an.')) return;
+    async progReset() {
+      const yes = await this.ask({ title: 'Fortschritt zurücksetzen?', danger: true, ok: 'Zurücksetzen',
+        text: 'Tastendrücke, Quiz-Antworten und „gelernt“ aller Buchstaben und Ziffern fangen wieder bei null an.' });
+      if (!yes) return;
       this.progBusy = true;
       return this.progQueue(async () => {
         try {
@@ -3452,8 +3488,9 @@ function funkeykid() {
       if (!res.ok) { this.showToast('Tastatur nicht umgeschaltet', 'error'); return; }
       this.showToast('»' + (this.kbProfile?.name || id) + '« ist aktiv: Die Tastatur nutzt jetzt diese Belegung.');
     },
-    kbDuplicate(p) {
-      const name = prompt('Name der neuen Tastatur:', p.name.slice(0, 32).trimEnd() + ' (Kopie)');
+    async kbDuplicate(p) {
+      const name = await this.ask({ title: 'Tastatur kopieren', text: 'Name der neuen Tastatur:', input: true, max: 40,
+        value: p.name.slice(0, 32).trimEnd() + ' (Kopie)', ok: 'Kopieren' });
       if (!name) return;
       return this.kbQueue(async () => {
         // Copy of the active profile: same keys, same key map, so switching to it changes nothing
@@ -3472,8 +3509,8 @@ function funkeykid() {
         }
       });
     },
-    kbRename(p) {
-      const name = prompt('Neuer Name:', p.name);
+    async kbRename(p) {
+      const name = await this.ask({ title: 'Tastatur umbenennen', text: 'Neuer Name:', input: true, max: 40, value: p.name, ok: 'Umbenennen' });
       if (!name || name === p.name) return;
       return this.kbQueue(async () => {
         const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), {
@@ -3484,8 +3521,9 @@ function funkeykid() {
         if (p.id === this.km.profile) await this._reload();
       });
     },
-    kbDelete(p) {
-      if (!confirm('Tastatur »' + p.name + '« und ihre Belegung wirklich löschen?')) return;
+    async kbDelete(p) {
+      const yes = await this.ask({ title: 'Tastatur »' + p.name + '« löschen?', text: 'Die Tastatur und ihre ganze Belegung werden gelöscht.', ok: 'Löschen', danger: true });
+      if (!yes) return;
       return this.kbQueue(async () => {
         const wasActive = p.id === this.km.profile;
         const res = await fetch('/api/keyboards/' + encodeURIComponent(p.id), { method: 'DELETE' });
@@ -4182,9 +4220,15 @@ function funkeykid() {
       this.ed.blacklist = words;
       this._edEnqueue({ type: 'blacklist', run: async () => { try { await this._edBlacklistPut(L, words); return true; } catch { return false; } } });
     },
-    edArchive(e) {
-      if (!confirm(`„${e.word}“ archivieren? Bild und Töne, die sonst nirgends vorkommen, kommen ins Archiv.`)) return;
-      const { setId, L } = this.ed, id = e.id, word = e.word;
+    async edArchive(e0) {
+      if (!this.ed || this.ed.loading || !e0) return;
+      const { setId, L, token } = this.ed, id = e0.id, word = e0.word;
+      const yes = await this.ask({ title: `„${word}“ archivieren?`, ok: 'Archivieren', danger: true,
+        returnTo: document.querySelector('.ui-ed .ui-d-h [aria-label="Mehr Aktionen"]'),   // the menu item is hidden by then
+        text: 'Das Wort wird entfernt. Bild und Töne, die sonst nirgends vorkommen, kommen ins Archiv.' });
+      if (!yes || !this.ed || this.ed.token !== token || this.ed.loading) return;   // closed or switched meanwhile
+      const e = this.ed.entries.find(x => x.id === id);
+      if (!e) return;
       e._archiving = true;
       this._edEnqueue({ type: 'archive', run: async () => {
         let res;
@@ -4748,6 +4792,10 @@ function funkeykid() {
 
     // ── keys while the editor is open ──
     onKeyGlobal(ev) {
+      if (this.dlg) {                                          // the dialog first (FUNK-80)
+        if (ev.key === 'Escape') { ev.preventDefault(); this.dlgAnswer(false); }
+        return;
+      }
       if (!this.ed) return;
       if (this.lib) { if (ev.key === 'Escape') { this.libClose(); ev.preventDefault(); } return; }
       const t = ev.target || {};
@@ -5243,7 +5291,7 @@ function funkeykid() {
       this.showToast(`Set "${this.sets[this.activeSetId]?.name}" aktiviert`);
     },
     async createSet() {
-      const name = prompt('Name fuer neues Set:');
+      const name = await this.ask({ title: 'Neues Set', text: 'Name für das neue Set:', input: true, max: SET_NAME_MAX, ok: 'Anlegen' });
       if (!name) return;
       await fetch('/api/sets', {
         method: 'POST',
@@ -5308,7 +5356,8 @@ function funkeykid() {
                                                    body: JSON.stringify({ token: imp.token }) }).catch(() => {});
     },
     async duplicateSet(sid) {
-      const name = prompt('Name fuer Kopie:', this.sets[sid]?.name + ' (Kopie)');
+      const name = await this.ask({ title: 'Set duplizieren', text: 'Name für die Kopie:', input: true, max: SET_NAME_MAX,
+        value: (this.sets[sid]?.name || '').slice(0, SET_NAME_MAX - 8).trimEnd() + ' (Kopie)', ok: 'Duplizieren' });   // the suffix always fits
       if (!name) return;
       await fetch('/api/sets', {
         method: 'POST',
@@ -5319,8 +5368,8 @@ function funkeykid() {
       this.showToast(`Set dupliziert`);
     },
     async renameSet(sid) {
-      const name = prompt('Neuer Name:', this.sets[sid]?.name);
-      if (!name) return;
+      const name = await this.ask({ title: 'Set umbenennen', text: 'Neuer Name:', input: true, max: SET_NAME_MAX, value: this.sets[sid]?.name || '', ok: 'Umbenennen' });
+      if (!name || name === this.sets[sid]?.name) return;
       await fetch(`/api/sets/${sid}`, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
@@ -5329,10 +5378,12 @@ function funkeykid() {
       await this.refresh();
     },
     async deleteSet(sid) {
-      if (!confirm(`Set "${this.sets[sid]?.name}" wirklich loeschen?`)) return;
+      const yes = await this.ask({ title: `Set „${this.sets[sid]?.name || sid}“ löschen?`, ok: 'Löschen', danger: true,
+        text: 'Das Set und seine Zuordnungen werden gelöscht. Bilder und Töne bleiben in der Bibliothek.' });
+      if (!yes) return;
       await fetch(`/api/sets/${sid}`, { method: 'DELETE' });
       await this.refresh();
-      this.showToast('Set geloescht');
+      this.showToast('Set gelöscht');
     },
 
     // ── Settings (auto-save) ──
@@ -5407,7 +5458,9 @@ function funkeykid() {
 
     async normalizeAllSounds() {
       if (this._normAllBusy) return;
-      if (!confirm('Alle vorhandenen Sounds normalisieren? Originale werden in /data/ai-generated/sounds/*_original.mp3 gesichert.')) return;
+      const yes = await this.ask({ title: 'Alle Töne normalisieren?', ok: 'Normalisieren',
+        text: 'Alle Töne der Bibliothek bekommen die gleiche Lautheit. Die Originale werden in /data/ai-generated/sounds/*_original.mp3 gesichert.' });
+      if (!yes || this._normAllBusy) return;
       this._normAllBusy = true;
       this._normAllStatus = 'startet…';
       try {
@@ -5460,6 +5513,37 @@ function funkeykid() {
       } catch (e) { this.showToast('Hochladen fehlgeschlagen: ' + e.message, 'error'); }
     },
 
+    // FUNK-80: the app's own dialog. ask() resolves true (or the trimmed name for an input) or null.
+    // A dialog never runs inside a queue: callers ask first, then queue the work. A second ask cancels the first.
+    ask(opts) {
+      if (this.dlg) { const r = this.dlg.resolve; this.dlg = null; r(null); }
+      return new Promise(resolve => {
+        if (!this._dlgReturn) this._dlgReturn = document.activeElement;
+        this.dlg = Object.assign({ title: '', text: '', input: false, value: '', max: 60, ok: 'OK', danger: false }, opts, { resolve });
+        const d = this.dlg;
+        const focus = (n) => {                                 // once the dialog is drawn (x-if + x-show)
+          if (this.dlg !== d) return;
+          const el = document.querySelector('.ui-dlg [data-dlg-focus]');
+          if (el && el.getClientRects().length) { el.focus(); if (el.select) el.select(); if (document.activeElement === el) return; }
+          if (n > 0) setTimeout(() => focus(n - 1), 30);
+        };
+        this.$nextTick(() => focus(20));
+      });
+    },
+    dlgAnswer(yes) {
+      const d = this.dlg;
+      if (!d) return;
+      this.dlg = null;
+      const back = this._dlgReturn;
+      this._dlgReturn = null;
+      this.$nextTick(() => {                                   // back where it came from, if that is still visible
+        const to = [back, d.returnTo].find(el => el && document.contains(el) && el.getClientRects().length);
+        if (to) to.focus();
+      });
+      if (!yes) { d.resolve(null); return; }
+      if (d.input) { const v = (d.value || '').trim(); d.resolve(v || null); return; }
+      d.resolve(true);
+    },
     // FUNK-72: an undo stays reachable for its 6 s. A message that comes meanwhile waits for the end
     // of that window (an error shows at once and keeps the undo button).
     showToast(msg, type = 'success', undo = false) {

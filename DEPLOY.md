@@ -170,6 +170,69 @@ curl -s http://hsb1.lan:8081/api/version                         # version + ver
 
 Verify that the running image digest equals `release-manifest.json`, and that the container stays `Up` for ≥ 2 min. The weekly `compose-hsb1-update.timer` (Saturdays 05:00) also pulls `:latest`, which only ever points at a release.
 
+### Releases that migrate settings or data (FUNK-86)
+
+A release whose code changes the stored data on start or on first use is a **migrating release**. Examples: a `_migrate_*`/`_ensure_*` step in `load_settings()` that rewrites `settings.json`, or a new key or file layout the old version would not write. For a migrating release, the steps below **replace** the normal roll. List the files the migration touches as `FILES`, relative to `/data` (always `settings.json`, plus e.g. `ai-generated/voice_meta.json`).
+
+1. **Prove the rollback in the lab.** Run the previous release's commit (`git archive <previous sha>` into a scratch folder, plus the lab server) on a migrated `settings.json`. It must start, keep the new keys through its own saves, and work. Write the result and the restore step on the release's ticket ("Rollback notes").
+2. **Back up before the release is published**, i.e. before the tag is pushed. Until then no new image exists, so neither this roll nor the weekly updater can have migrated anything. This copy is the guaranteed pre-migration state:
+
+   ```bash
+   ssh mba@hsb1.lan 'bash -s' <<'EOS'
+   set -euo pipefail
+   NEW=<new version>; FILES="settings.json"
+   sudo flock -w 300 /run/lock/compose-hsb1.lock env NEW="$NEW" FILES="$FILES" bash -c '
+     set -euo pipefail
+     ID=$(docker ps -q --no-trunc --filter name=^funkeykid$)
+     [ ${#ID} -eq 64 ] || { echo "no running funkeykid container: stop"; exit 1; }
+     echo "old container (record the full ID for step 3): $ID"
+     B=/data/backup-$NEW-pre-$(date -u +%Y%m%dT%H%M%SZ)
+     docker exec funkeykid mkdir "$B"
+     for f in $FILES; do              # a file the migration will create does not exist yet: listed in ABSENT
+       docker exec funkeykid sh -c "if [ -e \"/data/$f\" ]; then mkdir -p \"$B/$(dirname $f)\" && cp -a \"/data/$f\" \"$B/$f\" && cmp \"/data/$f\" \"$B/$f\"; else echo \"$f\" >> \"$B/ABSENT\"; fi"
+     done
+     echo "backup: $B (host: /home/mba/docker/mounts/funkeykid/${B#/data/})"
+   '
+   EOS
+   ```
+3. **Release** (tag, CI), then **roll in one locked block**. The block pulls, dry-runs, checks that the old release is still the one running (by container ID), takes a second backup right before the change, and recreates the container. Any failure stops before `up -d`. If the old release is no longer running (e.g. the weekly updater was faster), the block stops. The step-2 backup is then the pre-migration state; tell MAC-OPS.
+
+   ```bash
+   ssh mba@hsb1.lan 'bash -s' <<'EOS'
+   set -euo pipefail
+   OLD=<the full 64-character container ID recorded in step 2>; NEW=<new version>; FILES="settings.json"
+   C="docker compose -p docker -f /etc/compose/hsb1/docker-compose.yml --project-directory /home/mba/Code/nixcfg/hosts/hsb1/docker"
+   docker images --digests ghcr.io/markus-barta/funkeykid          # the rollback anchor
+   sudo flock -w 300 /run/lock/compose-hsb1.lock env OLD="$OLD" NEW="$NEW" FILES="$FILES" C="$C" bash -c '
+     set -euo pipefail
+     $C pull funkeykid
+     $C --dry-run up -d --no-deps funkeykid                          # expect only funkeykid Recreate
+     [ ${#OLD} -eq 64 ] || { echo "OLD must be the full container ID: stop"; exit 1; }
+     NOW=$(docker ps -q --no-trunc --filter name=^funkeykid$)
+     [ "$NOW" = "$OLD" ] || { echo "the old release is not the one running: stop"; exit 1; }
+     B=/data/backup-$NEW-$(date -u +%Y%m%dT%H%M%SZ)
+     docker exec funkeykid mkdir "$B"
+     for f in $FILES; do              # a file the migration will create does not exist yet: listed in ABSENT
+       docker exec funkeykid sh -c "if [ -e \"/data/$f\" ]; then mkdir -p \"$B/$(dirname $f)\" && cp -a \"/data/$f\" \"$B/$f\" && cmp \"/data/$f\" \"$B/$f\"; else echo \"$f\" >> \"$B/ABSENT\"; fi"
+     done
+     echo "backup: $B (host: /home/mba/docker/mounts/funkeykid/${B#/data/})"
+     $C up -d --no-deps funkeykid
+   '
+   EOS
+   curl -s http://hsb1.lan:8081/api/version                         # version + version_scheme must match the release
+   ```
+
+   On the host the folders are `/home/mba/docker/mounts/funkeykid/backup-<version>-…/`; hsb1's nightly restic backup covers them too.
+4. **Name it in the roll message to MAC-OPS.** Include the migration, the new files, both backup paths and the rollback notes.
+
+Releases without a migration use the normal roll above. **To restore**, all under the stack lock:
+1. stop funkeykid (`$C stop funkeykid`);
+2. copy the backed-up files back through the host path (`sudo cp -a /home/mba/docker/mounts/funkeykid/backup-…/settings.json /home/mba/docker/mounts/funkeykid/settings.json`, likewise for the others). Files listed in the backup's `ABSENT` did not exist before the migration: move them aside (`sudo mv <file> <file>.after-migration`); never delete them;
+3. re-tag the previous image as `:latest` (the rollback above) and `up -d --no-deps funkeykid`;
+4. verify version and data.
+
+Never start the previous image on migrated data before the files are back, unless the release's rollback notes prove that it is safe. Changes the family made after the backup are lost by a restore, so restore only what the migration broke.
+
 ### Hotfix: Direct Docker CP (no CI)
 
 ```bash

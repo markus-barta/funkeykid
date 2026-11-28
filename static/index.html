@@ -926,11 +926,15 @@
         <div class="tx">
           <b x-text="fillAskTitle()"></b>
           <p x-text="fillAskLine()"></p>
+          <p class="ui-warn" style="margin-top:6px" x-show="_vlang('de') && _vlang('de').native === false" x-text="voiceNotNativeLine(_vlang('de'))"></p>
         </div>
         <div class="acts">
           <button type="button" class="ui-btn sm ui-btn-ghost" @click="fillAsk = false">Abbrechen</button>
-          <button type="button" class="ui-btn sm ui-btn-pri" :disabled="fillBusy || !fillAskCount()" @click="fillStart(fillAsk)">
-            <span x-html="ui.ic.sparkle" aria-hidden="true"></span><span x-text="fillAskApproved() ? 'Erzeugen' : 'Erstes Wort anhören'"></span>
+          <template x-if="_vlang('de') && _vlang('de').native === false">
+            <button type="button" class="ui-btn sm ui-btn-pri" @click="fillAsk = false; voicePickFor('de')"><span x-html="ui.ic.voice" aria-hidden="true"></span><span>Stimme wählen</span></button>
+          </template>
+          <button type="button" class="ui-btn sm" :class="_vlang('de') && _vlang('de').native === false ? 'ui-btn-line' : 'ui-btn-pri'" :disabled="fillBusy || !fillAskCount()" @click="fillStart(fillAsk)">
+            <span x-html="ui.ic.sparkle" aria-hidden="true"></span><span x-text="_vlang('de') && _vlang('de').native === false ? 'Trotzdem erzeugen' : (fillAskApproved() ? 'Erzeugen' : 'Erstes Wort anhören')"></span>
           </button>
         </div>
       </div>
@@ -1868,6 +1872,7 @@
                 </select>
               </div>
               <span class="ui-hint ui-warn" x-show="!l.sets_language">Dieses Modell rät die Sprache: kurze Wörter klingen damit oft englisch.</span>
+              <span class="ui-hint ui-warn" x-show="l.native === false" x-text="voiceNotNativeLine(l)"></span>
               <div class="ui-row" x-show="!l.approved && vtestReady(l.code)">
                 <span class="ui-hint" style="margin:0;flex:1">Klingt die Stimme gut? Freigeben, dann laufen viele Wörter auf einmal ohne Rückfrage.</span>
                 <button type="button" class="ui-btn sm ui-btn-pri" :disabled="_voicePending > 0" @click="voiceApprove(l.code)"><span x-html="ui.ic.check" aria-hidden="true"></span>Freigeben</button>
@@ -5205,6 +5210,22 @@ function funkeykid() {
       const l = (this.vlangs.languages || []).find(x => x.kind === kind);
       return l ? (l.voice_name || l.voice_id) : '';
     },
+    _voiceKind(l) {                           // FUNK-89: "deutsche Stimme", or "Stimme für <Sprache>"
+      const adj = { de: 'deutsche', en: 'englische', fr: 'französische', it: 'italienische', es: 'spanische' }[l.code];
+      return adj ? adj + ' Stimme' : 'Stimme für ' + (l.label || l.code);
+    },
+    voiceNotNativeLine(l) {                  // FUNK-89
+      if (!l) return '';                      // before the voices are loaded
+      return `„${l.voice_name || l.voice_id}“ ist keine ${this._voiceKind(l)}: Wörter klingen damit oft fremd. Wähle zuerst eine ${this._voiceKind(l)}.`;
+    },
+    voicePickFor(code) {
+      this.go('settings');
+      this.$nextTick(() => {
+        const row = [...document.querySelectorAll('.ui-vrow')].find(r => r.querySelector('b')?.textContent === (this._vlang(code) || {}).label);
+        if (row) row.scrollIntoView({ block: 'center' });
+        this.openVoicePicker(code, row && row.querySelector('.ui-row .ui-btn'));
+      });
+    },
     voiceWord(w) {
       return { female: 'weiblich', male: 'männlich', neutral: 'neutral', young: 'jung', middle_aged: 'mittel', old: 'älter' }[w] || w;
     },
@@ -5348,11 +5369,14 @@ function funkeykid() {
       const vp = this.vp;
       if (!vp || vp.choosing) return;
       vp.choosing = true;
-      const ok = await this._voiceSerial(() => this._voicePatch(vp.code, { voice_id: v.voice_id, voice_name: v.name }));
+      const ok = await this._voiceSerial(() => this._voicePatch(vp.code, { voice_id: v.voice_id, voice_name: v.name, voice_language: v.language || '' }));
       vp.choosing = false;
       if (!ok) return;
       this.loadOutdated();
-      this.showToast(`Stimme für ${vp.label}: ${v.name}. Neue Stimmen sprechen jetzt so; vorhandene bleiben, bis du sie neu erzeugst.`);
+      const saved = this._vlang(vp.code);                     // FUNK-89: the server's verdict on exactly this voice
+      if (saved && saved.voice_id === v.voice_id && saved.native === false)
+        this.showToast(`Stimme für ${vp.label}: ${v.name}. Achtung: das ist keine ${this._voiceKind(saved)}; Wörter klingen damit oft fremd.`, 'error');
+      else this.showToast(`Stimme für ${vp.label}: ${v.name}. Neue Stimmen sprechen jetzt so; vorhandene bleiben, bis du sie neu erzeugst.`);
       if (this.vp === vp) this.vpClose();
     },
     vpClose() {

@@ -144,6 +144,20 @@ TTS_MODELS_WITH_LANGUAGE = {"eleven_v4", "eleven_v4_turbo", "eleven_v3", "eleven
 VOICE_LANGUAGE_LABELS = {"de": "Deutsch", "en": "Englisch", "fr": "Französisch", "it": "Italienisch",
                          "es": "Spanisch", "tr": "Türkisch", "hr": "Kroatisch", "sl": "Slowenisch"}
 KNOWN_VOICE_NAMES = {DEFAULT_NUMBER_VOICE_ID: "Rachel (amerikanisch)", "pNInz6obpgDQGcFmaJgB": "Adam (amerikanisch)"}
+KNOWN_VOICE_LANGS = {DEFAULT_NUMBER_VOICE_ID: "en", "pNInz6obpgDQGcFmaJgB": "en"}   # the defaults speak English (FUNK-89)
+_LANG_CODE_RE = re.compile(r"^[a-z]{2}$")
+_LANG_NAMES = {"german": "de", "deutsch": "de", "english": "en", "englisch": "en", "french": "fr", "französisch": "fr",
+               "francais": "fr", "français": "fr", "italian": "it", "italienisch": "it", "spanish": "es", "spanisch": "es",
+               "turkish": "tr", "türkisch": "tr", "croatian": "hr", "kroatisch": "hr", "slovenian": "sl", "slowenisch": "sl"}
+
+
+def _voice_lang_code(label):
+    """A voice's language as a two-letter code from the library ("de") or an account label ("DE", "German"),
+    or "" if it is not clear: an unclear label never claims a foreign voice (FUNK-89)."""
+    v = str(label or "").strip().lower()
+    if _LANG_CODE_RE.match(v):
+        return v
+    return _LANG_NAMES.get(v, "")
 _VOICE_ID_RE = re.compile(r"^[A-Za-z0-9]{8,64}$")
 
 
@@ -311,6 +325,14 @@ def _voice_profile(lang):
     model = cfg.get("model") if cfg.get("model") in TTS_MODELS else TTS_MODEL_DEFAULT
     return {"lang": lang, "voice_id": voice_id, "model": model,
             "voice_name": cfg.get("voice_name") or KNOWN_VOICE_NAMES.get(voice_id, "")}
+
+
+def _voice_native(lang, cfg):
+    """True/False if the language the chosen voice speaks is known (FUNK-89), else None."""
+    vid = (cfg or {}).get("voice_id") or DEFAULT_TTS_VOICES.get(lang, DEFAULT_NUMBER_VOICE_ID)
+    spoken = (cfg or {}).get("voice_language") if (cfg or {}).get("voice_id") else None
+    spoken = spoken or KNOWN_VOICE_LANGS.get(vid)
+    return None if not spoken else spoken == lang
 
 
 def _profile_for_kind(kind):
@@ -4522,7 +4544,7 @@ def _voice_language_view():
                       "voice_id": p["voice_id"], "voice_name": p["voice_name"], "model": p["model"],
                       "model_label": TTS_MODELS.get(p["model"], p["model"]),
                       "sets_language": p["model"] in TTS_MODELS_WITH_LANGUAGE,
-                      "approved": _voice_approved(p)})
+                      "approved": _voice_approved(p), "native": _voice_native(code, cfg)})
     return {"languages": langs, "models": [{"id": k, "label": v, "sets_language": k in TTS_MODELS_WITH_LANGUAGE}
                                            for k, v in TTS_MODELS.items()]}
 
@@ -4551,6 +4573,12 @@ async def api_patch_voice_language(request):
             return web.json_response({"error": "Ungültige Stimmen-ID"}, status=400)
         cfg["voice_id"] = vid
         cfg["voice_name"] = str(data.get("voice_name") or KNOWN_VOICE_NAMES.get(vid, ""))[:80]
+        # FUNK-89: the language the voice itself speaks (from the library or account), if known
+        vlang = _voice_lang_code(data.get("voice_language"))
+        if vlang:
+            cfg["voice_language"] = vlang
+        else:
+            cfg.pop("voice_language", None)
     if "model" in data:
         if data["model"] not in TTS_MODELS:
             return web.json_response({"error": "Unbekanntes Modell"}, status=400)

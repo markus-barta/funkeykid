@@ -478,6 +478,29 @@
     .ui-dlg .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
     .ui-btn-danger { background: var(--ui-err); color: #fff; } .ui-btn-danger:hover { background: #ff7a87; }
     .ui-menu hr { border: 0; border-top: 1px solid var(--ui-line); margin: 5px 4px; }
+    .ui-menu a.ui-menu-a { display: flex; align-items: center; gap: 10px; width: 100%; height: 36px; padding: 0 10px; border-radius: 9px; font-size: 13.5px; color: inherit; text-decoration: none; }
+    .ui-menu a.ui-menu-a:hover { background: rgba(255,255,255,.06); }
+    /* FUNK-81: Sets */
+    .ui-setgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; align-items: start; }
+    .ui-setcard { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+    .ui-setcard.on { border-color: var(--ui-pri-line); box-shadow: 0 0 0 1px var(--ui-pri-line), 0 12px 30px rgba(106,89,243,.12); }
+    .ui-setcard-h { display: flex; align-items: flex-start; gap: 10px; }
+    .ui-setcard-h h3 { margin: 0; font-size: 17px; font-weight: 750; }
+    .ui-setcard-h p { margin: 3px 0 0; font-size: 12.5px; }
+    .ui-active { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 9px; border-radius: 99px; font-size: 12px; font-weight: 700;
+      background: var(--ui-pri-soft); color: #d4ceff; flex: none; }
+    .ui-active svg.ui-i { width: 14px; height: 14px; }
+    .ui-setstats { display: flex; gap: 16px; font-size: 13px; color: var(--ui-tx2); }
+    .ui-setstats b { color: var(--ui-tx); font-weight: 700; }
+    .ui-order { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 14px; background: var(--ui-s1); border: 1px solid var(--ui-line); }
+    .ui-order-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; margin-bottom: 4px; }
+    .ui-order-h .ui-faint { font-size: 12px; }
+    .ui-order-row { display: flex; align-items: center; gap: 10px; padding: 4px 2px; }
+    .ui-order-row .nm { font-size: 13.5px; font-weight: 600; flex: 1; min-width: 0; }
+    .ui-kind-code { font-size: 11.5px; font-weight: 800; letter-spacing: .04em; }
+    .ui-order-row .st { font-size: 12px; }
+    .ui-order-row.off .nm, .ui-order-row.off .ui-kind { opacity: .45; }
+    .ui-setacts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .ui-cols { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
     .ui-card { background: var(--ui-s2); border: 1px solid var(--ui-line); border-radius: 20px; }
     .ui-pic { padding: 14px; }
@@ -623,6 +646,8 @@
       .ui-glyph { font-size: 36px; } .ui-tile-img { width: 56px; height: 56px; border-radius: 12px; }
       .ui-tile .today { display: none; } .ui-st { padding: 0 5px; gap: 3px; }
       .ui-sum { margin-left: 0; width: 100%; }
+      .ui-setgrid { grid-template-columns: minmax(0, 1fr); }
+      .ui-setcard { padding: 14px; } .ui-order { padding: 10px 8px; } .ui-order-row { gap: 6px; } .ui-order-row .ui-ibtn.sm { width: 30px; }
       .ui-fsearch { width: 100%; } .ui-fgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ui-farch-cols { grid-template-columns: 1fr; }
       .ui-fill { flex-wrap: wrap; align-items: flex-start; } .ui-fill > .ic, .ui-fill > .ui-ring { margin-top: 2px; }
       .ui-ac { right: 14px; bottom: 84px; }
@@ -1174,74 +1199,65 @@
       </div>
     </div>
 
-    <!-- ═══ SETS TAB ═══ -->
+    <!-- ═══ SETS TAB (FUNK-81): set cards, one main action, the rest in a menu; how the active set plays ═══ -->
     <div x-show="tab === 'sets'" x-cloak>
-      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div class="ui-bar">
+        <button type="button" class="ui-btn sm ui-btn-pri" @click="createSet()"><span x-html="ui.ic.plus" aria-hidden="true"></span>Neues Set</button>
+        <button type="button" class="ui-btn sm ui-btn-line" :disabled="setImportBusy" @click="$refs.setImportFile.click()">
+          <span class="ui-ring sm" x-show="setImportBusy" style="width:14px;height:14px;border-width:2px"></span><span x-html="ui.ic.upload" x-show="!setImportBusy" aria-hidden="true"></span>Set importieren (ZIP)</button>
+        <input x-ref="setImportFile" type="file" accept=".zip,application/zip" class="ui-sr" tabindex="-1" aria-hidden="true" @change="setImportPreview($event)">
+        <span class="ui-faint ui-sum">Ein Set bündelt Wörter, Bilder, Töne und Zahlen. Die Tastatur spielt immer das aktive Set.</span>
+      </div>
+      <div class="ui-setgrid">
         <template x-for="(meta, sid) in sets" :key="sid">
-          <div class="card bg-base-100 shadow" :class="sid === activeSetId && 'ring-2 ring-primary'">
-            <div class="card-body p-4">
-              <div class="flex items-center gap-2">
-                <h3 class="card-title text-lg" x-text="meta.name"></h3>
-                <div class="badge badge-primary badge-sm" x-show="sid === activeSetId">aktiv</div>
+          <section class="ui-card ui-setcard" :class="sid === activeSetId && 'on'" :aria-label="'Set ' + meta.name">
+            <div class="ui-setcard-h">
+              <div style="min-width:0;flex:1">
+                <h3 class="ui-trunc" x-text="meta.name"></h3>
+                <p class="ui-faint" x-show="meta.description" x-text="meta.description"></p>
               </div>
-              <p class="text-sm opacity-60" x-text="meta.description"></p>
-              <div class="text-xs opacity-40" x-text="meta.letter_count + ' Buchstaben, ' + meta.entry_count + ' Einträge'"></div>
-
-              <!-- Track-order editor (active set only, loaded lazily) -->
-              <div class="mt-3" x-show="sid === activeSetId && activeSet && activeSet.track_order">
-                <div class="text-xs opacity-60 mb-1.5 flex items-baseline justify-between">
-                  <span>Wiedergabe-Reihenfolge</span>
-                  <span class="text-2xs opacity-40" x-show="_orderSaving">speichere…</span>
-                </div>
-                <div class="space-y-1">
-                  <template x-for="(row, ri) in (activeSet.track_order || [])" :key="row.kind">
-                    <div class="fk-order-row" :class="!row.enabled && 'is-off'">
-                      <span class="fk-kind-badge" :class="row.kind.toLowerCase()" x-text="row.kind"></span>
-                      <span class="text-xs opacity-70" x-text="kindLabel(row.kind)"></span>
-                      <div class="ml-auto flex items-center gap-1">
-                        <button class="btn btn-xs btn-ghost btn-square"
-                                :disabled="ri === 0"
-                                @click="moveOrderRow(ri, -1)" title="Nach oben">
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5"/></svg>
-                        </button>
-                        <button class="btn btn-xs btn-ghost btn-square"
-                                :disabled="ri === activeSet.track_order.length - 1"
-                                @click="moveOrderRow(ri, 1)" title="Nach unten">
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
-                        </button>
-                        <input type="checkbox" class="toggle toggle-xs toggle-success"
-                               :checked="row.enabled"
-                               @change="setOrderRowEnabled(ri, $event.target.checked)"
-                               title="Wiedergabe aktiv">
-                      </div>
-                    </div>
+              <span class="ui-active" x-show="sid === activeSetId"><span x-html="ui.ic.check" aria-hidden="true"></span>Aktiv</span>
+              <div style="position:relative" x-data="{ m: false }" @click.outside="m = false" @keydown.escape.stop="if (m) { m = false; $el.querySelector('.ui-ibtn').focus() }">
+                <button type="button" class="ui-ibtn" @click="m = !m" :aria-label="'Mehr Aktionen für ' + meta.name" :aria-expanded="m ? 'true' : 'false'"><span x-html="ui.ic.dots"></span></button>
+                <div class="ui-menu" x-show="m" x-transition.origin.top.right x-cloak>
+                  <button type="button" @click="m = false; duplicateSet(sid, $el.closest('.ui-setcard').querySelector('.ui-setcard-h .ui-ibtn'))"><span x-html="ui.ic.layers"></span>Duplizieren</button>
+                  <button type="button" @click="m = false; renameSet(sid, $el.closest('.ui-setcard').querySelector('.ui-setcard-h .ui-ibtn'))"><span x-html="ui.ic.pencil"></span>Umbenennen</button>
+                  <a role="button" class="ui-menu-a" :href="'/api/sets/' + encodeURIComponent(sid) + '/export'" :download="'funkeykid-set-' + sid + '.zip'" @click="m = false"
+                     title="Set mit allen Geräuschen und Bildern als ZIP-Datei"><span x-html="ui.ic.upload" style="transform:rotate(180deg)"></span>Exportieren (ZIP)</a>
+                  <template x-if="Object.keys(sets).length > 1">
+                    <div><hr><button type="button" class="danger" @click="m = false; deleteSet(sid, $el.closest('.ui-setcard').querySelector('.ui-setcard-h .ui-ibtn'))"><span x-html="ui.ic.trash"></span>Löschen</button></div>
                   </template>
                 </div>
               </div>
-
-              <div class="card-actions mt-3">
-                <button class="btn btn-sm btn-primary" x-show="sid !== activeSetId"
-                        @click="activeSetId=sid; activateSet()">Aktivieren</button>
-                <button class="btn btn-sm btn-outline" @click="duplicateSet(sid)">Duplizieren</button>
-                <button class="btn btn-sm btn-outline" @click="renameSet(sid)">Umbenennen</button>
-                <a class="btn btn-sm btn-outline" :href="'/api/sets/' + encodeURIComponent(sid) + '/export'"
-                   :download="'funkeykid-set-' + sid + '.zip'" title="Set mit allen Geräuschen und Bildern als ZIP-Datei">Exportieren</a>
-                <button class="btn btn-sm btn-error btn-outline" x-show="Object.keys(sets).length > 1"
-                        @click="deleteSet(sid)">Löschen</button>
-              </div>
             </div>
-          </div>
-        </template>
-      </div>
+            <div class="ui-setstats num">
+              <span><b x-text="meta.letter_count"></b> Buchstaben</span><span><b x-text="meta.entry_count"></b> Wörter</span>
+            </div>
 
-      <div class="flex flex-wrap items-center gap-2 mt-4">
-        <button class="btn btn-primary" @click="createSet()">+ Neues Set</button>
-        <button type="button" class="btn btn-outline" :disabled="setImportBusy" @click="$refs.setImportFile.click()">
-          <span class="loading loading-spinner loading-xs" x-show="setImportBusy"></span>
-          Set importieren (ZIP)</button>
-        <input x-ref="setImportFile" type="file" accept=".zip,application/zip" class="hidden" tabindex="-1" aria-hidden="true"
-               @change="setImportPreview($event)">
-        <span class="text-xs opacity-60">Ein exportiertes Set samt Geräuschen und Bildern, z. B. von einem anderen funkeykid.</span>
+            <!-- how the active set plays (the _saveTrackOrder queue, FUNK-72) -->
+            <template x-if="sid === activeSetId && activeSet && activeSet.track_order">
+              <div class="ui-order">
+                <div class="ui-order-h"><b>So spielt dieses Set</b><span class="ui-faint" x-text="_orderSaving ? 'speichert …' : 'von oben nach unten'"></span></div>
+                <template x-for="(row, ri) in (activeSet.track_order || [])" :key="row.kind">
+                  <div class="ui-order-row" :class="!row.enabled && 'off'">
+                    <span class="ui-kind ui-kind-code" :class="row.kind.toLowerCase()" x-text="row.kind" aria-hidden="true"></span>
+                    <span class="nm ui-trunc" x-text="{ FX: 'Geräusch', DE: 'Deutsch', EN: 'Englisch' }[row.kind] || kindName(row.kind)" :title="kindName(row.kind)"></span>
+                    <span class="ui-faint st" x-text="row.enabled ? orderPlayIndex(ri) + '.' : 'aus'"></span>
+                    <button type="button" class="ui-ibtn sm" :disabled="ri === 0" @click="moveOrderRow(ri, -1)" :aria-label="kindName(row.kind) + ' nach oben'"><span x-html="ui.ic.chevD" style="transform:rotate(180deg)"></span></button>
+                    <button type="button" class="ui-ibtn sm" :disabled="ri === activeSet.track_order.length - 1" @click="moveOrderRow(ri, 1)" :aria-label="kindName(row.kind) + ' nach unten'"><span x-html="ui.ic.chevD"></span></button>
+                    <label class="ui-switch" :title="row.enabled ? 'Wird abgespielt' : 'Wird nicht abgespielt'"><input type="checkbox" role="switch" :checked="row.enabled"
+                           @change="setOrderRowEnabled(ri, $event.target.checked)" :aria-label="kindName(row.kind) + ' abspielen'"><span class="tr"></span></label>
+                  </div>
+                </template>
+              </div>
+            </template>
+
+            <div class="ui-setacts" x-show="sid !== activeSetId">
+              <button type="button" class="ui-btn sm ui-btn-soft" @click="activeSetId = sid; activateSet()">Aktivieren</button>
+              <span class="ui-faint" style="font-size:12px">Die Tastatur spielt dann dieses Set.</span>
+            </div>
+          </section>
+        </template>
       </div>
 
       <!-- Set import preview (FUNK-43) -->
@@ -4961,8 +4977,8 @@ function funkeykid() {
         const edSet = this.ed ? this.ed.setId : '';
         const editing = !!edSet && edSet !== d.active_set;
         this.showToast(editing
-          ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[edSet]?.name || edSet}".`
-          : `Set "${d.name}" aktiv`);
+          ? `Set „${d.name}“ ist jetzt aktiv. Der offene Editor speichert weiter in „${this.sets[edSet]?.name || edSet}“.`
+          : `Set „${d.name}“ aktiv`);
       });
       es.addEventListener('keyboard_profile', (e) => {
         // keyboard profile switched (another browser, FUNK-63): queued, so it is decided
@@ -5242,6 +5258,9 @@ function funkeykid() {
 
     // ── track_order editor (Sets tab) ──
     _orderSaving: false, _setWriteRev: 0, _setReloadTimer: null, _orderPending: 0, _orderQ: Promise.resolve(),
+    orderPlayIndex(ri) {                     // which one plays when: the switched-off rows are not counted (FUNK-81)
+      return (this.activeSet?.track_order || []).slice(0, ri + 1).filter(r => r.enabled).length;
+    },
     async moveOrderRow(idx, delta) {
       if (!this.activeSet || !this.activeSet.track_order) return;
       const order = this.activeSet.track_order;
@@ -5288,7 +5307,7 @@ function funkeykid() {
       await fetch(`/api/sets/${this.activeSetId}/activate`, { method: 'POST' });
       await this.refresh();
       this.loadQuiz();
-      this.showToast(`Set "${this.sets[this.activeSetId]?.name}" aktiviert`);
+      this.showToast(`Set „${this.sets[this.activeSetId]?.name}“ aktiviert`);
     },
     async createSet() {
       const name = await this.ask({ title: 'Neues Set', text: 'Name für das neue Set:', input: true, max: SET_NAME_MAX, ok: 'Anlegen' });
@@ -5299,7 +5318,7 @@ function funkeykid() {
         body: JSON.stringify({ name }),
       });
       await this.refresh();
-      this.showToast(`Set "${name}" erstellt`);
+      this.showToast(`Set „${name}“ erstellt`);
     },
     // ── Set export / import as ZIP (FUNK-43) ──
     setImport: null, setImportBusy: false,
@@ -5355,8 +5374,8 @@ function funkeykid() {
       if (imp) fetch('/api/sets/import/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                                    body: JSON.stringify({ token: imp.token }) }).catch(() => {});
     },
-    async duplicateSet(sid) {
-      const name = await this.ask({ title: 'Set duplizieren', text: 'Name für die Kopie:', input: true, max: SET_NAME_MAX,
+    async duplicateSet(sid, returnTo) {
+      const name = await this.ask({ title: 'Set duplizieren', text: 'Name für die Kopie:', input: true, max: SET_NAME_MAX, returnTo,
         value: (this.sets[sid]?.name || '').slice(0, SET_NAME_MAX - 8).trimEnd() + ' (Kopie)', ok: 'Duplizieren' });   // the suffix always fits
       if (!name) return;
       await fetch('/api/sets', {
@@ -5367,8 +5386,8 @@ function funkeykid() {
       await this.refresh();
       this.showToast(`Set dupliziert`);
     },
-    async renameSet(sid) {
-      const name = await this.ask({ title: 'Set umbenennen', text: 'Neuer Name:', input: true, max: SET_NAME_MAX, value: this.sets[sid]?.name || '', ok: 'Umbenennen' });
+    async renameSet(sid, returnTo) {
+      const name = await this.ask({ title: 'Set umbenennen', text: 'Neuer Name:', input: true, max: SET_NAME_MAX, value: this.sets[sid]?.name || '', ok: 'Umbenennen', returnTo });
       if (!name || name === this.sets[sid]?.name) return;
       await fetch(`/api/sets/${sid}`, {
         method: 'PUT',
@@ -5377,8 +5396,8 @@ function funkeykid() {
       });
       await this.refresh();
     },
-    async deleteSet(sid) {
-      const yes = await this.ask({ title: `Set „${this.sets[sid]?.name || sid}“ löschen?`, ok: 'Löschen', danger: true,
+    async deleteSet(sid, returnTo) {
+      const yes = await this.ask({ title: `Set „${this.sets[sid]?.name || sid}“ löschen?`, ok: 'Löschen', danger: true, returnTo,
         text: 'Das Set und seine Zuordnungen werden gelöscht. Bilder und Töne bleiben in der Bibliothek.' });
       if (!yes) return;
       await fetch(`/api/sets/${sid}`, { method: 'DELETE' });
@@ -5537,7 +5556,7 @@ function funkeykid() {
       const back = this._dlgReturn;
       this._dlgReturn = null;
       this.$nextTick(() => {                                   // back where it came from, if that is still visible
-        const to = [back, d.returnTo].find(el => el && document.contains(el) && el.getClientRects().length);
+        const to = [back, d.returnTo].find(el => el && el !== document.body && document.contains(el) && el.getClientRects().length);
         if (to) to.focus();
       });
       if (!yes) { d.resolve(null); return; }

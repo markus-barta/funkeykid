@@ -501,6 +501,24 @@
     .ui-order-row .st { font-size: 12px; }
     .ui-order-row.off .nm, .ui-order-row.off .ui-kind { opacity: .45; }
     .ui-setacts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    /* FUNK-82: Einstellungen */
+    .ui-sgrid { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); }
+    .ui-scard { padding: 18px; display: flex; flex-direction: column; gap: 4px; }
+    .ui-scard h3 { display: flex; align-items: center; gap: 9px; margin: 0 0 6px; font-size: 16px; font-weight: 750; }
+    .ui-scard h3 svg.ui-i { color: var(--ui-pri-hi); }
+    .ui-hint { display: block; font-size: 12px; color: var(--ui-tx3); line-height: 1.45; margin-top: 5px; }
+    .ui-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ui-row > .ui-inp { flex: 1; min-width: 0; }
+    .ui-srow { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 0 4px; border-top: 1px solid var(--ui-line); margin-top: 10px; }
+    .ui-srow b { font-size: 13.5px; font-weight: 650; }
+    .ui-srow .ui-hint { margin-top: 2px; }
+    .ui-mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    .ui-link { background: none; border: 0; padding: 0; color: var(--ui-pri-hi); cursor: pointer; font: inherit; text-decoration: underline; }
+    .ui-danger-line { color: var(--ui-err); border-color: rgba(255,97,112,.4); }
+    .ui-danger-line:hover { background: var(--ui-err-soft); }
+    select.ui-inp { cursor: pointer; }
+    .ui-scard input[type=range].ui-range { width: 100%; flex: none; margin: 8px 0 2px; }
+    .ui-scard .ui-field label { gap: 12px; } .ui-scard .ui-field label span { text-align: right; }
     .ui-cols { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
     .ui-card { background: var(--ui-s2); border: 1px solid var(--ui-line); border-radius: 20px; }
     .ui-pic { padding: 14px; }
@@ -1675,134 +1693,112 @@
       </div>
     </div>
 
-    <!-- ═══ SETTINGS TAB ═══ -->
+    <!-- ═══ EINSTELLUNGEN (FUNK-82): grouped cards; every change saves by itself (autoSave) ═══ -->
     <div x-show="tab === 'settings'" x-cloak>
-      <div class="card bg-base-100 shadow max-w-xl mx-auto">
-        <div class="card-body">
-          <h2 class="card-title mb-4">Einstellungen</h2>
-          <div class="form-control mb-3">
-            <label class="label" for="settings-language"><span class="label-text">Sprache der Tastatur</span></label>
-            <select id="settings-language" class="select select-bordered" @change="kbSetLanguage({ language: $event.target.value })">
+      <p class="ui-faint ui-fnote" style="margin:0 0 14px">Änderungen werden automatisch gespeichert.</p>
+      <div class="ui-setgrid ui-sgrid">
+        <!-- Tastatur -->
+        <section class="ui-card ui-scard" aria-labelledby="st-kb">
+          <h3 id="st-kb"><span x-html="ui.ic.keyboard" aria-hidden="true"></span>Tastatur</h3>
+          <div class="ui-field">
+            <label for="settings-language">Sprache der Tastatur</label>
+            <select id="settings-language" class="ui-inp" @change="kbSetLanguage({ language: $event.target.value })">
               <template x-for="(label, id) in kb.languages" :key="id"><option :value="id" :selected="id === kb.language" x-text="label"></option></template>
             </select>
-            <span class="text-xs opacity-60 mt-1">Standard-Tastatur, Ziffernblock und eigene Tastaturen: Tastatur → Tastaturen verwalten.</span>
+            <span class="ui-hint">Standard-Tastatur, Ziffernblock und eigene Tastaturen: Tastatur → Tastaturen verwalten.</span>
           </div>
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Lautstärke</span></label>
-            <div class="flex items-center gap-3">
-              <input type="range" class="range range-primary" min="0" max="100" step="10"
-                     x-model.number="settings.volume" @change="autoSave()">
-              <span class="badge" x-text="settings.volume + '%'"></span>
-            </div>
-          </div>
-          <div class="form-control mb-3">
-            <label class="label cursor-pointer">
-              <span class="label-text">Zufällige Sounds (Nicht-Buchstaben)</span>
-              <input type="checkbox" class="toggle toggle-primary" x-model="settings.random_sounds_enabled" @change="autoSave()">
-            </label>
-          </div>
-
-          <!-- Audio normalization (FUNK-1) -->
-          <div class="form-control mb-3">
-            <label class="label cursor-pointer">
-              <span class="label-text">Lautheits-Normalisierung (EBU R128)</span>
-              <input type="checkbox" class="toggle toggle-primary"
-                     x-model="settings.audio_normalize" @change="autoSave()">
-            </label>
-            <div class="text-2xs opacity-50 -mt-1 mb-1">
-              Neu generierte &amp; hochgeladene Sounds werden automatisch auf gleiche wahrgenommene Lautstärke gebracht.
-            </div>
-            <div class="flex items-center gap-3" x-show="settings.audio_normalize">
-              <span class="text-xs opacity-60 w-16">Ziel (LUFS)</span>
-              <input type="range" class="range range-xs range-primary flex-1"
-                     min="-30" max="-10" step="0.5"
-                     x-model.number="settings.audio_normalize_lufs" @change="autoSave()">
-              <span class="badge badge-sm font-mono"
-                    x-text="(settings.audio_normalize_lufs ?? -16).toFixed(1) + ' LUFS'"></span>
-            </div>
-            <div class="mt-2 flex items-center gap-2" x-show="settings.audio_normalize">
-              <button class="btn btn-sm btn-outline btn-primary gap-2"
-                      @click="normalizeAllSounds()" :disabled="_normAllBusy">
-                <span x-show="_normAllBusy" class="loading loading-spinner loading-xs"></span>
-                <span x-show="!_normAllBusy">Bestehende Library normalisieren</span>
-              </button>
-              <span class="text-xs opacity-60" x-show="_normAllStatus" x-text="_normAllStatus"></span>
-            </div>
-          </div>
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Anzeige-Modus</span></label>
-            <select class="select select-bordered" x-model="settings.display_mode" @change="autoSave()">
-              <option value="mqtt">MQTT (pixdcon)</option>
-              <option value="direct">Direkt (Pixoo)</option>
-              <option value="both">Beide</option>
-            </select>
-          </div>
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Pixoo IP</span></label>
-            <input type="text" class="input input-bordered" x-model="settings.pixoo_ip" @change="autoSave()">
-          </div>
-          <div class="form-control mb-3">
-            <label class="label" for="kb-device">
-              <span class="label-text">Tastatur-Gerät</span>
-              <span class="label-text-alt opacity-60" x-show="hw.keyboard_env_pinned">vom Host festgelegt</span>
-            </label>
+          <div class="ui-field">
+            <label for="kb-device">Tastatur-Gerät <span x-show="hw.keyboard_env_pinned">vom Host festgelegt</span></label>
             <template x-if="hw.keyboard_env_pinned">
-              <input id="kb-device" type="text" class="input input-bordered" :value="hw.device_name" disabled
+              <input id="kb-device" type="text" class="ui-inp" :value="hw.device_name" disabled
                      title="FUNKEYKID_KEYBOARD ist gesetzt — Änderung nur in nixcfg (Host-Isolation muss passen)">
             </template>
             <template x-if="!hw.keyboard_env_pinned">
-              <div class="flex gap-2">
-                <input id="kb-device" type="text" class="input input-bordered flex-1" list="kb-devices"
-                       x-model="settings.keyboard_device" @change="autoSave()" placeholder="ACME BK03">
-                <button type="button" class="btn btn-ghost" @click="loadDiagnostics()"
-                        title="Geräteliste aktualisieren" aria-label="Geräteliste aktualisieren">↻</button>
+              <div class="ui-row">
+                <input id="kb-device" type="text" class="ui-inp" list="kb-devices" x-model="settings.keyboard_device" @change="autoSave()" placeholder="ACME BK03">
+                <button type="button" class="ui-ibtn line" @click="loadDiagnostics()" title="Geräteliste aktualisieren" aria-label="Geräteliste aktualisieren"><span x-html="ui.ic.retry"></span></button>
               </div>
             </template>
             <datalist id="kb-devices">
               <template x-for="n in keyboardChoices()" :key="n"><option :value="n"></option></template>
             </datalist>
-            <div class="text-2xs opacity-50 mt-1">
-              funkeykid übernimmt das Gerät exklusiv (alle Eingabeknoten) — der Host sieht keine Tastendrücke.
-              Die Host-Isolation in nixcfg muss zum selben Gerät passen.
+            <span class="ui-hint">funkeykid übernimmt das Gerät exklusiv (alle Eingabeknoten): der Rechner sieht keine Tastendrücke. Die Host-Isolation in nixcfg muss zum selben Gerät passen.</span>
+          </div>
+          <div class="ui-field">
+            <label for="st-debounce">Entprellen <span>Sekunden</span></label>
+            <input id="st-debounce" type="number" class="ui-inp" style="max-width:120px" x-model.number="settings.debounce_seconds" @change="autoSave()" step="0.1" min="0.1" max="3" placeholder="0.8">
+            <span class="ui-hint">Nach einem Tastendruck wird jede weitere Taste so lange ignoriert, auch eine andere (Lautstärke, Leertaste, Eingabetaste und Pfeile ausgenommen). So wird wildes Hämmern nicht zum Dauerfeuer.</span>
+          </div>
+          <div class="ui-field">
+            <label for="battery-low">Akku-Warnung ab <span class="num" x-text="(settings.battery_low_threshold ?? 20) > 0 ? (settings.battery_low_threshold ?? 20) + ' %' : 'aus'"></span></label>
+            <input id="battery-low" type="range" class="ui-range" min="0" max="60" step="5" x-model.number="settings.battery_low_threshold" @change="autoSave()">
+            <span class="ui-hint">0 = aus. Akkus (NiMH, 1,2 V) melden früh niedrige Werte: Schwelle bei Bedarf senken. Gilt hier und am Pixoo.</span>
+          </div>
+        </section>
+
+        <!-- Ton -->
+        <section class="ui-card ui-scard" aria-labelledby="st-snd">
+          <h3 id="st-snd"><span x-html="ui.ic.speaker" aria-hidden="true"></span>Ton</h3>
+          <div class="ui-field">
+            <label for="st-vol">Lautstärke <span class="num" x-text="settings.volume + ' %'"></span></label>
+            <input id="st-vol" type="range" class="ui-range" min="0" max="100" step="10" x-model.number="settings.volume" @change="autoSave()">
+          </div>
+          <div class="ui-srow">
+            <div><b>Zufällige Töne</b><span class="ui-hint">Tasten ohne Buchstaben spielen einen zufälligen Ton.</span></div>
+            <label class="ui-switch"><input type="checkbox" role="switch" x-model="settings.random_sounds_enabled" @change="autoSave()" aria-label="Zufällige Töne"><span class="tr"></span></label>
+          </div>
+          <div class="ui-srow">
+            <div><b>Gleiche Lautheit</b><span class="ui-hint">Neue und hochgeladene Töne bekommen automatisch dieselbe wahrgenommene Lautstärke (EBU R128).</span></div>
+            <label class="ui-switch"><input type="checkbox" role="switch" x-model="settings.audio_normalize" @change="autoSave()" aria-label="Gleiche Lautheit"><span class="tr"></span></label>
+          </div>
+          <template x-if="settings.audio_normalize">
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div class="ui-field" style="margin-top:0">
+                <label for="st-lufs">Ziel <span class="num" x-text="(settings.audio_normalize_lufs ?? -16).toFixed(1) + ' LUFS'"></span></label>
+                <input id="st-lufs" type="range" class="ui-range" min="-30" max="-10" step="0.5" x-model.number="settings.audio_normalize_lufs" @change="autoSave()">
+              </div>
+              <div class="ui-row">
+                <button type="button" class="ui-btn sm ui-btn-line" @click="normalizeAllSounds()" :disabled="_normAllBusy">
+                  <span class="ui-ring sm" x-show="_normAllBusy" style="width:14px;height:14px;border-width:2px"></span>Alle vorhandenen Töne angleichen</button>
+                <span class="ui-hint" x-show="_normAllStatus" x-text="_normAllStatus"></span>
+              </div>
             </div>
-          </div>
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Debounce (s)</span></label>
-            <input type="number" class="input input-bordered" x-model.number="settings.debounce_seconds" @change="autoSave()"
-                   step="0.1" min="0.1" max="3">
-          </div>
-          <div class="form-control mb-3">
-            <label class="label" for="battery-low">
-              <span class="label-text">Akku-Warnung ab</span>
-              <span class="label-text-alt"
-                    x-text="(settings.battery_low_threshold ?? 20) > 0 ? (settings.battery_low_threshold ?? 20) + ' %' : 'aus'"></span>
-            </label>
-            <input id="battery-low" type="range" class="range range-primary range-sm" min="0" max="60" step="5"
-                   x-model.number="settings.battery_low_threshold" @change="autoSave()">
-            <div class="text-2xs opacity-50 mt-1">
-              0 = aus. Akkus (NiMH, 1,2 V) melden früh niedrige Werte — Schwelle bei Bedarf senken.
-              Gilt für die Warnung hier und am Pixoo.
-            </div>
-          </div>
-          <div class="divider text-xs opacity-40">KI-Generierung</div>
+          </template>
+        </section>
 
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Sound-Prompt</span></label>
-            <textarea class="textarea textarea-bordered text-xs h-16" x-model="settings.ai_prompts.sound" @change="autoSave()"
-                      placeholder="Sound-Prompt mit {word} Platzhalter"></textarea>
-            <div class="text-2xs opacity-30 mt-0.5">Platzhalter: {word} wird durch das Wort ersetzt</div>
+        <!-- Pixoo -->
+        <section class="ui-card ui-scard" aria-labelledby="st-px">
+          <h3 id="st-px"><span x-html="ui.ic.photo" aria-hidden="true"></span>Pixoo-Anzeige</h3>
+          <div class="ui-field">
+            <label for="st-mode">Anzeige-Modus</label>
+            <select id="st-mode" class="ui-inp" x-model="settings.display_mode" @change="autoSave()">
+              <option value="mqtt">MQTT (pixdcon)</option>
+              <option value="direct">Direkt (Pixoo)</option>
+              <option value="both">Beide</option>
+            </select>
           </div>
-
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Bild-Prompt</span></label>
-            <textarea class="textarea textarea-bordered text-xs h-20" x-model="settings.ai_prompts.image" @change="autoSave()"
-                      placeholder="Bild-Prompt mit {description} Platzhalter"></textarea>
-            <div class="text-2xs opacity-30 mt-0.5">Platzhalter: {description} wird durch die Bildbeschreibung ersetzt</div>
+          <div class="ui-field">
+            <label for="st-pixoo">Pixoo-IP <span>nur für „Direkt“ und „Beide“</span></label>
+            <input id="st-pixoo" type="text" class="ui-inp" x-model="settings.pixoo_ip" @change="autoSave()" placeholder="z. B. 192.168.1.50">
           </div>
+        </section>
 
-          <div class="form-control mb-3">
-            <label class="label"><span class="label-text">Vorschlag-Modell</span></label>
-            <select class="select select-bordered select-sm mb-2" x-model="settings.ai_prompts.suggest_model" @change="autoSave()">
+        <!-- KI -->
+        <section class="ui-card ui-scard" aria-labelledby="st-ai">
+          <h3 id="st-ai"><span x-html="ui.ic.sparkle" aria-hidden="true"></span>KI-Anweisungen</h3>
+          <p class="ui-hint" style="margin:0">Gelten für alle Wörter. Für ein einzelnes Wort gibt es eigene Anweisungen im Editor. Stand und Verbrauch: <button type="button" class="ui-link" @click="go('ailog')">KI &amp; Dienste</button>.</p>
+          <div class="ui-field">
+            <label for="st-psound">Geräusch <span>Platzhalter {word}</span></label>
+            <span class="ui-hint" style="margin:0 0 6px">Die Geräusch-KI versteht nur Englisch. Mit OpenRouter wird jede Anweisung vor dem Erzeugen ins Englische gebracht, ohne OpenRouter bitte Englisch schreiben.</span>
+            <textarea id="st-psound" class="ui-inp ui-mono" rows="2" x-model="settings.ai_prompts.sound" @change="autoSave()" placeholder="Sound-Prompt mit {word} Platzhalter"></textarea>
+          </div>
+          <div class="ui-field">
+            <label for="st-pimg">Bild <span>Platzhalter {description}</span></label>
+            <textarea id="st-pimg" class="ui-inp ui-mono" rows="3" x-model="settings.ai_prompts.image" @change="autoSave()" placeholder="Bild-Prompt mit {description} Platzhalter"></textarea>
+          </div>
+          <div class="ui-field">
+            <label for="st-model">Modell für Wort-Vorschläge</label>
+            <select id="st-model" class="ui-inp" x-model="settings.ai_prompts.suggest_model" @change="autoSave()">
               <optgroup label="Kostenlos">
                 <option value="nvidia/nemotron-nano-9b-v2:free">Nemotron Nano 9B (gratis)</option>
                 <option value="nvidia/nemotron-3-nano-30b-a3b:free">Nemotron 30B (gratis)</option>
@@ -1822,41 +1818,32 @@
                 <option value="google/gemini-3-pro-image-preview">Gemini 3 Pro</option>
               </optgroup>
             </select>
-            <label class="label"><span class="label-text">Wort-Vorschlag-Prompt</span></label>
-            <textarea class="textarea textarea-bordered text-xs h-24" x-model="settings.ai_prompts.suggest" @change="autoSave()"
-                      placeholder="Prompt mit {letter} und {excluded} Platzhaltern"></textarea>
-            <div class="text-2xs opacity-30 mt-0.5">Platzhalter: {letter} = Buchstabe, {excluded} = ausgeschlossene Wörter</div>
           </div>
+          <div class="ui-field">
+            <label for="st-psuggest">Wort-Vorschlag <span>Platzhalter {letter}, {excluded}</span></label>
+            <textarea id="st-psuggest" class="ui-inp ui-mono" rows="5" x-model="settings.ai_prompts.suggest" @change="autoSave()" placeholder="Prompt mit {letter} und {excluded} Platzhaltern"></textarea>
+          </div>
+        </section>
 
-          <div class="text-xs opacity-40 mt-4 text-center">Änderungen werden automatisch gespeichert</div>
-        </div>
-      </div>
-
-      <!-- Progress per letter (FUNK-40) -->
-      <div class="card bg-base-100 shadow max-w-xl mx-auto mt-4">
-        <div class="card-body">
-          <h2 class="card-title">Fortschritt</h2>
-          <p class="text-sm opacity-70">
-            Je Buchstabe und Ziffer: wie oft die Taste gedrückt wurde und wie das Quiz lief.
-            Es zählt nur die echte Tastatur, nicht die Testtasten hier.
-            Je kräftiger die Farbe einer Karte, desto öfter wurde die Taste gedrückt.
-          </p>
-          <div class="text-xs opacity-60" x-show="prog.since" x-text="'Gezählt seit ' + progDate(prog.since)"></div>
-          <div class="form-control mt-2">
-            <label class="label" for="settings-mastery"><span class="label-text">„gelernt“ ab so vielen richtigen Quiz-Antworten in Folge</span></label>
-            <select id="settings-mastery" class="select select-bordered w-32"
-                    @change="progSetMastery(Number($event.target.value))">
+        <!-- Fortschritt (FUNK-40) -->
+        <section class="ui-card ui-scard" aria-labelledby="st-prog">
+          <h3 id="st-prog"><span x-html="ui.ic.chart" aria-hidden="true"></span>Fortschritt</h3>
+          <p class="ui-hint" style="margin:0">Je Buchstabe und Ziffer: wie oft die Taste gedrückt wurde und wie das Quiz lief. Es zählt nur die echte Tastatur, nicht die Testtasten hier. Je kräftiger die Farbe einer Karte, desto öfter wurde die Taste gedrückt.</p>
+          <span class="ui-hint" x-show="prog.since" x-text="'Gezählt seit ' + progDate(prog.since)"></span>
+          <div class="ui-field">
+            <label for="settings-mastery">„gelernt“ ab so vielen richtigen Quiz-Antworten in Folge</label>
+            <select id="settings-mastery" class="ui-inp" style="max-width:120px" @change="progSetMastery(Number($event.target.value))">
               <template x-for="n in prog.mastery_choices" :key="n">
                 <option :value="n" :selected="n === prog.mastery" x-text="n"></option>
               </template>
             </select>
-            <span class="text-xs opacity-60 mt-1">Nur Antworten beim ersten Versuch zählen; ein Fehler fängt wieder bei null an.</span>
+            <span class="ui-hint">Nur Antworten beim ersten Versuch zählen; ein Fehler fängt wieder bei null an.</span>
           </div>
-          <div class="text-sm mt-2" x-text="progLearnedSummary()"></div>
-          <div class="card-actions justify-end mt-2">
-            <button type="button" class="btn btn-sm btn-outline btn-error" :disabled="progBusy" @click="progReset()">Fortschritt zurücksetzen …</button>
+          <div style="font-size:13px" x-text="progLearnedSummary()"></div>
+          <div class="ui-row" style="justify-content:flex-end">
+            <button type="button" class="ui-btn sm ui-btn-line ui-danger-line" :disabled="progBusy" @click="progReset()">Fortschritt zurücksetzen …</button>
           </div>
-        </div>
+        </section>
       </div>
     </div>
 

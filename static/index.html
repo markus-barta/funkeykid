@@ -343,6 +343,31 @@
     .ui-tile-meta { display: flex; align-items: center; gap: 6px; margin-top: auto; flex-wrap: wrap; min-width: 0; }
     .ui-st { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border-radius: 7px; font-size: 11.5px; font-weight: 650; background: rgba(255,255,255,.05); color: var(--ui-tx2); }
     .ui-st.gap { background: rgba(245,185,65,.12); color: var(--ui-warn); }
+    /* FUNK-78: Dateien */
+    .ui-fsearch { width: 220px; max-width: 100%; height: 38px; }
+    .ui-fnote { font-size: 12.5px; margin: -8px 0 14px; }
+    .ui-flist { padding: 6px; }
+    .ui-frow { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 12px; min-width: 0; }
+    .ui-frow:hover { background: rgba(255,255,255,.03); }
+    .ui-frow + .ui-frow { border-top: 1px solid var(--ui-line); }
+    .ui-fmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+    .ui-fname-l { font-size: 13.5px; font-weight: 600; }
+    .ui-frow.unused .ui-fname-l, .ui-fcell.unused .ui-fname-l { color: var(--ui-tx2); font-weight: 500; }
+    .ui-uses { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-width: 0; }
+    .ui-use { height: 22px; padding: 0 8px; border-radius: 7px; font-size: 11.5px; font-weight: 650; background: var(--ui-pri-soft); color: #d4ceff; border: 0; cursor: pointer; max-width: 100%;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ui-use:hover { background: rgba(139,125,255,.26); }
+    .ui-unused { font-size: 11.5px; font-weight: 650; color: var(--ui-warn); background: rgba(245,185,65,.1); padding: 2px 8px; border-radius: 7px; }
+    .ui-fgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+    .ui-fcell { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 16px; background: var(--ui-s1); border: 1px solid var(--ui-line); min-width: 0; }
+    .ui-fcell .pic { aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--ui-s3); }
+    .ui-fcell .pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ui-fcell.unused .pic img { opacity: .55; }
+    .ui-fcell .ui-btn { align-self: flex-start; }
+    .ui-fempty { text-align: center; color: var(--ui-tx3); padding: 40px 0; font-size: 13px; }
+    .ui-farch { margin-top: 16px; padding: 16px; }
+    .ui-farch-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 8px; font-size: 13px; }
+    .ui-farch-list { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto; margin-top: 6px; color: var(--ui-tx2); font-size: 12.5px; }
     /* FUNK-75: Fehlende Stimmen erzeugen */
     .ui-fillcnt { font-size: 11.5px; font-weight: 750; padding: 1px 7px; border-radius: 99px; background: rgba(62,207,142,.16); color: var(--ui-de); }
     .ui-fill { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding: 14px 16px; border-radius: 16px; background: var(--ui-s1); border: 1px solid rgba(62,207,142,.28); }
@@ -587,6 +612,7 @@
       .ui-glyph { font-size: 36px; } .ui-tile-img { width: 56px; height: 56px; border-radius: 12px; }
       .ui-tile .today { display: none; } .ui-st { padding: 0 5px; gap: 3px; }
       .ui-sum { margin-left: 0; width: 100%; }
+      .ui-fsearch { width: 100%; } .ui-fgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ui-farch-cols { grid-template-columns: 1fr; }
       .ui-fill { flex-wrap: wrap; align-items: flex-start; } .ui-fill > .ic, .ui-fill > .ui-ring { margin-top: 2px; }
       .ui-ac { right: 14px; bottom: 84px; }
       .ui-acpanel { width: calc(100vw - 28px); }
@@ -1806,128 +1832,92 @@
       </div>
     </div>
 
-    <!-- ═══ FILES TAB ═══ -->
-    <div x-show="tab === 'files'" x-cloak x-data="{ fileFilter: '', fileTab: 'sounds', archiveOpen: false, archiveData: null }">
-      <!-- Sub-tabs: Sounds / Images -->
-      <div class="flex flex-wrap items-center gap-3 mb-4">
-        <div class="tabs tabs-boxed tabs-sm">
-          <a class="tab" :class="fileTab === 'sounds' && 'tab-active'" @click="fileTab='sounds'">
-            Sounds <span class="badge badge-xs ml-1" x-text="filteredSounds(fileFilter).length"></span>
-          </a>
-          <a class="tab" :class="fileTab === 'images' && 'tab-active'" @click="fileTab='images'">
-            Bilder <span class="badge badge-xs ml-1" x-text="filteredImages(fileFilter).length"></span>
-          </a>
+    <!-- ═══ DATEIEN TAB (FUNK-78): every picture and sound, what uses it, what is left over ═══ -->
+    <section x-show="tab === 'files'" x-cloak>
+      <div class="ui-bar">
+        <div class="ui-seg" role="tablist" aria-label="Art">
+          <button type="button" role="tab" :class="files.kind === 'sounds' && 'on'" :aria-selected="files.kind === 'sounds' ? 'true' : 'false'" @click="fileKind('sounds')">Töne<span class="c num" x-text="sounds.length"></span></button>
+          <button type="button" role="tab" :class="files.kind === 'images' && 'on'" :aria-selected="files.kind === 'images' ? 'true' : 'false'" @click="fileKind('images')">Bilder<span class="c num" x-text="images.length"></span></button>
         </div>
-        <input type="text" class="input input-sm input-bordered flex-1 min-w-0" style="min-width: 8rem" x-model="fileFilter"
-               placeholder="Suchen...">
-        <button class="btn btn-sm btn-ghost opacity-40" @click="archiveOpen = !archiveOpen; if (!archiveData) fetch('/api/archive').then(r=>r.json()).then(d => archiveData = d)">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m16.875 0h-17.25M10 11.25h4"/></svg>
-          Archiv
-        </button>
-      </div>
-
-      <!-- Sounds panel -->
-      <div x-show="fileTab === 'sounds'" class="card bg-base-100 shadow">
-        <div class="card-body p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="card-title text-sm">Sounds</h2>
-            <label class="btn btn-sm btn-primary gap-1">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-              Hochladen
-              <input type="file" class="hidden" accept=".mp3,.wav,.ogg" @change="uploadFile($event, 'sounds')">
-            </label>
-          </div>
-          <div class="overflow-y-auto" style="max-height:50vh">
-            <table class="table table-xs table-zebra w-full">
-              <thead><tr><th></th><th>Dateiname</th><th class="text-right">Aktionen</th></tr></thead>
-              <tbody>
-                <template x-for="s in filteredSounds(fileFilter)" :key="s">
-                  <tr class="hover">
-                    <td class="w-8">
-                      <button class="btn btn-xs btn-ghost btn-circle" @click="previewSound(s)" title="Abspielen">
-                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg>
-                      </button>
-                    </td>
-                    <td><span class="text-sm" x-text="s"></span></td>
-                    <td class="text-right">
-                      <button class="btn btn-xs btn-ghost opacity-30 hover:opacity-70" title="Archivieren"
-                              @click="if(confirm('Sound &quot;' + s + '&quot; archivieren?')) { fetch('/api/archive', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({type:'sound', filename:s})}).then(()=>{sounds = sounds.filter(x=>x!==s); showToast(s + ' archiviert')})}">
-                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m16.875 0h-17.25M10 11.25h4"/></svg>
-                      </button>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-            <div x-show="filteredSounds(fileFilter).length === 0" class="text-center py-8 opacity-30 text-sm">
-              Keine Sounds gefunden
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Images panel -->
-      <div x-show="fileTab === 'images'" class="card bg-base-100 shadow">
-        <div class="card-body p-4">
-          <div class="flex items-center justify-between mb-2">
-            <h2 class="card-title text-sm">Bilder</h2>
-            <label class="btn btn-sm btn-primary gap-1">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
-              Hochladen
-              <input type="file" class="hidden" accept=".png,.jpg,.jpeg,.gif" @change="uploadFile($event, 'images')">
-            </label>
-          </div>
-          <div class="overflow-y-auto" style="max-height:50vh">
-            <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-              <template x-for="img in filteredImages(fileFilter)" :key="img">
-                <div class="group relative text-center">
-                  <img :src="'/images/' + img" class="img-preview mx-auto border-2 border-transparent group-hover:border-primary rounded transition-all">
-                  <div class="text-2xs opacity-40 truncate mt-1" x-text="img"></div>
-                  <button class="absolute -top-1 -right-1 btn btn-xs btn-circle btn-ghost opacity-0 group-hover:opacity-60 transition-opacity"
-                          title="Archivieren"
-                          @click="if(confirm('Bild &quot;' + img + '&quot; archivieren?')) { fetch('/api/archive', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({type:'image', filename:img})}).then(()=>{images = images.filter(x=>x!==img); showToast(img + ' archiviert')})}">
-                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m16.875 0h-17.25M10 11.25h4"/></svg>
-                  </button>
-                </div>
-              </template>
-            </div>
-            <div x-show="filteredImages(fileFilter).length === 0" class="text-center py-8 opacity-30 text-sm">
-              Keine Bilder gefunden
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Archive panel (collapsible) -->
-      <div x-show="archiveOpen" x-transition class="card bg-base-100 shadow mt-4">
-        <div class="card-body p-4">
-          <h2 class="card-title text-sm mb-2">Archiv</h2>
-          <template x-if="archiveData">
-            <div class="grid md:grid-cols-2 gap-4">
-              <div>
-                <h3 class="text-xs font-semibold opacity-50 mb-1">Sounds (<span x-text="archiveData.sounds?.length || 0"></span>)</h3>
-                <div class="overflow-y-auto max-h-40 text-xs space-y-0.5">
-                  <template x-for="s in (archiveData.sounds || [])" :key="s">
-                    <div class="flex items-center gap-1 opacity-50" x-text="s"></div>
-                  </template>
-                  <div x-show="!archiveData.sounds?.length" class="opacity-30">Leer</div>
-                </div>
-              </div>
-              <div>
-                <h3 class="text-xs font-semibold opacity-50 mb-1">Bilder (<span x-text="archiveData.images?.length || 0"></span>)</h3>
-                <div class="overflow-y-auto max-h-40 text-xs space-y-0.5">
-                  <template x-for="img in (archiveData.images || [])" :key="img">
-                    <div class="flex items-center gap-1 opacity-50" x-text="img"></div>
-                  </template>
-                  <div x-show="!archiveData.images?.length" class="opacity-30">Leer</div>
-                </div>
-              </div>
-            </div>
+        <div class="ui-seg" role="tablist" aria-label="Filter">
+          <template x-for="f in fileFilters" :key="f.id">
+            <button type="button" role="tab" :class="files.use === f.id && 'on'" :aria-selected="files.use === f.id ? 'true' : 'false'" @click="files.use = f.id; files.limit = 200"><span x-text="f.label"></span><span class="c num" x-text="fileCount(f.id)"></span></button>
           </template>
-          <div x-show="!archiveData" class="text-center py-4 opacity-30 text-sm">Wird geladen...</div>
         </div>
+        <input class="ui-inp ui-fsearch" type="search" x-model="files.q" @input="files.limit = 200" placeholder="Suchen …" aria-label="Dateien suchen">
+        <span class="ui-sp"></span>
+        <label class="ui-btn sm ui-btn-pri" style="cursor:pointer"><span x-html="ui.ic.upload" aria-hidden="true"></span>Hochladen
+          <input type="file" class="ui-sr" :accept="files.kind === 'sounds' ? '.mp3,.wav,.ogg' : '.png,.jpg,.jpeg,.gif'" @change="uploadFile($event, files.kind)" :aria-label="files.kind === 'sounds' ? 'Ton hochladen' : 'Bild hochladen'"></label>
+        <button type="button" class="ui-btn sm ui-btn-ghost" @click="filesArchiveToggle()" :aria-expanded="files.archiveOpen ? 'true' : 'false'"><span x-html="ui.ic.archive" aria-hidden="true"></span>Archiv</button>
       </div>
-    </div>
+      <p class="ui-faint ui-fnote" x-text="filesNote()"></p>
+
+      <!-- sounds -->
+      <div class="ui-card ui-flist" x-show="files.kind === 'sounds'">
+        <template x-for="f in fileList()" :key="f">
+          <div class="ui-frow" :class="!fileUses(f).length && 'unused'">
+            <button type="button" class="ui-pbtn" :class="pl.f === f && 'on'" @click="plToggle(f, 100)" :aria-label="(pl.f === f ? 'Stopp: ' : 'Abspielen: ') + f"><span x-html="pl.f === f ? ui.ic.pause : ui.ic.play"></span></button>
+            <div class="ui-fmain">
+              <span class="ui-fname-l ui-trunc" x-text="f"></span>
+              <div class="ui-uses">
+                <template x-for="(u, ui2) in fileUses(f).slice(0, 4)" :key="ui2">
+                  <button type="button" class="ui-use" @click="fileOpenUse(u)" :title="fileUseTitle(u)" x-text="fileUseLabel(u)"></button>
+                </template>
+                <span class="ui-faint" style="font-size:12px" x-show="fileUses(f).length > 4" x-text="'+ ' + (fileUses(f).length - 4) + ' weitere'"></span>
+                <span class="ui-unused" x-show="files.usage && !fileUses(f).length">nicht benutzt</span>
+              </div>
+            </div>
+            <button type="button" class="ui-btn xs" :class="files.confirm === f ? 'ui-btn-line' : 'ui-btn-ghost'" x-show="files.usage && !fileUses(f).length" @click="fileArchive(f)"
+                    :aria-label="f + ' archivieren'"><span x-html="ui.ic.archive" aria-hidden="true"></span><span x-text="files.confirm === f ? 'Wirklich archivieren?' : 'Archivieren'"></span></button>
+          </div>
+        </template>
+        <div class="ui-fempty" x-show="!fileList().length">Keine Töne gefunden.</div>
+      </div>
+
+      <!-- pictures -->
+      <div class="ui-fgrid" x-show="files.kind === 'images'">
+        <template x-for="f in fileList()" :key="f">
+          <div class="ui-fcell" :class="!fileUses(f).length && 'unused'">
+            <div class="pic"><img :src="thumb(f, 160)" :alt="f" loading="lazy"></div>
+            <div class="ui-fmain">
+              <span class="ui-fname-l ui-trunc" x-text="f" :title="f"></span>
+              <div class="ui-uses">
+                <template x-for="(u, ui2) in fileUses(f).slice(0, 2)" :key="ui2">
+                  <button type="button" class="ui-use" @click="fileOpenUse(u)" :title="fileUseTitle(u)" x-text="fileUseLabel(u)"></button>
+                </template>
+                <span class="ui-faint" style="font-size:12px" x-show="fileUses(f).length > 2" x-text="'+ ' + (fileUses(f).length - 2)"></span>
+                <span class="ui-unused" x-show="files.usage && !fileUses(f).length">nicht benutzt</span>
+              </div>
+              <button type="button" class="ui-btn xs" :class="files.confirm === f ? 'ui-btn-line' : 'ui-btn-ghost'" x-show="files.usage && !fileUses(f).length" @click="fileArchive(f)"
+                      :aria-label="f + ' archivieren'"><span x-html="ui.ic.archive" aria-hidden="true"></span><span x-text="files.confirm === f ? 'Wirklich?' : 'Archivieren'"></span></button>
+            </div>
+          </div>
+        </template>
+        <div class="ui-fempty" x-show="!fileList().length">Keine Bilder gefunden.</div>
+      </div>
+      <div style="text-align:center;margin-top:14px" x-show="fileListAll().length > fileList().length">
+        <button type="button" class="ui-btn sm ui-btn-line" @click="files.limit += 200" x-text="'Weitere zeigen (' + (fileListAll().length - fileList().length) + ')'"></button>
+      </div>
+
+      <!-- archive -->
+      <section class="ui-card ui-farch" x-show="files.archiveOpen" x-transition>
+        <div class="ui-bgs-h"><h4>Archiv</h4><span class="ui-faint" style="font-size:12.5px">Archivierte Dateien liegen auf dem Gerät in /data/archive</span></div>
+        <template x-if="!files.archive"><div class="ui-faint" style="padding:10px 0">Lädt …</div></template>
+        <template x-if="files.archive">
+          <div class="ui-farch-cols">
+            <template x-for="col in [{ k: 'sounds', t: 'Töne' }, { k: 'images', t: 'Bilder' }]" :key="col.k">
+              <div>
+                <b x-text="col.t + ' (' + ((files.archive[col.k] || []).length) + ')'"></b>
+                <div class="ui-farch-list">
+                  <template x-for="x in (files.archive[col.k] || [])" :key="x"><span class="ui-trunc" x-text="x"></span></template>
+                  <span class="ui-faint" x-show="!(files.archive[col.k] || []).length">Leer</span>
+                </div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </section>
+    </section>
 
     <!-- ═══ AI & INTEGRATIONS TAB ═══ -->
     <div x-show="tab === 'ailog'" x-cloak>
@@ -2760,6 +2750,9 @@ function funkeykid() {
     toastUndo: false, _toastTimer: null,
     aiLogEntries: [],
     fill: null, _fillSeq: 0, fillAsk: false, fillBusy: false, fillHidden: '',   // FUNK-75
+    files: { kind: 'sounds', use: 'all', q: '', limit: 200, usage: null, archiveOpen: false, archive: null, confirm: '' },   // FUNK-78
+    _fileUsageSeq: 0,
+    fileFilters: [{ id: 'all', label: 'Alle' }, { id: 'used', label: 'Benutzt' }, { id: 'unused', label: 'Unbenutzt' }],
     integrations: { elevenlabs: null, openrouter: null },
     integrationsLoading: false,
     favorites: [],
@@ -3291,12 +3284,13 @@ function funkeykid() {
               || kb.default !== km.default || kb.selected !== km.selected) continue;
           this.km = km; this.kb = kb; this.kbProfile = p;
           this.kbSelSlot = null; this.kmSel = null;   // nothing selected on the old drawing survives
-          return;
+          return true;
         }
       } catch {
       } finally {
         this.kbLoading = false;
       }
+      return false;                          // the caller knows it still shows the old state (FUNK-78)
     },
     // A list response only updates the profile list. Language, "Standard" and the
     // selection are installed by _reload() together with the key map they belong to.
@@ -3535,6 +3529,7 @@ function funkeykid() {
       if (t === 'quiz') this.loadQuiz();
       if (t === 'overview') this.loadDashboard();
       if (t === 'ailog') { this.loadAiLog(); this.loadIntegrations(); }
+      if (t === 'files') { this.loadFileUsage(); this._refreshLists(); }
       window.scrollTo({ top: 0 });
     },
     pageMeta() {
@@ -3588,6 +3583,88 @@ function funkeykid() {
       const t = this.letterTotals();
       return `${t.words} Wörter · ${t.img} Bilder · ${t.fx} Geräusche · ${t.de} ${t.de === 1 ? 'Stimme' : 'Stimmen'}`;
     },
+    // ══ Dateien (FUNK-78): what uses each file; only unused files can be archived ══
+    // only the answer to the newest request is shown: an older one never brings back "nicht benutzt"
+    async loadFileUsage() {
+      const my = ++this._fileUsageSeq;
+      try {
+        const u = await fetch('/api/files/usage').then(r => r.json());
+        if (my === this._fileUsageSeq && u && u.sounds && u.images) this.files.usage = u;
+      } catch {}
+    },
+    fileKind(k) { this.files.kind = k; this.files.limit = 200; this.files.confirm = ''; },
+    fileUses(f) { const u = this.files.usage; return (u && u[this.files.kind] && u[this.files.kind][f]) || []; },
+    _fileUsesIn(kind, f) { const u = this.files.usage; return (u && u[kind] && u[kind][f]) || []; },
+    fileListAll() {
+      const kind = this.files.kind, list = kind === 'sounds' ? this.sounds : this.images;
+      const q = (this.files.q || '').toLowerCase().trim(), use = this.files.use;
+      return list.filter(f => (!q || f.toLowerCase().includes(q))
+        && (use === 'all' || !this.files.usage || (use === 'used') === this._fileUsesIn(kind, f).length > 0));
+    },
+    fileList() { return this.fileListAll().slice(0, this.files.limit); },
+    fileCount(id) {
+      const kind = this.files.kind, list = kind === 'sounds' ? this.sounds : this.images;
+      if (id === 'all' || !this.files.usage) return list.length;
+      const used = list.filter(f => this._fileUsesIn(kind, f).length).length;
+      return id === 'used' ? used : list.length - used;
+    },
+    filesNote() {
+      if (!this.files.usage) return 'Lädt, was welche Datei benutzt …';
+      const n = this.fileCount('all'), unused = this.fileCount('unused'), what = this.files.kind === 'sounds' ? 'Töne' : 'Bilder';
+      return `${n} ${what} · ${n - unused} benutzt · ${unused} nicht benutzt. Klick auf ein Wort öffnet es. Nur nicht benutzte Dateien lassen sich archivieren.`;
+    },
+    fileUseLabel(u) {
+      if (u.kind === 'KEY') return (u.profile !== this.km.profile ? 'Profil ' + u.profile + ': ' : '') + 'Taste ' + u.key + (u.word ? ' · ' + u.word : '');
+      const k = { IMG: 'Bild', BG: 'Hintergrund', FX: 'Geräusch', DE: 'Stimme', EN: 'Englisch' }[u.kind] || u.kind;
+      return (u.set_id !== this.activeSetId ? (u.set || u.set_id) + ': ' : '') + u.key + ' · ' + (u.word || '—') + ' · ' + k;
+    },
+    fileUseTitle(u) {
+      if (u.kind === 'KEY') return u.profile === this.km.profile ? 'Diese Taste in der Tastenbelegung öffnen' : 'Gehört zum Tastaturprofil „' + u.profile + '“ (nicht aktiv)';
+      return (this._isNumKey(u.key) ? 'Zahl ' : 'Buchstabe ') + u.key + ' im Editor öffnen';
+    },
+    fileOpenUse(u) {
+      this.plStop();
+      if (u.kind === 'KEY') {
+        // in the keyboard queue (FUNK-63), after loading the current key map and profile: no switch from
+        // another page and no stale mapping slips in between. Another profile is never switched to here.
+        this.kbQueue(async () => {
+          if (!(await this._reload())) { this.showToast('Konnte die Tastenbelegung nicht laden. Versuch es nochmal.', 'error'); return; }
+          if (u.profile !== this.km.profile) { this.showToast(`Diese Taste gehört zum Tastaturprofil „${u.profile}“. Wechsle es unter Tastatur, um sie zu bearbeiten.`); return; }
+          this.go('test');
+          this.kbSelectId(u.key);              // the Tastatur tab's own selection: drawing, editor and fields together
+        });
+        return;
+      }
+      this.go(this._isNumKey(u.key) ? 'numbers' : 'letters');
+      this.openEditor(u.key, u.set_id, this._isNumKey(u.key) ? undefined : u.entry_id);
+      // that exact word, or nothing: if it is gone meanwhile, the editor never lands on another one
+      if (this.ed && !this._isNumKey(u.key)) this.ed.want = { id: u.entry_id, word: u.word };
+    },
+    async fileArchive(f) {
+      if (this.files.confirm !== f) {                          // two steps: the first click asks
+        this.files.confirm = f;
+        clearTimeout(this._fileConfirmTimer);
+        this._fileConfirmTimer = setTimeout(() => { if (this.files.confirm === f) this.files.confirm = ''; }, 4000);
+        return;
+      }
+      this.files.confirm = '';
+      const kind = this.files.kind;
+      if (this.pl.f === f) this.plStop();
+      try {
+        const res = await fetch('/api/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: kind === 'sounds' ? 'sound' : 'image', filename: f }) });
+        const r = await res.json().catch(() => ({}));
+        if (!res.ok) { this.showToast(r.error || 'Konnte nicht archivieren', 'error'); this.loadFileUsage(); return; }
+        if (kind === 'sounds') this.sounds = this.sounds.filter(x => x !== f); else this.images = this.images.filter(x => x !== f);
+        this.files.archive = null;
+        if (this.files.archiveOpen) this._loadArchive();
+        this.showToast(`${f} archiviert`);
+      } catch { this.showToast('Keine Verbindung zum Server.', 'error'); }
+    },
+    filesArchiveToggle() { this.files.archiveOpen = !this.files.archiveOpen; if (this.files.archiveOpen) this._loadArchive(); },
+    async _loadArchive() {
+      try { const d = await fetch('/api/archive').then(r => r.json()); if (d) this.files.archive = d; } catch {}
+    },
+
     // ══ Fehlende Stimmen erzeugen (FUNK-75) ══
     // The server runs it word by word (one run at a time) and announces every step (fill_update);
     // the page only shows that state. Its words are ordinary jobs marked `batch`: no autoplay, no toast each.
@@ -3895,6 +3972,16 @@ function funkeykid() {
     },
     _edInstall(data, sel) {
       const entries = this._edCopy(data.entries);
+      const want = this.ed.want;                               // opened for one entry (a Dateien chip, FUNK-78)
+      if (want) {
+        this.ed.want = null;
+        if (!entries.some(e => e.id === want.id)) {
+          this.closeEditor();
+          this.showToast(`„${want.word || 'Dieses Wort'}“ gibt es nicht mehr.`, 'error');
+          this.loadFileUsage();
+          return;
+        }
+      }
       const keep = sel || this.ed.sel;
       this.ed.entries = entries;
       this.ed.trackOrder = Array.isArray(data.track_order) ? data.track_order : [];
@@ -4737,6 +4824,8 @@ function funkeykid() {
       // Update "ago" text every second
       setInterval(() => this.updateAgo(), 1000);
       setInterval(() => { this.dashNow = performance.now(); }, 10000);   // "spielt gerade" (FUNK-42)
+      // Dateien (FUNK-78): key maps, imports and scripts change what uses a file without an event
+      setInterval(() => { if (this.tab === 'files' && document.visibilityState === 'visible') this.loadFileUsage(); }, 10000);
     },
 
     connectSSE() {
@@ -4749,6 +4838,7 @@ function funkeykid() {
         if (this.ed && !this.ed.loading) this._edRefreshSoon();
         this._scheduleSetReload();
         this.loadFill();                     // FUNK-75: a fill run's steps may have been missed, or the server restarted
+        if (this.tab === 'files') this.loadFileUsage();   // FUNK-78
       };
       es.addEventListener('status', (e) => {
         const s = JSON.parse(e.data);
@@ -4848,6 +4938,7 @@ function funkeykid() {
       es.addEventListener('letter', (e) => {
         const d = JSON.parse(e.data);
         if (d.set_id === this.activeSetId) this._scheduleSetReload();
+        if (this.tab === 'files') { clearTimeout(this._fileUsageTimer); this._fileUsageTimer = setTimeout(() => this.loadFileUsage(), 800); }   // FUNK-78
         // the open letter changed elsewhere (another page, a job): take it when nothing of ours is pending
         if (this.ed && d.origin !== FK_CLIENT && d.set_id === this.ed.setId && d.letter === this.ed.L) this._edRefreshSoon();
       });

@@ -394,8 +394,9 @@ Uses OpenRouter (gpt-4.1-nano) with a German-language prompt that:
 ### API
 
 ```
-POST /api/archive    Body: {"type": "sound", "filename": "x.mp3"}
+POST /api/archive    Body: {"type": "sound", "filename": "x.mp3"}   → 409 if a set or key map still uses it (FUNK-78)
 GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
+GET  /api/files/usage Returns: {"sounds": {name: [use]}, "images": {name: [use]}}
 ```
 
 ---
@@ -415,7 +416,7 @@ GET  /api/archive    Returns: {"sounds": [...], "images": [...]}
 | Sets | Create, duplicate, rename, delete, activate, export/import sets |
 | Tastatur | Key map on the drawn keyboard, keyboard profiles, virtual QWERTZ keyboard for testing |
 | Einstellungen | Keyboard language, volume, display mode, random sounds, AI prompts; Fortschritt: "gelernt" threshold and reset (FUNK-40) |
-| Dateien | Upload/preview sounds and images, archive |
+| Dateien | Töne and Bilder: what uses each file (click opens it), filters Alle, Benutzt and Unbenutzt, search, upload; archive only unused files (FUNK-78) |
 | KI & Dienste | AI log and integration status |
 
 ### Quiz (FUNK-39)
@@ -555,6 +556,17 @@ The Zahlen tab uses the same editor as Buchstaben: `openEditor(digit)`. A key `0
 - **Backgrounds by name.** `POST …/backgrounds` `{image, enabled?, index?, restore?}` adds one (already there → `existed: true`; at most `NUMBER_BG_MAX`). `PATCH …/backgrounds/{image}` `{enabled}` switches one, and `DELETE …/backgrounds/{image}` takes one off; the file stays, and the answer says where it was, for undo. Each is a small write in the editor's queue, with undo. Every add, switch and removal carries an `op` id. The server remembers its first answer (`_bg_ops`), so a retry gets the same answer and never re-applies an old choice over a newer one. An add answers with a `token`, the identity of that insertion (`_bg_tokens`, in memory; a generated background gets one too, and the whole-digit PUT forgets them). Undo of an add sends `if_token`, so it takes off only that insertion, never one another page made after removing it. Undo of a removal restores the index and on/off state the server reported, and may go beyond the limit. A switch answers `{changed, was, token}` (the background's identity, assigned on first use) and writes nothing if nothing changes. Its undo sends `if_enabled` and `if_token`, so it only switches back if it is still the same background (not one removed and added again) and still as this page left it. Undoing a switch keeps the identity, so the add's undo after it still works. An undo runs only if its write really changed something.
 - **Jobs.** A target `{set_id, letter: <digit>, entry_id: "number"}` works like an entry's (`_slot_entry`). A track fills only an empty slot, otherwise "current vs new". A picture job's target kind becomes `BG`: when done, `_finalize_job` adds the background (never twice). A digit with `NUMBER_BG_MAX` backgrounds takes no new KI job, and a picture that lands on a full digit waits for review instead. The KI-Hintergrund prompt is the counting picture the old editor used ("exactly N <Bild-Motiv>").
 - **The whole-digit PUT** (`PUT /api/sets/{id}/numbers/{digit}`) stays for `scripts/seed_numbers*.py` and `regen_number_images.py`; the page no longer uses it.
+
+### Dateien (FUNK-78)
+
+`GET /api/files/usage` (`_file_usage`) walks every set and key map. Per sound and per picture it lists what uses it, at most `FILE_USES_MAX` (50):
+- a letter's entry: `IMG`, `FX`, `DE`, `EN`, or the legacy `sound` as FX;
+- a digit: `FX`, `DE`, `EN`, the legacy `sound` as DE, or `BG` for each background, switched on or off;
+- a key of a key map: `KEY`.
+
+The Dateien tab shows these uses as chips. A click opens the word or digit in the editor. A word chip opens that exact entry (`ed.want`): if it was deleted meanwhile, the editor closes again with "„…“ gibt es nicht mehr" and the usage reloads; it never lands on another word. A key chip runs in the keyboard queue (`kbQueue`). It first reloads the current key map and profile (`_reload()` now returns whether it succeeded). Only if the key belongs to that active profile does it open the key in the Tastatur tab (`kbSelectId`). A key of another profile only says which profile it belongs to: the page never switches profiles there. Filters: Alle, Benutzt, Unbenutzt. The list shows 200 at a time. The usage is reloaded on entering the tab, on `letter` events, on reconnect and every 10 s while the tab is visible, because key-map writes, imports and scripts send no event. Only the answer to the newest request is installed.
+
+Only unused files offer "Archivieren", with a two-step confirm. `POST /api/archive` refuses a name that `_referenced_names()` still finds anywhere in the sets or key maps: 409, naming the first uses. So an entry, digit or key can no longer end up pointing at a missing file. The entry editor's own archive (FUNK-72) is unchanged: it archives only files nothing else uses.
 
 ### Fehlende Stimmen erzeugen (FUNK-75)
 
@@ -791,6 +803,7 @@ All topics use prefix from `settings.mqtt.topic_prefix` (default `home/hsb1/funk
 | POST | `/api/generate/image` | Generate image (Gemini) |
 | POST | `/api/archive` | Archive a file |
 | GET | `/api/archive` | List archived files |
+| GET | `/api/files/usage` | What uses each sound and picture: letter entries, digits, key maps (FUNK-78) |
 | GET/PUT | `/api/blacklist/{letter}` | Get/set blacklisted words |
 | GET | `/api/jobs` | List generation jobs |
 | GET | `/api/ai-log` | AI request/response log (last 50) |

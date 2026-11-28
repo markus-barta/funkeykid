@@ -3587,7 +3587,11 @@ def _finalize_job(job_id):
         _, e = _find_entry(_letter_entries(t["set_id"], t["letter"]), t["entry_id"])
         fname, kind = job.get("filename"), t["kind"]
         folder = IMAGES_DIR if kind == "IMG" else SOUNDS_DIR
-        if e is not None and fname and os.path.isfile(os.path.join(folder, fname)):
+        if e is not None and job.get("batch") and (not _fill_wanted(e, kind) or _fill_text(e, kind) != job.get("text")):
+            # FUNK-75: a fill run's voice for a word that changed meanwhile (renamed, new spoken text,
+            # switched off or filled): it only goes to the library, and no page offers it for review
+            job["target"] = None
+        elif e is not None and fname and os.path.isfile(os.path.join(folder, fname)):
             _normalize_letter_entry(e)
             current = e.get("image") if kind == "IMG" else (e["tracks"].get(kind) or {}).get("file")
             if not current:
@@ -3603,6 +3607,7 @@ def _finalize_job(job_id):
                 except Exception as ex:
                     e.clear()
                     e.update(json.loads(before))
+                    job["save_failed"] = True      # its file waits for review; a fill run stops (FUNK-75)
                     print(f"[gen] {job_id}: could not save the file on its entry: {ex}", flush=True)
                 if applied:
                     sse_broadcast("letter", {"set_id": t["set_id"], "letter": t["letter"], "entry_id": t["entry_id"], "origin": "job"})
@@ -3645,9 +3650,9 @@ def _gen_sound_worker(job_id, word, prompt, duration, filename):
     gen_jobs[job_id]["status"] = "generating"
     sse_broadcast("gen_update", gen_jobs[job_id])
     api_key = os.environ.get("ELEVENLABS_API_KEY", "")
-    os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
     _ai_log_entry("sound", "elevenlabs/sfx", prompt, None, "sending")
     try:
+        os.makedirs(AI_SOUNDS_DIR, exist_ok=True)      # inside: a failure ends the job (FUNK-75)
         payload = json.dumps({"text": prompt, "duration_seconds": duration, "prompt_influence": 0.6}).encode()
         req = urllib.request.Request("https://api.elevenlabs.io/v1/sound-generation",
             data=payload, headers={"xi-api-key": api_key, "Content-Type": "application/json"})
@@ -3773,9 +3778,9 @@ def _gen_tts_worker(job_id, text, voice_id, filename):
     gen_jobs[job_id]["status"] = "generating"
     sse_broadcast("gen_update", gen_jobs[job_id])
     api_key = os.environ.get("ELEVENLABS_API_KEY", "")
-    os.makedirs(AI_SOUNDS_DIR, exist_ok=True)
     _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text, None, "sending")
     try:
+        os.makedirs(AI_SOUNDS_DIR, exist_ok=True)      # inside: a failure ends the job (FUNK-75)
         payload = json.dumps({
             "text": text,
             "model_id": "eleven_multilingual_v2",
@@ -3856,6 +3861,18 @@ async def api_generate_track(request):
         target = _job_target(data.get("target"), kind)
     except _TargetError as e:
         return web.json_response({"error": e.msg}, status=e.status)
+    # what the job says (TTS) or describes (FX)
+    if meta["generator"] == "sfx":
+        want = data.get("prompt") or _get_sound_prompt().format(word=word)
+    else:
+        want = (data.get("prompt") or word).strip()
+    if target:
+        # a job already making the same for this slot (a fill run, another page): that one, never a
+        # second paid one (FUNK-75). Another text gets its own job: the parent asked for that one.
+        running = next((j for j in _slot_jobs(target["set_id"], target["letter"], target["entry_id"], kind)
+                        if j.get("text") == want), None)
+        if running is not None:
+            return web.json_response({"ok": True, "job_id": running["id"], "filename": running.get("filename"), "existing": True})
     filename = _claim_media_name(data.get("filename"), base, "mp3", SOUND_DIRS)
     if not filename:
         return web.json_response({"error": "invalid filename"}, status=400)
@@ -3863,11 +3880,11 @@ async def api_generate_track(request):
     if meta["generator"] == "sfx":
         if not os.environ.get("ELEVENLABS_API_KEY"):
             return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
-        prompt = data.get("prompt") or _get_sound_prompt().format(word=word)
+        prompt = want
         duration = data.get("duration", 4)
         job_id = f"trk_{uuid.uuid4().hex[:8]}"
         _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind,
-                       "status": "queued", "started": time.time(), "target": target})
+                       "status": "queued", "started": time.time(), "target": target, "text": want})
         sse_broadcast("gen_update", gen_jobs[job_id])
         threading.Thread(target=_gen_sound_worker, args=(job_id, word, prompt, duration, filename), daemon=True).start()
         return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
@@ -3877,16 +3894,291 @@ async def api_generate_track(request):
             return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
         # For TTS the `prompt` IS the text to speak. If caller didn't pass one,
         # fall back to the word (works for DE; EN callers should send an English word).
-        text = (data.get("prompt") or word).strip()
+        text = want
         voice_id = data.get("voice_id") or _voice_for_kind(kind)
         job_id = f"trk_{uuid.uuid4().hex[:8]}"
         _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind,
-                       "status": "queued", "started": time.time(), "target": target})
+                       "status": "queued", "started": time.time(), "target": target, "text": want})
         sse_broadcast("gen_update", gen_jobs[job_id])
         threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
         return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
 
     return web.json_response({"error": f"Generator nicht implementiert: {meta['generator']}"}, status=500)
+
+
+# ── Fill missing voices (FUNK-75) ───────────────────────────────────────────
+# "Fehlende Stimmen erzeugen": one run at a time makes the German voice for every word of a set
+# whose DE slot is empty, word by word, on the event loop. Each word is an ordinary generation job
+# (a target, filled only while the slot is still empty: FUNK-72 _finalize_job), marked with the
+# run's id, so pages neither autoplay it nor toast it. Before each word the run checks again that
+# the entry is there, its slot empty and no other job filling it. The run lives in memory like the
+# jobs: after a restart it is gone, and starting again only makes what is still missing.
+FILL_KINDS = ("DE",)
+FILL_STOP_CODES = (401, 402, 403)          # the key or the plan: every further word would fail too
+FILL_RETRY_429 = (10, 30)                  # seconds before the first and the second retry of a 429
+FILL_MAX_FAILS_IN_ROW = 3
+FILL_FAILED_WORDS_MAX = 50
+FILL_SAVE_FAILED = ("Die Stimme ist erzeugt, konnte aber nicht beim Wort gespeichert werden (ist der Speicher voll?). "
+                    "Im Wort kannst du sie prüfen und übernehmen.")
+fill_run = None                            # the current or the last run
+# one order for every fill state the pages see, across runs and restarts (wall-clock ms, then +1):
+# a late answer (a GET sent before a run ended, or before a restart) never replaces a newer state
+_fill_seq = int(time.time() * 1000)
+
+
+def _fill_next_seq():
+    global _fill_seq
+    _fill_seq = max(_fill_seq + 1, int(time.time() * 1000))
+    return _fill_seq
+
+
+def _fill_public(run):
+    return None if run is None else {k: v for k, v in run.items() if not k.startswith("_")}
+
+
+def _fill_broadcast(run):
+    run["seq"] = _fill_next_seq()
+    sse_broadcast("fill_update", _fill_public(run))
+
+
+def _fill_text(e, kind):
+    """What a voice of kind says for entry e: its spoken text if set, else its word ("" if neither)."""
+    if not isinstance(e, dict):
+        return ""
+    track = (e.get("tracks") or {}).get(kind) if isinstance(e.get("tracks"), dict) else None
+    prompt = track.get("prompt") if isinstance(track, dict) else ""
+    prompt = prompt.strip() if isinstance(prompt, str) else ""
+    word = e.get("word").strip() if isinstance(e.get("word"), str) else ""
+    return prompt or word
+
+
+def _slot_file(e, kind):
+    tracks = e.get("tracks") if isinstance(e.get("tracks"), dict) else {}
+    track = tracks.get(kind)
+    return track.get("file") if isinstance(track, dict) else ""
+
+
+def _fill_wanted(e, kind):
+    """True if a run should make e's voice: something to say, nothing in the slot, and the parent
+    did not switch that track off for this word (a track without a file is on by default)."""
+    if not isinstance(e, dict) or not _fill_text(e, kind) or _slot_file(e, kind):
+        return False
+    track = (e.get("tracks") or {}).get(kind) if isinstance(e.get("tracks"), dict) else None
+    return not (isinstance(track, dict) and track.get("enabled") is False)
+
+
+def _slot_jobs(set_id, letter, entry_id, kind):
+    """The jobs still running (or waiting for _finalize_job) that mean to fill this slot."""
+    out = []
+    for j in gen_jobs.values():
+        t = j.get("target")
+        if (t and j.get("status") in ("queued", "generating")
+                and (t.get("set_id"), t.get("letter"), t.get("entry_id"), t.get("kind")) == (set_id, letter, entry_id, kind)):
+            out.append(j)
+    return out
+
+
+def _slot_busy(set_id, letter, entry_id, kind):
+    return bool(_slot_jobs(set_id, letter, entry_id, kind))
+
+
+def _fill_missing(set_id, kind):
+    """(letter, entry_id) of every entry of the set whose voice of kind a run should make (_fill_wanted)."""
+    letters = (settings.get("sets", {}).get(set_id) or {}).get("letters")
+    out = []
+    if not isinstance(letters, dict):
+        return out
+    for letter in sorted(letters):
+        cfg = letters[letter]
+        if not isinstance(cfg, dict) or not isinstance(cfg.get("entries"), list):
+            continue
+        for e in cfg["entries"]:
+            if isinstance(e, dict) and isinstance(e.get("id"), str) and _fill_wanted(e, kind):
+                out.append((letter, e["id"]))
+    return out
+
+
+def _fill_saved_result(set_id, letter, entry_id, kind, text):
+    """A finished, unreviewed job for this slot and text whose file exists but could not be saved on
+    the word (save_failed): a run attaches that file instead of paying for the same voice again."""
+    for j in gen_jobs.values():
+        t = j.get("target")
+        if (t and j.get("status") == "done" and j.get("save_failed") and j.get("text") == text and j.get("filename")
+                and (t.get("set_id"), t.get("letter"), t.get("entry_id"), t.get("kind")) == (set_id, letter, entry_id, kind)
+                and os.path.isfile(os.path.join(SOUNDS_DIR, j["filename"]))):
+            return j
+    return None
+
+
+def _fill_attach(set_id, letter, entry_id, kind, job):
+    """Put a save_failed job's file on its (still empty, still wanting) slot. True if saved; the job
+    then counts as reviewed (no page offers it again). Raises _SaveFailed if the save fails again."""
+    import copy as _copy
+    entries = _letter_entries(set_id, letter)
+    _, e = _find_entry(entries, entry_id)
+    snapshot = _copy.deepcopy(entries)
+    _normalize_letter_entry(e)
+    track = e["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
+    track["file"], track["enabled"] = job["filename"], True
+    _save_or_restore(entries, snapshot)
+    job.pop("save_failed", None)
+    job["target"], job["applied"] = None, True
+    sse_broadcast("letter", {"set_id": set_id, "letter": letter, "entry_id": entry_id, "origin": "job"})
+    sse_broadcast("gen_update", job)
+    return True
+
+
+def _fill_fatal(job):
+    code = job.get("error_code")
+    return code in FILL_STOP_CODES or "quota" in (job.get("error_detail") or "").lower()
+
+
+async def _fill_one(run, letter, entry_id, word, text, voice_id):
+    """One word of a run: an ordinary DE job with a target, run in a worker thread; its end state."""
+    kind = run["kind"]
+    filename = _claim_media_name(None, f"{_slugify(letter)}_{_slugify(word)}_{kind.lower()}", "mp3", SOUND_DIRS)
+    job_id = f"trk_{uuid.uuid4().hex[:8]}"
+    _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind,
+                   "status": "queued", "started": time.time(), "batch": run["id"], "text": text,
+                   "target": {"set_id": run["set_id"], "letter": letter, "entry_id": entry_id, "kind": kind}})
+    sse_broadcast("gen_update", gen_jobs[job_id])
+    try:
+        await asyncio.get_running_loop().run_in_executor(None, _gen_tts_worker, job_id, text, voice_id, filename)
+    except Exception as ex:                 # escaped the worker: the job still ends, so its slot is free again
+        job = gen_jobs.get(job_id)
+        if job is not None and job.get("status") not in ("done", "error"):
+            if not job.get("_done"):
+                _job_failed(job_id, "elevenlabs", ex, "tts", f"elevenlabs/tts/{voice_id}", text)
+            _job_finished(job_id)           # failed: announced; stored: finalized on the event loop
+    # a successful job becomes "done" on the event loop (_finalize_job, scheduled by the worker)
+    for _ in range(400):
+        job = gen_jobs.get(job_id)
+        if job is None or job.get("status") in ("done", "error"):
+            break
+        await asyncio.sleep(0.05)
+    job = gen_jobs.get(job_id)
+    if job is None or job.get("status") not in ("done", "error"):
+        return {"status": "error", "error": "Der Auftrag ist verloren gegangen.", "error_code": None, "error_detail": ""}
+    return job
+
+
+async def _fill_worker(run, items):
+    kind, voice_id = run["kind"], _voice_for_kind(run["kind"])
+    fails_in_row, ended_early = 0, False
+    try:
+        for letter, entry_id in items:
+            if run["stopping"]:
+                ended_early = True
+                break
+            waits = list(FILL_RETRY_429)
+            while True:
+                _, e = _find_entry(_letter_entries(run["set_id"], letter), entry_id)
+                if e is None or not _fill_wanted(e, kind) or _slot_busy(run["set_id"], letter, entry_id, kind):
+                    job = None                      # removed, filled or switched off meanwhile, or another job fills it
+                    break
+                text = _fill_text(e, kind)
+                word = e["word"].strip() if isinstance(e.get("word"), str) and e["word"].strip() else text
+                made = _fill_saved_result(run["set_id"], letter, entry_id, kind, text)
+                if made is not None:            # made before, not saved then: attached now, never paid twice
+                    try:
+                        _fill_attach(run["set_id"], letter, entry_id, kind, made)
+                        job = {"status": "done", "applied": True}
+                    except _SaveFailed:
+                        job = {"status": "done", "save_failed": True}
+                    break
+                run["current"], run["current_letter"] = word, letter
+                _fill_broadcast(run)
+                job = await _fill_one(run, letter, entry_id, word, text, voice_id)
+                if job.get("status") == "error" and job.get("error_code") == 429 and waits and not run["stopping"]:
+                    await asyncio.sleep(waits.pop(0))
+                    if not run["stopping"]:
+                        continue                    # checked again from the top: the slot may be filled now
+                break
+            if job is None:
+                run["skipped"] += 1
+            elif job.get("status") == "done" and job.get("save_failed"):
+                # the voice exists but could not be put on its word: every further word would fail the same
+                run["failed"] += 1
+                if len(run["failed_words"]) < FILL_FAILED_WORDS_MAX:
+                    run["failed_words"].append(word)
+                run["status"], run["error"] = "error", FILL_SAVE_FAILED
+                ended_early = True
+                break
+            elif job.get("status") == "done":
+                fails_in_row = 0
+                if job.get("applied"):
+                    run["done"] += 1
+                else:                               # the slot was filled meanwhile: offered for review
+                    run["skipped"] += 1
+            else:
+                run["failed"] += 1
+                fails_in_row += 1
+                if len(run["failed_words"]) < FILL_FAILED_WORDS_MAX:
+                    run["failed_words"].append(word)
+                if _fill_fatal(job) or fails_in_row >= FILL_MAX_FAILS_IN_ROW:
+                    run["status"], run["error"] = "error", job.get("error") or "Unbekannter Fehler"
+                    ended_early = True
+                    break
+            run["current"], run["current_letter"] = "", ""
+            _fill_broadcast(run)
+    except Exception as ex:                         # never a run that says "running" forever
+        print(f"[fill] {run['id']}: {type(ex).__name__}: {ex}", flush=True)
+        run["status"], run["error"] = "error", f"Unerwarteter Fehler ({type(ex).__name__})."
+    finally:
+        if run["status"] == "running":
+            run["status"] = "stopped" if ended_early else "done"
+        run["current"], run["current_letter"] = "", ""
+        run["finished"] = time.time()
+        _fill_broadcast(run)
+
+
+async def api_fill_get(request):
+    """The current or last fill run, or null; X-FK-Boot names the process (a run does not survive it)."""
+    resp = web.json_response({"run": _fill_public(fill_run), "seq": _fill_seq})
+    resp.headers["X-FK-Boot"] = BOOT_ID
+    return resp
+
+
+async def api_fill_start(request):
+    """Start "Fehlende Stimmen erzeugen" for a set. Body (optional): {kind: "DE"}."""
+    global fill_run
+    set_id = request.match_info["set_id"]
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    kind = str((data if isinstance(data, dict) else {}).get("kind") or "DE").upper()
+    if kind not in FILL_KINDS:
+        return web.json_response({"error": f"Nur diese Stimmen: {', '.join(FILL_KINDS)}"}, status=400)
+    sets = settings.get("sets", {})
+    if set_id not in sets or not isinstance(sets[set_id], dict):
+        return web.json_response({"error": "Set nicht gefunden"}, status=404)
+    if fill_run is not None and fill_run["status"] == "running":
+        return web.json_response({"error": "Es werden schon Stimmen erzeugt.", "run": _fill_public(fill_run),
+                                  "seq": _fill_seq}, status=409)
+    if not os.environ.get("ELEVENLABS_API_KEY"):
+        return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
+    items = _fill_missing(set_id, kind)
+    run = {"id": f"fill_{uuid.uuid4().hex[:8]}", "set_id": set_id, "set_name": sets[set_id].get("name") or set_id,
+           "kind": kind, "status": "running" if items else "done", "stopping": False,
+           "total": len(items), "done": 0, "skipped": 0, "failed": 0, "failed_words": [],
+           "current": "", "current_letter": "", "error": "", "started": time.time(), "finished": None, "seq": 0}
+    fill_run = run
+    if items:
+        run["_task"] = asyncio.get_running_loop().create_task(_fill_worker(run, items))
+    else:
+        run["finished"] = time.time()
+    _fill_broadcast(run)
+    return web.json_response({"ok": True, "run": _fill_public(run), "seq": run["seq"]})
+
+
+async def api_fill_stop(request):
+    """Stop the running fill after the word it is on (that word still lands)."""
+    run = fill_run
+    if run is not None and run["status"] == "running" and not run["stopping"]:
+        run["stopping"] = True
+        _fill_broadcast(run)
+    return web.json_response({"ok": True, "run": _fill_public(run), "seq": _fill_seq})
 
 
 async def api_suggest_word(request):
@@ -4366,6 +4658,9 @@ def create_app():
     app.router.add_post("/api/generate/image", api_generate_image)
     app.router.add_post("/api/generate/tts", api_generate_tts)
     app.router.add_post("/api/generate/track", api_generate_track)
+    app.router.add_get("/api/fill", api_fill_get)
+    app.router.add_post("/api/fill/stop", api_fill_stop)
+    app.router.add_post("/api/sets/{set_id}/fill-voices", api_fill_start)
     app.router.add_post("/api/suggest-word", api_suggest_word)
     app.router.add_get("/api/blacklist/{letter}", api_get_blacklist)
     app.router.add_put("/api/blacklist/{letter}", api_put_blacklist)

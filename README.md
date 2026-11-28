@@ -45,6 +45,7 @@ Educational keyboard toy for children. A dedicated Bluetooth keyboard becomes a 
 - **KI-Vorschlag (word suggestion)** — expandable editable prompt panel. Server substitutes `{letter}` + `{excluded}`, auto-retries up to 3× on blacklist collisions, returns `{word, word_en, sound_description, image_description}`.
 - **Auto-chain on suggest** — one click populates the entry and fires image + FX + DE + EN generations in parallel; the dropdowns and thumbnail fill in as each finishes.
 - **Per-track "Generieren" + auto-play** — clicking Generieren on a single sound track plays the clip once when ready.
+- **Fehlende Stimmen erzeugen (FUNK-75)** — one button on the Buchstaben tab makes the German voice for every word of the active set that has none. It runs on the server, word by word, with progress, "Anhalten" and a summary.
 
 ### Content editor
 - **Letters tab** — 26-tile grid with first-entry thumbnail + FX/DE/EN presence dots.

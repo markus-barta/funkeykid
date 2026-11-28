@@ -343,6 +343,18 @@
     .ui-tile-meta { display: flex; align-items: center; gap: 6px; margin-top: auto; flex-wrap: wrap; min-width: 0; }
     .ui-st { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 7px; border-radius: 7px; font-size: 11.5px; font-weight: 650; background: rgba(255,255,255,.05); color: var(--ui-tx2); }
     .ui-st.gap { background: rgba(245,185,65,.12); color: var(--ui-warn); }
+    /* FUNK-75: Fehlende Stimmen erzeugen */
+    .ui-fillcnt { font-size: 11.5px; font-weight: 750; padding: 1px 7px; border-radius: 99px; background: rgba(62,207,142,.16); color: var(--ui-de); }
+    .ui-fill { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding: 14px 16px; border-radius: 16px; background: var(--ui-s1); border: 1px solid rgba(62,207,142,.28); }
+    .ui-fill > .ic { display: inline-flex; color: var(--ui-de); }
+    .ui-fill.warn, .ui-fill.stopped { border-color: rgba(245,185,65,.3); } .ui-fill.warn > .ic, .ui-fill.stopped > .ic { color: var(--ui-warn); }
+    .ui-fill.error { border-color: rgba(255,97,112,.3); background: var(--ui-err-soft); } .ui-fill.error > .ic { color: var(--ui-err); }
+    .ui-fill .tx { flex: 1 1 200px; min-width: 0; }
+    .ui-fill .tx b { display: block; font-size: 14px; font-weight: 700; }
+    .ui-fill .tx p { margin: 2px 0 0; font-size: 12.5px; color: var(--ui-tx2); }
+    .ui-fill .acts { display: flex; gap: 8px; align-items: center; flex: none; margin-left: auto; }
+    .ui-fillbar { margin-top: 10px; height: 6px; border-radius: 6px; background: rgba(255,255,255,.07); overflow: hidden; }
+    .ui-fillbar i { display: block; height: 100%; border-radius: inherit; background: var(--ui-de); transition: width .4s var(--ui-ease); }
     .ui-st svg.ui-i { width: 13px; height: 13px; }
     .ui-tile .today { margin-left: auto; font-size: 11.5px; color: var(--ui-tx3); font-weight: 600; }
     .ui-learned { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 700; color: #0c2a1c; background: var(--ui-ok); padding: 2px 8px; border-radius: 99px; }
@@ -556,6 +568,7 @@
       .ui-glyph { font-size: 36px; } .ui-tile-img { width: 56px; height: 56px; border-radius: 12px; }
       .ui-tile .today { display: none; } .ui-st { padding: 0 5px; gap: 3px; }
       .ui-sum { margin-left: 0; width: 100%; }
+      .ui-fill { flex-wrap: wrap; align-items: flex-start; } .ui-fill > .ic, .ui-fill > .ui-ring { margin-top: 2px; }
       .ui-ac { right: 14px; bottom: 84px; }
       .ui-acpanel { width: calc(100vw - 28px); }
       .ui-toast { bottom: 84px; }
@@ -729,7 +742,41 @@
                     @click="ui.letterFilter = f.id"><span x-text="f.label"></span><span class="c num" x-text="letterAlphabet().filter(l => letterFilterOk(l, f.id)).length"></span></button>
           </template>
         </div>
+        <button type="button" class="ui-btn sm ui-btn-soft" x-show="fillOfferInBar()" @click="fillOpen()">
+          <span x-html="ui.ic.voice" aria-hidden="true"></span><span>Fehlende Stimmen erzeugen</span><span class="ui-fillcnt num" x-text="fillMissingList().length"></span>
+        </button>
         <span class="ui-faint ui-sum" x-text="letterSummary()"></span>
+      </div>
+      <!-- FUNK-75: one server run makes the German voice for every word of the set that has none -->
+      <div class="ui-fill" x-show="fillAsk && !fillRunning()" x-cloak>
+        <span class="ic" x-html="ui.ic.voice" aria-hidden="true"></span>
+        <div class="tx">
+          <b x-text="fillMissingList().length === 1 ? '1 Wort bekommt eine deutsche Stimme' : fillMissingList().length + ' Wörter bekommen eine deutsche Stimme'"></b>
+          <p x-text="fillAskLine()"></p>
+        </div>
+        <div class="acts">
+          <button type="button" class="ui-btn sm ui-btn-ghost" @click="fillAsk = false">Abbrechen</button>
+          <button type="button" class="ui-btn sm ui-btn-pri" :disabled="fillBusy || !fillMissingList().length" @click="fillStart()">
+            <span x-html="ui.ic.sparkle" aria-hidden="true"></span><span>Erzeugen</span>
+          </button>
+        </div>
+      </div>
+      <div class="ui-fill" :class="fillTone()" x-show="fillShown()" x-cloak role="status" aria-live="polite">
+        <template x-if="fillRunning()"><span class="ui-ring sm" aria-hidden="true"></span></template>
+        <template x-if="!fillRunning()"><span class="ic" x-html="fillTone() === 'done' ? ui.ic.check : ui.ic.alert" aria-hidden="true"></span></template>
+        <div class="tx">
+          <b x-text="fillTitle()"></b>
+          <p x-text="fillLine()"></p>
+          <div class="ui-fillbar" x-show="fillRunning()"><i :style="'width:' + fillPct() + '%'"></i></div>
+        </div>
+        <div class="acts">
+          <button type="button" class="ui-btn sm ui-btn-line" x-show="fillRunning()" :disabled="fill?.stopping" @click="fillStop()">
+            <span x-html="ui.ic.stop" aria-hidden="true"></span><span x-text="fill?.stopping ? 'Hält an …' : 'Anhalten'"></span>
+          </button>
+          <button type="button" class="ui-btn sm ui-btn-soft" x-show="!fillRunning() && fillMissingList().length && fill?.set_id === activeSetId"
+                  :disabled="fillBusy" @click="fillStart()" x-text="fill?.status === 'done' ? 'Nochmal versuchen' : 'Weiter'"></button>
+          <button type="button" class="ui-ibtn" x-show="!fillRunning()" @click="fillHidden = fill.id" aria-label="Meldung schließen" x-html="ui.ic.x"></button>
+        </div>
       </div>
       <div class="ui-grid">
         <template x-for="letter in letterAlphabet().filter(l => letterFilterOk(l, ui.letterFilter))" :key="letter">
@@ -2779,6 +2826,7 @@ function funkeykid() {
     waves: {}, durs: {}, _flat: Array.from({ length: 48 }, () => 0.08),
     toastUndo: false, _toastTimer: null,
     aiLogEntries: [],
+    fill: null, _fillSeq: 0, fillAsk: false, fillBusy: false, fillHidden: '',   // FUNK-75
     integrations: { elevenlabs: null, openrouter: null },
     integrationsLoading: false,
     favorites: [],
@@ -3607,6 +3655,125 @@ function funkeykid() {
       const t = this.letterTotals();
       return `${t.words} Wörter · ${t.img} Bilder · ${t.fx} Geräusche · ${t.de} ${t.de === 1 ? 'Stimme' : 'Stimmen'}`;
     },
+    // ══ Fehlende Stimmen erzeugen (FUNK-75) ══
+    // The server runs it word by word (one run at a time) and announces every step (fill_update);
+    // the page only shows that state. Its words are ordinary jobs marked `batch`: no autoplay, no toast each.
+    fillMissingList() {                    // what each voice would say, as the server picks them
+      if (!this.setKinds().includes('DE')) return [];
+      const out = [];
+      for (const cfg of Object.values(this.activeSet?.letters || {})) for (const e of (cfg && cfg.entries) || []) {
+        const t = e && e.tracks && e.tracks.DE;
+        const text = ((t && t.prompt) || '').trim() || (e && e.word || '').trim();
+        if (text && !(t && t.file) && !(t && t.enabled === false)) out.push(text);   // switched off for this word: left alone
+      }
+      return out;
+    },
+    fillRunning() { return !!this.fill && this.fill.status === 'running'; },
+    // the bar's button, unless the question is open or the banner already offers "Weiter" for this set
+    fillOfferInBar() {
+      return !!this.fillMissingList().length && !this.fillRunning() && !this.fillAsk
+        && !(this.fillShown() && this.fill.set_id === this.activeSetId);
+    },
+    fillShown() { const f = this.fill; return !!f && f.id !== this.fillHidden && (f.status === 'running' || f.total > 0 || !!f.error); },
+    fillDoneCount() { const f = this.fill; return f ? f.done + f.skipped + f.failed : 0; },
+    fillPct() { const f = this.fill; return f && f.total ? Math.round(100 * this.fillDoneCount() / f.total) : 0; },
+    fillTone() {
+      const f = this.fill;
+      if (!f || f.status === 'running') return '';
+      return f.status === 'done' ? (f.failed ? 'warn' : 'done') : f.status;
+    },
+    fillAskLine() {
+      const list = this.fillMissingList(), chars = list.reduce((n, t) => n + t.length, 0);
+      const left = this.integrations.elevenlabs && this.integrations.elevenlabs.characters_remaining;
+      const min = Math.max(1, Math.round(list.length * 3 / 60));
+      return `Mit ElevenLabs, etwa ${chars.toLocaleString('de-AT')} Zeichen` + (typeof left === 'number' ? ` von ${left.toLocaleString('de-AT')} übrigen` : '')
+        + ` · dauert etwa ${min} Min. Du kannst währenddessen weiterarbeiten.`;
+    },
+    fillTitle() {
+      const f = this.fill;
+      if (!f) return '';
+      const n = f.done, st = n === 1 ? 'Stimme' : 'Stimmen';
+      if (f.status === 'running') return `Stimmen werden erzeugt · ${this.fillDoneCount()} von ${f.total}`;
+      if (f.status === 'stopped') return `Angehalten: ${n} von ${f.total} ${st} erzeugt`;
+      if (f.status === 'error') return `Abgebrochen: ${n} von ${f.total} ${st} erzeugt`;
+      return f.failed ? `${n} ${st} erzeugt, ${f.failed} fehlgeschlagen` : `Fertig: ${n} ${st} erzeugt`;
+    },
+    fillLine() {
+      const f = this.fill;
+      if (!f) return '';
+      const other = f.set_id !== this.activeSetId ? ` · Set „${f.set_name || f.set_id}“` : '';
+      if (f.status === 'running') {
+        if (f.stopping) return 'Hält nach diesem Wort an …' + other;
+        return (f.current ? `Gerade: ${f.current} (${f.current_letter})` : 'Startet …') + other;
+      }
+      if (f.status === 'error') return (f.error || 'Unbekannter Fehler') + other;
+      const left = f.set_id === this.activeSetId ? this.fillMissingList().length : 0;
+      const parts = [];
+      if (f.failed) parts.push('Fehlgeschlagen: ' + f.failed_words.join(', ') + (f.failed > f.failed_words.length ? ' …' : '') + '.');
+      if (f.skipped) parts.push(`${f.skipped} übersprungen (inzwischen schon vertont, gelöscht oder gerade in Arbeit).`);
+      if (f.status === 'stopped' && left) parts.push(`Noch ${left} ohne Stimme: „Weiter“ macht dort weiter.`);
+      if (!parts.length) parts.push(left ? `Noch ${left} ohne Stimme.` : 'Jedes Wort hat jetzt eine deutsche Stimme.');
+      return parts.join(' ') + other;
+    },
+    fillOpen() { this.fillAsk = true; this.loadIntegrations(); },
+    // every state has one order (seq) across runs and restarts: a late answer never replaces a newer state
+    _fillInstall(run, seq) {
+      if (typeof seq !== 'number' || seq < this._fillSeq) return;
+      this._fillSeq = seq;
+      const cur = this.fill;
+      const was = cur && cur.status === 'running' ? cur.id : '';
+      this.fill = run || null;
+      if (run && run.status === 'running') this.fillAsk = false;   // started here or on another page: no stale question after it
+      if (was && run && run.id === was && run.status !== 'running') this._fillEnded(run);
+    },
+    _fillEnded(run) {                      // once per run this page saw running: the library and the tiles follow
+      this._refreshLists();
+      this._scheduleSetReload();
+      if (this.tab === 'letters' && !this.ed && run.id !== this.fillHidden) return;   // the banner in view says it already
+      if (run.status === 'error') { this.showToast('Stimmen: ' + (run.error || 'abgebrochen'), 'error'); return; }
+      const n = run.done, st = n === 1 ? 'Stimme' : 'Stimmen';
+      if (run.status === 'stopped') this.showToast(`Angehalten: ${n} ${st} erzeugt`);
+      else this.showToast(`Fertig: ${n} ${st} erzeugt` + (run.failed ? ` · ${run.failed} fehlgeschlagen` : ''), run.failed ? 'error' : 'success');
+    },
+    async loadFill() {
+      try {
+        const d = await fetch('/api/fill').then(r => r.json());
+        if (!d || typeof d.seq !== 'number' || d.seq < this._fillSeq) return;
+        if (!d.run && this.fill && this.fill.status === 'running') {   // a run only vanishes in a restart
+          this._fillSeq = d.seq;
+          this.fill = Object.assign({}, this.fill, { status: 'error', stopping: false, current: '', current_letter: '',
+            error: 'Unterbrochen: funkeykid wurde neu gestartet. „Weiter“ erzeugt nur, was noch fehlt.' });
+          this._refreshLists(); this._scheduleSetReload();
+          return;
+        }
+        this._fillInstall(d.run, d.seq);
+      } catch {}
+    },
+    // queued behind the editor's writes: a word renamed a moment ago is on the server before the run reads it
+    fillStart() {
+      if (this.fillBusy || this.fillRunning()) return;
+      const setId = this.activeSetId;
+      this.fillBusy = true;
+      this._edFlushText();
+      if (this._edPaused) this.showToast('Startet, sobald deine Änderungen gespeichert sind.');
+      this._edEnqueue({ type: 'fill', run: async () => {
+        try {                              // never retried: a lost answer may mean the run already goes (its events say so)
+          const res = await this._api(`/api/sets/${encodeURIComponent(setId)}/fill-voices`, { method: 'POST', json: { kind: 'DE' } });
+          const d = await res.json().catch(() => ({}));
+          if (d.run) { this._fillInstall(d.run, d.seq); this.fillAsk = false; }
+          if (!res.ok) this.showToast(d.error || 'Konnte nicht starten.', 'error');
+          else if (d.run && !d.run.total) this.showToast('Jedes Wort hat schon eine deutsche Stimme');
+        } catch { this.showToast('Keine Verbindung zum Server.', 'error'); }
+        this.fillBusy = false;
+        return 'drop';
+      } });
+    },
+    async fillStop() {
+      try {
+        const d = await fetch('/api/fill/stop', { method: 'POST' }).then(r => r.json());
+        if (d && d.run) this._fillInstall(d.run, d.seq);
+      } catch { this.showToast('Keine Verbindung zum Server.', 'error'); }
+    },
     kindName(k) { return { IMG: 'Bild', FX: 'Geräusch', DE: 'Stimme Deutsch', EN: 'Stimme Englisch' }[k] || k; },
     kindIcon(k) { return k === 'IMG' ? this.ui.ic.photo : k === 'FX' ? this.ui.ic.note : this.ui.ic.voice; },
     kindColor(k) { return { IMG: 'var(--ui-img)', FX: 'var(--ui-fx)', DE: 'var(--ui-de)', EN: 'var(--ui-en)' }[k]; },
@@ -3684,7 +3851,7 @@ function funkeykid() {
       while (this._edOps.length && !this._edPaused) {
         const op = this._edOps[0];
         op.started = true;
-        if (op.type !== 'load' && op.type !== 'refresh') this.edSaveState = 'saving';
+        if (op.type !== 'load' && op.type !== 'refresh' && op.type !== 'fill') this.edSaveState = 'saving';
         let res;
         try { res = await op.run(op); } catch { res = false; }
         if (res === true || res === 'drop') { this._edOps.shift(); this._edFails = 0; continue; }
@@ -4170,18 +4337,18 @@ function funkeykid() {
         if (mine) this._setSlot(j.key, { state: 'err', msg: d.error || 'Unbekannter Fehler', detail: d.error_detail || '' });
         return;
       }
-      this._refreshLists();
+      if (!j.batch) this._refreshLists();                      // a fill run refreshes once, at its end (FUNK-75)
       if (d.applied) {                                         // the server put it on the entry
         if (mine) this._setSlot(j.key, null);
         const open = this.ed && this.ed.setId === j.setId && this.ed.L === j.L;
         if (open) {
           // never written into the local copy: the entry may have changed since (another page removed
           // the file); the server's entry decides, read after this page's own writes
-          if (j.kind !== 'IMG' && this._slotRev[j.key] === j.rev) {
+          if (j.kind !== 'IMG' && !j.batch && this._slotRev[j.key] === j.rev) {
             this._edPendingPlay = { setId: j.setId, L: j.L, entryId: j.entryId, kind: j.kind, file: d.filename, until: Date.now() + 8000 };
           }
           this._edRefreshSoon();
-        } else if (mine) {
+        } else if (mine && !j.batch) {
           this.showToast(`${this.kindName(j.kind)} für „${j.word}“ ist da`);
         }
         return;
@@ -4200,7 +4367,7 @@ function funkeykid() {
       if (cur && cur.state === 'run' && !cur.job) return false;   // this page is starting its own job here: its answer registers it
       const rev = (this._slotRev[key] || 0) + 1;
       this._slotRev[key] = rev;
-      this.edJobs[j.id] = { setId: t.set_id, L: t.letter, entryId: t.entry_id, kind: t.kind, word: j.word || '', key, rev };
+      this.edJobs[j.id] = { setId: t.set_id, L: t.letter, entryId: t.entry_id, kind: t.kind, word: j.word || '', key, rev, batch: !!j.batch };
       if (!this.jobSeen[j.id]) this.jobSeen[j.id] = Date.now();
       this._setSlot(key, { state: 'run', t0: this.jobSeen[j.id], job: j.id });
       return true;
@@ -4531,6 +4698,7 @@ function funkeykid() {
         this.loadJobs().then(() => { for (const id of Object.keys(this.edJobs)) if (this.genJobs[id]) this._edJobEnded(this.genJobs[id]); });
         if (this.ed && !this.ed.loading) this._edRefreshSoon();
         this._scheduleSetReload();
+        this.loadFill();                     // FUNK-75: a fill run's steps may have been missed, or the server restarted
       };
       es.addEventListener('status', (e) => {
         const s = JSON.parse(e.data);
@@ -4612,6 +4780,7 @@ function funkeykid() {
         // the activity list shows it, no toast
         if (!this.edJobs[d.id]) this._edAdopt(d);           // started on another page
         if (this.edJobs[d.id]) { this._edJobDetached(d); this._edJobEnded(d); return; }
+        if (d.batch) return;                                // a fill run's word: its banner reports it (FUNK-75)
         if (d.status === 'done') {
           this.showToast((d.type === 'sound' ? 'Sound' : 'Bild') + ' "' + d.word + '" fertig ✓');
           Promise.all([
@@ -4643,6 +4812,7 @@ function funkeykid() {
         // the open letter changed elsewhere (another page, a job): take it when nothing of ours is pending
         if (this.ed && d.origin !== FK_CLIENT && d.set_id === this.ed.setId && d.letter === this.ed.L) this._edRefreshSoon();
       });
+      es.addEventListener('fill_update', (e) => { const d = JSON.parse(e.data); this._fillInstall(d, d.seq); });   // FUNK-75
       es.addEventListener('ai_log', (e) => {
         const d = JSON.parse(e.data);
         this.aiLogEntries.unshift(d);

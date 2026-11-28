@@ -598,6 +598,7 @@ Only unused files offer "Archivieren", with a two-step confirm. `POST /api/archi
 - **Approval in Einstellungen:** POST /api/voice-languages/{code}/approve `{voice_id, model}`, only for the voice set now. The card offers "Freigeben" after a test of exactly that voice.
 - **Editor:** "Alle erzeugen" makes only the first word while the voice is not approved.
 - **Count:** GET /api/voices/outdated?set_id= counts what a redo would make (count, numbers, chars, by_voice). It drives the "Stimmen neu erzeugen" button.
+- **Not a native voice (FUNK-89):** the voice's own language is stored with the choice (`voice_languages[lang].voice_language`, from the library or account voice; the defaults Rachel/Adam are English, `KNOWN_VOICE_LANGS`). The view reports `native` (true / false / null if unknown). The voice card and the ask banner of "Fehlende Stimmen" / "Stimmen neu erzeugen" warn; the banner's main button becomes "Stimme wählen" (opens the picker) and the run is still possible as "Trotzdem erzeugen". The picker warns after choosing a voice of another language.
 
 ### Voices per language (FUNK-85)
 

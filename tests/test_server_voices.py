@@ -238,3 +238,25 @@ def test_bulk_generation_needs_an_approved_voice(env, monkeypatch):
     assert single.status == 200
     server.settings["voice_languages"]["de"]["approved"] = {"voice_id": RACHEL, "model": "eleven_v4"}
     assert asyncio.run(server.api_generate_track(Req(body))).status == 200
+
+
+def test_the_view_says_whether_the_voice_is_native(env):
+    """FUNK-89: Rachel/Adam are English voices; a library voice's own language comes with the choice."""
+    view = lambda: {l["code"]: l["native"] for l in server._voice_language_view()["languages"]}
+    assert view() == {"de": False, "en": True}
+    asyncio.run(server.api_patch_voice_language(Req({"voice_id": LEA, "voice_name": "Lea", "voice_language": "de"}, {"code": "de"})))
+    assert view()["de"] is True
+    asyncio.run(server.api_patch_voice_language(Req({"voice_id": "EnglishVoice123456", "voice_language": "en"}, {"code": "de"})))
+    assert view()["de"] is False
+    asyncio.run(server.api_patch_voice_language(Req({"voice_id": "Unknown1234567890a", "voice_language": "german!"}, {"code": "de"})))
+    assert view()["de"] is None and "voice_language" not in server.settings["voice_languages"]["de"]
+    asyncio.run(server.api_patch_voice_language(Req({"model": "eleven_flash_v2_5"}, {"code": "de"})))   # a model change keeps it
+    assert view()["de"] is None
+
+
+
+@pytest.mark.parametrize("label,native", [("DE", True), ("German", True), ("Deutsch", True), ("de", True), ("en", False),
+                                          ("English", False), ("xyz", None), ("", None), ("Schwäbisch", None)])
+def test_voice_language_labels_are_understood_or_ignored(env, label, native):
+    asyncio.run(server.api_patch_voice_language(Req({"voice_id": "AccountVoice12345678", "voice_language": label}, {"code": "de"})))
+    assert next(l for l in server._voice_language_view()["languages"] if l["code"] == "de")["native"] is native

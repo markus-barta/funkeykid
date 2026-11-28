@@ -152,7 +152,7 @@ def test_a_run_fills_every_missing_voice_of_its_set_only(st):
     assert de(st, "B", "bieneid1") == "b_biene_de.mp3"
     assert de(st, "A", "ameiseid") == "a_ameise_de.mp3"          # had one: untouched
     assert de(st, "K", "katzeid1", "t") == ""                    # another set: untouched
-    assert all(c["voice"] == server._voice_for_kind("DE") for c in st.calls)
+    assert all(c["voice"] == server._profile_for_kind("DE") for c in st.calls)   # FUNK-85: the German profile
     jobs = list(server.gen_jobs.values())
     assert len(jobs) == 3 and all(j["batch"] == run["id"] and j["kind"] == "DE" and j["applied"] for j in jobs)
     assert {j["target"]["entry_id"] for j in jobs} == {"affeid01", "ballid01", "bieneid1"}

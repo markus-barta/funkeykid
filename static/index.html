@@ -524,6 +524,25 @@
     .ui-danger-line { color: var(--ui-err); border-color: rgba(255,97,112,.4); }
     .ui-danger-line:hover { background: var(--ui-err-soft); }
     select.ui-inp { cursor: pointer; }
+    /* FUNK-85: languages and voices */
+    .ui-vrow { display: flex; flex-direction: column; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--ui-line); margin-top: 10px; }
+    .ui-vrow-h { display: flex; align-items: center; gap: 10px; }
+    .ui-vrow-h b { font-size: 14px; font-weight: 650; }
+    .ui-warn { color: #f3d79b; }
+    .ui-vfilters { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 18px 0; }
+    .ui-vfilters .ui-inp { width: auto; flex: 1; min-width: 120px; }
+    .ui-vtabs { display: flex; gap: 6px; padding: 12px 18px 0; }
+    .ui-vtabs button { height: 32px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--ui-line2); background: none; color: var(--ui-tx2); font-size: 13px; cursor: pointer; }
+    .ui-vtabs button.on { background: var(--ui-pri-soft); color: #d4ceff; border-color: var(--ui-pri-line); }
+    .ui-voice { display: flex; align-items: center; gap: 10px; padding: 10px 4px; border-bottom: 1px solid var(--ui-line); }
+    .ui-voice .vm { flex: 1; min-width: 0; }
+    .ui-voice .vm b { display: block; font-size: 14px; }
+    .ui-voice .vm span { display: block; font-size: 12px; color: var(--ui-tx3); }
+    .ui-voice .vchips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+    .ui-voice .vchips i { font-style: normal; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--ui-s3); color: var(--ui-tx2); }
+    .ui-voice .vchips i.cost { background: rgba(245,185,65,.14); color: #f3d79b; }
+    .ui-voice .vchips i.cur { background: var(--ui-pri-soft); color: #d4ceff; }
+    .ui-voice .vacts { display: flex; gap: 6px; flex: none; }
     .ui-scard input[type=range].ui-range { width: 100%; flex: none; margin: 8px 0 2px; }
     .ui-scard .ui-field label { gap: 12px; } .ui-scard .ui-field label span { text-align: right; }
     .ui-cols { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 20px; align-items: start; }
@@ -1774,6 +1793,33 @@
           </template>
         </section>
 
+        <!-- Sprachen & Stimmen (FUNK-85) -->
+        <section class="ui-card ui-scard" aria-labelledby="st-voices">
+          <h3 id="st-voices"><span x-html="ui.ic.voice" aria-hidden="true"></span>Sprachen &amp; Stimmen</h3>
+          <p class="ui-hint" style="margin:0">Jede Sprache spricht mit ihrer eigenen Stimme, und ElevenLabs erfährt die Sprache, damit „Ball“ deutsch klingt.
+            Vor vielen neuen Stimmen erst „Testen“: das spricht „<span x-text="'Bär. Eis. Ball. Bagger.'"></span>“ (einmal ein paar Zeichen, danach gratis).</p>
+          <template x-for="l in vlangs.languages" :key="l.code">
+            <div class="ui-vrow">
+              <div class="ui-vrow-h">
+                <span class="ui-kind ui-kind-code" :class="l.kind.toLowerCase()" x-text="l.kind" aria-hidden="true"></span>
+                <div style="min-width:0;flex:1"><b x-text="l.label"></b><span class="ui-hint" style="margin-top:1px" x-text="'Stimme: ' + (l.voice_name || l.voice_id)"></span></div>
+              </div>
+              <div class="ui-row">
+                <button type="button" class="ui-btn sm ui-btn-soft" @click="openVoicePicker(l.code, $el)">Stimme wählen</button>
+                <button type="button" class="ui-btn sm ui-btn-line" @click="voiceTest(l.code)" :disabled="vtestBusy(l.code)" :aria-label="l.label + ': Stimme testen'">
+                  <span class="ui-ring sm" x-show="vtestBusy(l.code)" style="width:14px;height:14px;border-width:2px"></span><span x-html="ui.ic.play" x-show="!vtestBusy(l.code)" aria-hidden="true"></span>Testen</button>
+                <select class="ui-inp" style="flex:1;min-width:170px" :aria-label="'Modell für ' + l.label" @change="voiceSetModel(l.code, $event.target.value)">
+                  <template x-for="m in vlangs.models" :key="m.id"><option :value="m.id" :selected="m.id === l.model" x-text="m.label"></option></template>
+                </select>
+              </div>
+              <span class="ui-hint ui-warn" x-show="!l.sets_language">Dieses Modell rät die Sprache: kurze Wörter klingen damit oft englisch.</span>
+            </div>
+          </template>
+          <p class="ui-hint" x-show="!vlangs.languages.length && !vlangsError">Stimmen werden geladen …</p>
+          <p class="ui-hint ui-warn" x-show="vlangsError">Stimmen konnten nicht geladen werden (<span x-text="vlangsError"></span>).
+            <button type="button" class="ui-link" @click="loadVoiceLangs()">Nochmal</button></p>
+        </section>
+
         <!-- Pixoo -->
         <section class="ui-card ui-scard" aria-labelledby="st-px">
           <h3 id="st-px"><span x-html="ui.ic.photo" aria-hidden="true"></span>Pixoo-Anzeige</h3>
@@ -2580,7 +2626,7 @@
                                     <input class="ui-inp" x-model="e.tracks[k].prompt" @input="edText(e, 'tracks.' + k + '.prompt')" @change="edText(e, 'tracks.' + k + '.prompt', true)" maxlength="300"
                                            :placeholder="k === 'FX' ? 'Englisch, z. B. „friendly buzzing bee, short“' : k === 'DE' ? 'Leer = „' + e.word + '“' : 'Englisches Wort, z. B. „bee“'"
                                            :aria-label="k === 'FX' ? 'Anweisung für die KI' : 'Gesprochener Text'">
-                                    <span class="ui-faint" style="font-size:12px" x-text="k === 'FX' ? 'Gilt für „Neu erzeugen“. Die Geräusch-KI versteht nur Englisch: mit OpenRouter wird Deutsches vorher automatisch übersetzt, sonst bitte Englisch schreiben.' : 'Gilt für „Neu erzeugen“ · ElevenLabs'"></span>
+                                    <span class="ui-faint" style="font-size:12px" x-text="k === 'FX' ? 'Gilt für „Neu erzeugen“. Die Geräusch-KI versteht nur Englisch: mit OpenRouter wird Deutsches vorher automatisch übersetzt, sonst bitte Englisch schreiben.' : 'Gilt für „Neu erzeugen“ · Stimme: ' + (voiceNameFor(k) || 'ElevenLabs') + ' (Einstellungen)'"></span>
                                   </div>
                                 </details>
                               </section>
@@ -2616,6 +2662,58 @@
                   :disabled="dlg.input && !(dlg.value || '').trim()" x-text="dlg.ok"></button>
         </div>
       </form>
+    </template>
+  </div>
+
+  <!-- ═══ Voice picker (FUNK-85): voices for one language; previews are ElevenLabs' own clips (free) ═══ -->
+  <div class="ui-scrim" style="z-index:76" x-show="vp" x-cloak x-transition.opacity @mousedown.self="vpClose()">
+    <template x-if="vp">
+      <div class="ui-sheet" role="dialog" aria-modal="true" aria-labelledby="vpTitle">
+        <div class="ui-sheet-h">
+          <h3 id="vpTitle" x-text="'Stimme für ' + vp.label"></h3>
+          <button type="button" class="ui-ibtn" @click="vpClose()" aria-label="Schließen"><span x-html="ui.ic.x"></span></button>
+        </div>
+        <div class="ui-vtabs" role="tablist">
+          <button type="button" role="tab" :class="vp.source === 'library' && 'on'" :aria-selected="vp.source === 'library' ? 'true' : 'false'" @click="vp.source = 'library'; vpLoad()" x-text="'Bibliothek: ' + vp.label"></button>
+          <button type="button" role="tab" :class="vp.source === 'mine' && 'on'" :aria-selected="vp.source === 'mine' ? 'true' : 'false'" @click="vp.source = 'mine'; vpLoad()">Meine Stimmen</button>
+        </div>
+        <form class="ui-vfilters" x-show="vp.source === 'library'" @submit.prevent="vpLoad()">
+          <input class="ui-inp" x-model="vp.search" placeholder="Name suchen …" aria-label="Name suchen" x-init="$nextTick(() => $el.focus())">
+          <select class="ui-inp" x-model="vp.gender" @change="vpLoad()" aria-label="Stimme">
+            <option value="">alle Stimmen</option><option value="female">weiblich</option><option value="male">männlich</option>
+          </select>
+          <select class="ui-inp" x-model="vp.age" @change="vpLoad()" aria-label="Alter">
+            <option value="">jedes Alter</option><option value="young">jung</option><option value="middle_aged">mittel</option><option value="old">älter</option>
+          </select>
+        </form>
+        <div class="ui-sheet-b" aria-live="polite">
+          <div style="display:flex;align-items:center;gap:10px;padding:16px 4px" x-show="vp.loading"><span class="ui-ring sm"></span><span class="ui-muted" style="font-size:13px">Stimmen werden geladen …</span></div>
+          <p style="color:#ffb3ba;font-size:13px;margin:12px 4px" x-show="!vp.loading && vp.error" x-text="vp.error"></p>
+          <template x-for="v in (vp.loading ? [] : vp.voices)" :key="v.voice_id">
+            <div class="ui-voice">
+              <button type="button" class="ui-pbtn" style="width:34px;height:34px;flex:none" :class="vpPlaying === v.voice_id && 'on'" :disabled="!v.preview_url"
+                      @click="vpPreview(v)" :title="v.preview_url ? 'Hörprobe (gratis)' : 'Keine Hörprobe'" :aria-label="'Hörprobe: ' + v.name"><span x-html="vpPlaying === v.voice_id ? ui.ic.pause : ui.ic.play"></span></button>
+              <div class="vm">
+                <b x-text="v.name"></b>
+                <span x-show="v.description" x-text="v.description"></span>
+                <div class="vchips">
+                  <i class="cur" x-show="vpIsCurrent(v)">aktuell</i>
+                  <i x-show="v.locale || v.accent" x-text="v.locale || v.accent"></i>
+                  <i x-show="v.gender" x-text="voiceWord(v.gender)"></i>
+                  <i x-show="v.age" x-text="voiceWord(v.age)"></i>
+                  <i class="cost" x-show="v.rate && v.rate > 1" x-text="'kostet ×' + v.rate" title="Diese Stimme verbraucht mehr Guthaben pro Zeichen"></i>
+                </div>
+              </div>
+              <div class="vacts">
+                <button type="button" class="ui-btn xs ui-btn-ghost" @click="voiceTest(vp.code, v)" :disabled="vtestBusy(vp.code + ':' + v.voice_id)" title="Spricht „Bär. Eis. Ball. Bagger.“ mit dieser Stimme (ein paar Zeichen, danach gratis)">
+                  <span class="ui-ring sm" x-show="vtestBusy(vp.code + ':' + v.voice_id)" style="width:12px;height:12px;border-width:2px"></span>Testen</button>
+                <button type="button" class="ui-btn xs ui-btn-pri" @click="vpChoose(v)" :disabled="vpIsCurrent(v) || !!vp.choosing">Wählen</button>
+              </div>
+            </div>
+          </template>
+          <p class="ui-faint" style="text-align:center;margin:20px 0 0" x-show="!vp.loading && !vp.error && !vp.voices.length">Keine Stimmen gefunden.</p>
+        </div>
+      </div>
     </template>
   </div>
 
@@ -2800,6 +2898,7 @@ function funkeykid() {
     files: { kind: 'sounds', use: 'all', q: '', limit: 200, usage: null, archiveOpen: false, archive: null, confirm: '' },   // FUNK-78
     _fileUsageSeq: 0,
     dlg: null, _dlgReturn: null,   // FUNK-80
+    vlangs: { languages: [], models: [] }, vlangsError: '', vp: null, vtest: {}, vpPlaying: null, _vpAudio: null, _vpTok: 0, _voiceQ: null, _vWant: {}, _voicePending: 0, _voiceFails: 0,   // FUNK-85
     fileFilters: [{ id: 'all', label: 'Alle' }, { id: 'used', label: 'Benutzt' }, { id: 'unused', label: 'Unbenutzt' }],
     integrations: { elevenlabs: null, openrouter: null },
     integrationsLoading: false,
@@ -3582,6 +3681,7 @@ function funkeykid() {
       if (t === 'overview') this.loadDashboard();
       if (t === 'ailog') { this.loadAiLog(); this.loadIntegrations(); }
       if (t === 'files') { this.loadFileUsage(); this._refreshLists(); }
+      if (t === 'settings') this.loadVoiceLangs();          // FUNK-85: fresh, and a failed first load recovers
       window.scrollTo({ top: 0 });
     },
     pageMeta() {
@@ -3814,12 +3914,18 @@ function funkeykid() {
     // queued behind the editor's writes: a word renamed a moment ago is on the server before the run reads it
     fillStart() {
       if (this.fillBusy || this.fillRunning()) return;
+      const vmark = this.voiceMark();           // FUNK-85: the voice setup as it was at this click
       const setId = this.activeSetId;
       this.fillBusy = true;
       this._edFlushText();
       if (this._edPaused) this.showToast('Startet, sobald deine Änderungen gespeichert sind.');
       this._edEnqueue({ type: 'fill', run: async () => {
         try {                              // never retried: a lost answer may mean the run already goes (its events say so)
+          if (!(await this.voiceSettled(vmark))) {   // FUNK-85: the run speaks with the voice the parent just chose, or not at all
+            this.showToast('Nicht gestartet: die Stimmen-Einstellung wurde nicht gespeichert.', 'error');
+            this.fillBusy = false;
+            return 'drop';
+          }
           const res = await this._api(`/api/sets/${encodeURIComponent(setId)}/fill-voices`, { method: 'POST', json: { kind: 'DE' } });
           const d = await res.json().catch(() => ({}));
           if (d.run) { this._fillInstall(d.run, d.seq); this.fillAsk = false; }
@@ -4372,6 +4478,7 @@ function funkeykid() {
     edClearSlot(e, k) { this._setSlot(this._slotKey(this.ed.setId, this.ed.L, e.id, k), null); },
     edElapsed(s) { return s && s.t0 ? Math.max(0, Math.floor((this.clockNow - s.t0) / 1000)) + ' s' : ''; },
     edGen(e, k) {
+      const vmark = this.voiceMark();           // FUNK-85: the voice setup as it was at this click
       if (!this.ed || this.ed.loading || !e) return;
       const word = e.word.trim() || (k === 'BG' ? this.ed.L : '');   // a background needs the subject, not the word
       if (!word) return;
@@ -4406,10 +4513,12 @@ function funkeykid() {
           } else {
             const body = { kind: k, word, slug_prefix: this.fileSlug(L), target };
             if (prompt) body.prompt = prompt;
+            // FUNK-85: a voice or model change being saved goes first; if it failed, nothing is made with the old one
+            if (k !== 'FX' && !(await this.voiceSettled(vmark))) throw new Error('voice-unsaved');
             res = await this._api('/api/generate/track', { method: 'POST', json: body });
           }
           r = await res.json().catch(() => ({}));
-        } catch { r = { error: 'Keine Verbindung zum Server.' }; }
+        } catch (err) { r = { error: err && err.message === 'voice-unsaved' ? 'Nicht erzeugt: die Stimmen-Einstellung wurde nicht gespeichert (Einstellungen prüfen).' : 'Keine Verbindung zum Server.' }; }
         if (!r || !r.ok || !r.job_id) {                        // never retried: a lost answer could mean a job already runs
           if (this._slotRev[key] === rev) this._setSlot(key, { state: 'err', msg: (r && r.error) || 'Konnte nicht starten.', detail: '' });
           return 'drop';
@@ -4688,6 +4797,159 @@ function funkeykid() {
     },
     wave(f) { const w = this.waves[f]; return w && w.length ? w : this._flat; },
     dur(f) { const d = this.durs[f]; return d ? d.toFixed(1).replace('.', ',') + ' s' : ''; },
+    // ══ Languages and voices (FUNK-85) ══
+    loadVoiceLangs() { return this._voiceSerial(() => this._loadVoiceLangsNow()); },   // never overtakes a save
+    voiceMark() { return this._voiceFails; },   // taken at the click: a voice save failing after it cancels that action
+    async voiceSettled(mark) {              // voice saves done; false if one failed since the mark (then nothing is paid)
+      if (this._voicePending) await this._voiceSerial(() => {});
+      return this._voiceFails === mark;
+    },
+    _vlang(code) { return (this.vlangs.languages || []).find(x => x.code === code); },
+    async _loadVoiceLangsNow() {
+      try {
+        const res = await this._api('/api/voice-languages');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        this.vlangs = await res.json();
+        this.vlangsError = '';
+      } catch (err) { this.vlangsError = err.message || 'Keine Verbindung'; }
+    },
+    voiceNameFor(kind) {
+      const l = (this.vlangs.languages || []).find(x => x.kind === kind);
+      return l ? (l.voice_name || l.voice_id) : '';
+    },
+    voiceWord(w) {
+      return { female: 'weiblich', male: 'männlich', neutral: 'neutral', young: 'jung', middle_aged: 'mittel', old: 'älter' }[w] || w;
+    },
+    _voiceSerial(fn) {                       // voice reads and saves one after another: a later choice is never overtaken
+      this._voicePending++;
+      const step = () => Promise.resolve().then(fn).finally(() => { this._voicePending--; });
+      const run = (this._voiceQ || Promise.resolve()).then(step, step);
+      this._voiceQ = run.catch(() => {});
+      return run;
+    },
+    async _voicePatch(code, body) {
+      try {
+        const res = await this._api('/api/voice-languages/' + encodeURIComponent(code), { method: 'PATCH', json: body });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
+        this.vlangs = d;
+        return true;
+      } catch (err) { this._voiceFails++; this.showToast('Nicht gespeichert: ' + err.message, 'error'); await this._loadVoiceLangsNow(); return false; }
+    },
+    voiceSetModel(code, model) {
+      this._vWant = { ...this._vWant, [code]: model };
+      return this._voiceSerial(async () => {
+        const want = this._vWant[code];
+        const l = (this.vlangs.languages || []).find(x => x.code === code);
+        if (!l || l.model === want) return;
+        if (await this._voicePatch(code, { model: want }) && this._vWant[code] === want)
+          this.showToast(`${l.label}: ${this.vlangs.models.find(m => m.id === want)?.label || want}`);
+      });
+    },
+    vtestBusy(key) { return !!(this.vtest[key] && this.vtest[key].busy); },
+    async voiceTest(code, v) {
+      const key = v ? code + ':' + v.voice_id : code;    // per language: one voice sounds different in German and English
+      if (this.vtestBusy(key)) return;
+      const tok = ++this._vpTok;                // a newer audition or closing the picker wins over this one
+      const l0 = this._vlang(code), have = this.vtest[key];
+      if (have && have.url && l0 && !this._voicePending && have.lang === code && have.model === l0.model && have.voice === (v ? v.voice_id : l0.voice_id)) {
+        this._vpPlayUrl(have.url, key, true);   // the finished sample of exactly this setup: played inside the tap, free
+        return;
+      }
+      this.vtest = { ...this.vtest, [key]: { busy: true } };
+      let d = {}, failed = null, used = null;
+      // after any voice or model change still being saved, with the model the server confirmed: the parent
+      // hears exactly what new voices will sound like (FUNK-85 review)
+      await this._voiceSerial(async () => {
+        if (tok !== this._vpTok) return;        // superseded while waiting (picker closed, another audition): not paid
+        const l = this._vlang(code);
+        const body = { lang: code };
+        if (l) body.model = l.model;
+        if (v) { body.voice_id = v.voice_id; body.voice_name = v.name; }
+        used = { lang: code, model: body.model, voice: v ? v.voice_id : (l && l.voice_id) };
+        try {
+          const res = await this._api('/api/voices/test', { method: 'POST', json: body });
+          d = await res.json().catch(() => ({}));
+          if (!res.ok || !d.url) throw new Error(d.error || ('HTTP ' + res.status));
+        } catch (err) { failed = err; }
+      });
+      if (failed) {
+        this.vtest = { ...this.vtest, [key]: { busy: false } };
+        this.showToast('Test nicht möglich: ' + failed.message, 'error');
+        return;
+      }
+      if (!d.url) { this.vtest = { ...this.vtest, [key]: { busy: false } }; return; }     // skipped: superseded
+      this.vtest = { ...this.vtest, [key]: { busy: false, url: d.url, ...used } };
+      if (tok === this._vpTok) this._vpPlayUrl(d.url, key, true);
+    },
+    _vpPlayUrl(url, key, tellIfBlocked) {
+      this.vpStop();
+      this.plStop();
+      const a = new Audio(url);
+      this._vpAudio = a; this.vpPlaying = key;
+      const end = () => { if (this._vpAudio === a) { this._vpAudio = null; this.vpPlaying = null; } };
+      a.addEventListener('ended', end); a.addEventListener('error', end);
+      a.play().catch(() => {
+        end();                                  // e.g. Safari blocks sound that starts after a wait: one more tap plays it
+        if (tellIfBlocked) this.showToast('Test ist fertig: zum Anhören nochmal auf „Testen“ tippen (kostet nichts).');
+      });
+    },
+    vpStop() { if (this._vpAudio) { this._vpAudio.pause(); this._vpAudio = null; } this.vpPlaying = null; },
+    vpPreview(v) {
+      this._vpTok++;
+      if (this.vpPlaying === v.voice_id) { this.vpStop(); return; }
+      if (v.preview_url) this._vpPlayUrl(v.preview_url, v.voice_id);
+    },
+    openVoicePicker(code, returnTo) {
+      const l = (this.vlangs.languages || []).find(x => x.code === code);
+      if (!l) return;
+      this.vp = { code, label: l.label, source: 'library', gender: '', age: '', search: '', loading: false, error: '', voices: [], seq: 0, choosing: false, returnTo };
+      this.vpLoad();
+    },
+    vpIsCurrent(v) {
+      const l = this.vp && (this.vlangs.languages || []).find(x => x.code === this.vp.code);
+      return !!(l && l.voice_id === v.voice_id);
+    },
+    async vpLoad() {
+      const vp = this.vp;
+      if (!vp) return;
+      const seq = ++vp.seq;
+      vp.loading = true; vp.error = '';
+      const q = new URLSearchParams({ source: vp.source, lang: vp.code });
+      if (vp.source === 'library') {
+        if (vp.gender) q.set('gender', vp.gender);
+        if (vp.age) q.set('age', vp.age);
+        if (vp.search.trim()) q.set('search', vp.search.trim());
+      }
+      let d = {};
+      try {
+        const res = await this._api('/api/voices?' + q.toString());
+        d = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
+      } catch (err) {
+        if (this.vp === vp && vp.seq === seq) { vp.loading = false; vp.error = err.message; vp.voices = []; }
+        return;
+      }
+      if (this.vp !== vp || vp.seq !== seq) return;
+      vp.loading = false; vp.voices = d.voices || [];
+    },
+    async vpChoose(v) {
+      const vp = this.vp;
+      if (!vp || vp.choosing) return;
+      vp.choosing = true;
+      const ok = await this._voiceSerial(() => this._voicePatch(vp.code, { voice_id: v.voice_id, voice_name: v.name }));
+      vp.choosing = false;
+      if (!ok) return;
+      this.showToast(`Stimme für ${vp.label}: ${v.name}. Neue Stimmen sprechen jetzt so; vorhandene bleiben, bis du sie neu erzeugst.`);
+      if (this.vp === vp) this.vpClose();
+    },
+    vpClose() {
+      const back = this.vp && this.vp.returnTo;
+      this._vpTok++;
+      this.vpStop();
+      this.vp = null;
+      if (back && document.contains(back)) this.$nextTick(() => back.focus());
+    },
     plToggle(f, vol) { if (this.pl.f === f) this.plStop(); else this.plPlay(f, vol); },
     plPlay(f, vol, onEnd, keepSeq) {
       this.plStop(keepSeq);
@@ -4809,6 +5071,7 @@ function funkeykid() {
         if (ev.key === 'Escape') { ev.preventDefault(); this.dlgAnswer(false); }
         return;
       }
+      if (this.vp) { if (ev.key === 'Escape') { this.vpClose(); ev.preventDefault(); } return; }        // FUNK-85: also outside the editor
       if (!this.ed) return;
       if (this.lib) { if (ev.key === 'Escape') { this.libClose(); ev.preventDefault(); } return; }
       const t = ev.target || {};
@@ -4895,6 +5158,7 @@ function funkeykid() {
         if (this._edOps.length || Object.keys(this._edDeb).length || this._orderPending) { ev.preventDefault(); ev.returnValue = ''; }
       });
       this.loadDiagnostics();  // fills the keyboard picker in Settings
+      this.loadVoiceLangs();   // FUNK-85
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
       setInterval(() => this.pollStatus(), 10000);
       // Update "ago" text every second

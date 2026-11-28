@@ -2583,7 +2583,7 @@
                                     <input class="ui-inp" x-model="e.tracks[k].prompt" @input="edText(e, 'tracks.' + k + '.prompt')" @change="edText(e, 'tracks.' + k + '.prompt', true)" maxlength="300"
                                            :placeholder="k === 'FX' ? 'Englisch, z. B. „friendly buzzing bee, short“' : k === 'DE' ? 'Leer = „' + e.word + '“' : 'Englisches Wort, z. B. „bee“'"
                                            :aria-label="k === 'FX' ? 'Anweisung für die KI' : 'Gesprochener Text'">
-                                    <span class="ui-faint" style="font-size:12px" x-text="k === 'FX' ? 'Gilt für „Neu erzeugen“. Englisch versteht die Geräusch-KI am besten.' : 'Gilt für „Neu erzeugen“ · ElevenLabs'"></span>
+                                    <span class="ui-faint" style="font-size:12px" x-text="k === 'FX' ? 'Gilt für „Neu erzeugen“. Die Geräusch-KI versteht nur Englisch: mit OpenRouter wird Deutsches vorher automatisch übersetzt, sonst bitte Englisch schreiben.' : 'Gilt für „Neu erzeugen“ · ElevenLabs'"></span>
                                   </div>
                                 </details>
                               </section>

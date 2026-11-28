@@ -1,0 +1,2159 @@
+{
+  "schema": "inspr.release-history.v1",
+  "product": "funkeykid",
+  "repository": "markus-barta/funkeykid",
+  "version_scheme": "inspr-calver-3",
+  "generated_at": "2026-11-28T16:41:31Z",
+  "source": "git",
+  "releases": [
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "release-notes/261128164128.0.0.json",
+        "snapshot_sha256": "9f888444c6746bfd35782afce33141083cf36c0c2e52af453cd82cf71cdad3de",
+        "captured_at": "2026-11-28T16:41:28Z",
+        "release_revision": 0,
+        "items": [
+          {
+            "key": "FUNK-86",
+            "pill_en": "Backup before migrations",
+            "pill_de": "Sicherung vor Migrationen",
+            "benefit_en": "A release that changes the stored settings can be rolled back exactly, from a copy made right before it.",
+            "benefit_de": "Ein Release, das gespeicherte Einstellungen umbaut, lässt sich exakt zurückrollen, aus einer Kopie von direkt davor.",
+            "group": "features"
+          },
+          {
+            "key": "FUNK-88",
+            "pill_en": "Version history page",
+            "pill_de": "Seite mit Versionsverlauf",
+            "benefit_en": "You can see which version runs and what changed in each release, the same way as in the other projects.",
+            "benefit_de": "Du siehst, welche Version läuft und was sich in jedem Release geändert hat, so wie in den anderen Projekten.",
+            "group": "features"
+          }
+        ],
+        "gaps": [],
+        "hidden": 0
+      },
+      "presentation": {
+        "headline": "Backup before migrations · Version history page",
+        "intro": ""
+      },
+      "version": "261128164128.0.0",
+      "tag": "",
+      "release_channel": "stable",
+      "release_sequence": 29,
+      "state": "reserved",
+      "reserved_at": "2026-11-28T16:41:28Z",
+      "tagged_at": null,
+      "published_at": null,
+      "headline": "Backup before migrations · Version history page",
+      "tickets": [
+        "FUNK-86",
+        "FUNK-88"
+      ],
+      "changes": [],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "",
+        "source_url": "",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build.",
+          "No annotated release tag was recorded; publication is pending confirmation.",
+          "No source commit was found in main's first-parent VERSION history for this reservation."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128154900.0.0",
+      "tag": "v261128154900.0.0",
+      "release_channel": "stable",
+      "release_sequence": 28,
+      "state": "published",
+      "reserved_at": "2026-11-28T15:49:00Z",
+      "tagged_at": "2026-11-28T15:50:33Z",
+      "published_at": null,
+      "headline": "redo old voices, first word to approve (FUNK-87)",
+      "tickets": [
+        "FUNK-87"
+      ],
+      "changes": [
+        {
+          "commit": "426d5367e6d99c3f65cd85858cc1e8d54579eb02",
+          "subject": "feat: redo voices made by an older voice; a new voice starts with one word (FUNK-87) (#31)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-87"
+          ],
+          "at": "2026-11-28T16:50:27+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "426d5367e6d99c3f65cd85858cc1e8d54579eb02",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/426d5367e6d99c3f65cd85858cc1e8d54579eb02",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128145327.0.0",
+      "tag": "v261128145327.0.0",
+      "release_channel": "stable",
+      "release_sequence": 27,
+      "state": "published",
+      "reserved_at": "2026-11-28T14:53:27Z",
+      "tagged_at": "2026-11-28T14:54:39Z",
+      "published_at": null,
+      "headline": "voices per language (FUNK-85)",
+      "tickets": [
+        "FUNK-85"
+      ],
+      "changes": [
+        {
+          "commit": "9ba8ee21d8a3b7d5b65cfbaaa325c2aa34f9203d",
+          "subject": "fix: voices per language with the language set explicitly (FUNK-85) (#30)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-85"
+          ],
+          "at": "2026-11-28T15:54:32+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "9ba8ee21d8a3b7d5b65cfbaaa325c2aa34f9203d",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/9ba8ee21d8a3b7d5b65cfbaaa325c2aa34f9203d",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128135042.0.0",
+      "tag": "v261128135042.0.0",
+      "release_channel": "stable",
+      "release_sequence": 26,
+      "state": "published",
+      "reserved_at": "2026-11-28T13:50:42Z",
+      "tagged_at": "2026-11-28T13:51:42Z",
+      "published_at": null,
+      "headline": "suggestions belong to their letter (FUNK-84)",
+      "tickets": [
+        "FUNK-84"
+      ],
+      "changes": [
+        {
+          "commit": "501fe4357fc241feef243dd5e98f590b4b196f96",
+          "subject": "fix: suggestions belong to their letter; long suggestions readable (FUNK-84) (#29)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-84"
+          ],
+          "at": "2026-11-28T14:51:36+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "501fe4357fc241feef243dd5e98f590b4b196f96",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/501fe4357fc241feef243dd5e98f590b4b196f96",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128133220.0.0",
+      "tag": "v261128133220.0.0",
+      "release_channel": "stable",
+      "release_sequence": 25,
+      "state": "published",
+      "reserved_at": "2026-11-28T13:32:20Z",
+      "tagged_at": "2026-11-28T13:33:20Z",
+      "published_at": null,
+      "headline": "Einstellungen in the new design (FUNK-82)",
+      "tickets": [
+        "FUNK-82"
+      ],
+      "changes": [
+        {
+          "commit": "358015156c6688244cd930d5bbded3a86c046360",
+          "subject": "feat: Einstellungen in the new design (FUNK-82) (#28)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-82"
+          ],
+          "at": "2026-11-28T14:33:13+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "358015156c6688244cd930d5bbded3a86c046360",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/358015156c6688244cd930d5bbded3a86c046360",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128130654.0.0",
+      "tag": "v261128130654.0.0",
+      "release_channel": "stable",
+      "release_sequence": 24,
+      "state": "published",
+      "reserved_at": "2026-11-28T13:06:54Z",
+      "tagged_at": "2026-11-28T13:08:06Z",
+      "published_at": null,
+      "headline": "sound-effect instructions in English (FUNK-83)",
+      "tickets": [
+        "FUNK-83"
+      ],
+      "changes": [
+        {
+          "commit": "23b2f31f1aba815f68d9fdd775f0d42b67dc0420",
+          "subject": "fix: sound-effect instructions in English, suggestions with English descriptions (FUNK-83) (#27)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-83"
+          ],
+          "at": "2026-11-28T14:08:00+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "23b2f31f1aba815f68d9fdd775f0d42b67dc0420",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/23b2f31f1aba815f68d9fdd775f0d42b67dc0420",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128124155.0.0",
+      "tag": "v261128124155.0.0",
+      "release_channel": "stable",
+      "release_sequence": 23,
+      "state": "published",
+      "reserved_at": "2026-11-28T12:41:55Z",
+      "tagged_at": "2026-11-28T12:42:55Z",
+      "published_at": null,
+      "headline": "Sets in the new design (FUNK-81)",
+      "tickets": [
+        "FUNK-81"
+      ],
+      "changes": [
+        {
+          "commit": "b1b4dcd28c30dcba243192df3c6f95bf196f1df1",
+          "subject": "feat: Sets in the new design (FUNK-81) (#26)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-81"
+          ],
+          "at": "2026-11-28T13:42:48+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "b1b4dcd28c30dcba243192df3c6f95bf196f1df1",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/b1b4dcd28c30dcba243192df3c6f95bf196f1df1",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128121918.0.0",
+      "tag": "v261128121918.0.0",
+      "release_channel": "stable",
+      "release_sequence": 22,
+      "state": "published",
+      "reserved_at": "2026-11-28T12:19:18Z",
+      "tagged_at": "2026-11-28T12:20:33Z",
+      "published_at": null,
+      "headline": "in-app dialogs (FUNK-80)",
+      "tickets": [
+        "FUNK-80"
+      ],
+      "changes": [
+        {
+          "commit": "fa83b382ac868627a3b845bdebf9ab3cea977dba",
+          "subject": "feat: the app's own dialogs instead of browser pop-ups (FUNK-80) (#25)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-80"
+          ],
+          "at": "2026-11-28T13:20:23+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "fa83b382ac868627a3b845bdebf9ab3cea977dba",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/fa83b382ac868627a3b845bdebf9ab3cea977dba",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128114946.0.0",
+      "tag": "v261128114946.0.0",
+      "release_channel": "stable",
+      "release_sequence": 21,
+      "state": "published",
+      "reserved_at": "2026-11-28T11:49:46Z",
+      "tagged_at": "2026-11-28T11:50:01Z",
+      "published_at": null,
+      "headline": "redesign follow-ups (FUNK-79)",
+      "tickets": [
+        "FUNK-79"
+      ],
+      "changes": [
+        {
+          "commit": "f348e41f938bf09361ec8c2bbb8c0f2d107a237f",
+          "subject": "fix: no stuck review offers, background offers survive a failed add, no $undefined (FUNK-79) (#24)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-79"
+          ],
+          "at": "2026-11-28T12:49:56+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "f348e41f938bf09361ec8c2bbb8c0f2d107a237f",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/f348e41f938bf09361ec8c2bbb8c0f2d107a237f",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128112627.0.0",
+      "tag": "v261128112627.0.0",
+      "release_channel": "stable",
+      "release_sequence": 20,
+      "state": "published",
+      "reserved_at": "2026-11-28T11:26:27Z",
+      "tagged_at": "2026-11-28T11:27:26Z",
+      "published_at": null,
+      "headline": "Dateien shows what uses each file (FUNK-78)",
+      "tickets": [
+        "FUNK-78"
+      ],
+      "changes": [
+        {
+          "commit": "09eba862915ea2a31bf36272d3e5f418e0e94ab1",
+          "subject": "feat: Dateien shows what uses each file and never archives a file in use (FUNK-78) (#23)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-78"
+          ],
+          "at": "2026-11-28T12:27:20+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "09eba862915ea2a31bf36272d3e5f418e0e94ab1",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/09eba862915ea2a31bf36272d3e5f418e0e94ab1",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128104723.0.0",
+      "tag": "v261128104723.0.0",
+      "release_channel": "stable",
+      "release_sequence": 19,
+      "state": "published",
+      "reserved_at": "2026-11-28T10:47:23Z",
+      "tagged_at": "2026-11-28T10:49:15Z",
+      "published_at": null,
+      "headline": "Zahlen in the same editor and tiles as Buchstaben (FUNK-76)",
+      "tickets": [
+        "FUNK-76"
+      ],
+      "changes": [
+        {
+          "commit": "2fd31310c691915133dfb0463446b46ceb4e8126",
+          "subject": "feat: Zahlen in the same editor and tiles as Buchstaben (FUNK-76) (#22)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-76"
+          ],
+          "at": "2026-11-28T11:49:09+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "2fd31310c691915133dfb0463446b46ceb4e8126",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/2fd31310c691915133dfb0463446b46ceb4e8126",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261128092359.0.0",
+      "tag": "v261128092359.0.0",
+      "release_channel": "stable",
+      "release_sequence": 18,
+      "state": "published",
+      "reserved_at": "2026-11-28T09:23:59Z",
+      "tagged_at": "2026-11-28T09:25:14Z",
+      "published_at": null,
+      "headline": "Fehlende Stimmen erzeugen (FUNK-75)",
+      "tickets": [
+        "FUNK-75"
+      ],
+      "changes": [
+        {
+          "commit": "2263c6c2ec104c69796b8acdf4339a6956feb1d3",
+          "subject": "feat: Fehlende Stimmen erzeugen — German voices for every word of a set in one go (FUNK-75) (#21)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-75"
+          ],
+          "at": "2026-11-28T10:25:05+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "2263c6c2ec104c69796b8acdf4339a6956feb1d3",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/2263c6c2ec104c69796b8acdf4339a6956feb1d3",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261127221835.0.0",
+      "tag": "v261127221835.0.0",
+      "release_channel": "stable",
+      "release_sequence": 17,
+      "state": "published",
+      "reserved_at": "2026-11-27T22:18:35Z",
+      "tagged_at": "2026-11-27T22:20:25Z",
+      "published_at": null,
+      "headline": "FUNK-72 redesign step 1",
+      "tickets": [
+        "FUNK-72"
+      ],
+      "changes": [
+        {
+          "commit": "871f9642a3c695cd56a9dfd00cccf8ecf0e6b936",
+          "subject": "feat: redesigned parent page, per-entry saves, AI results land safely (FUNK-72) (#20)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-72"
+          ],
+          "at": "2026-11-27T23:20:19+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "871f9642a3c695cd56a9dfd00cccf8ecf0e6b936",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/871f9642a3c695cd56a9dfd00cccf8ecf0e6b936",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261127201333.0.0",
+      "tag": "v261127201333.0.0",
+      "release_channel": "stable",
+      "release_sequence": 16,
+      "state": "published",
+      "reserved_at": "2026-11-27T20:13:33Z",
+      "tagged_at": "2026-11-27T20:14:59Z",
+      "published_at": null,
+      "headline": "funkeykid 261127201333.0.0 (stable #16): FUNK-73 file routes stay in their folders",
+      "tickets": [
+        "FUNK-73"
+      ],
+      "changes": [
+        {
+          "commit": "08dd2a04a94d411325c25d89b24b8b074b3537a9",
+          "subject": "fix: file routes stay in their folders; uploads and archive take plain names (FUNK-73) (#19)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-73"
+          ],
+          "at": "2026-11-27T21:14:55+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "08dd2a04a94d411325c25d89b24b8b074b3537a9",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/08dd2a04a94d411325c25d89b24b8b074b3537a9",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261127144626.0.0",
+      "tag": "v261127144626.0.0",
+      "release_channel": "stable",
+      "release_sequence": 15,
+      "state": "published",
+      "reserved_at": "2026-11-27T14:46:26Z",
+      "tagged_at": "2026-11-27T14:48:23Z",
+      "published_at": null,
+      "headline": "funkeykid 261127144626.0.0 (stable #15): Übersicht tab (FUNK-42)",
+      "tickets": [
+        "FUNK-42"
+      ],
+      "changes": [
+        {
+          "commit": "af8ac5278a3e7daf755f9884c86d2420f7803417",
+          "subject": "feat: Übersicht tab — what the child played (FUNK-42) (#18)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-42"
+          ],
+          "at": "2026-11-27T15:48:17+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "af8ac5278a3e7daf755f9884c86d2420f7803417",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/af8ac5278a3e7daf755f9884c86d2420f7803417",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261127105710.0.0",
+      "tag": "v261127105710.0.0",
+      "release_channel": "stable",
+      "release_sequence": 14,
+      "state": "published",
+      "reserved_at": "2026-11-27T10:57:10Z",
+      "tagged_at": "2026-11-27T10:58:50Z",
+      "published_at": null,
+      "headline": "v261127105710.0.0 — FUNK-40 progress per letter",
+      "tickets": [
+        "FUNK-40"
+      ],
+      "changes": [
+        {
+          "commit": "c55839148958cd0b840b85e4db6cc1ccd5bfb790",
+          "subject": "feat: progress per letter on the cards (FUNK-40) (#17)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-40"
+          ],
+          "at": "2026-11-27T11:58:45+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "c55839148958cd0b840b85e4db6cc1ccd5bfb790",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/c55839148958cd0b840b85e4db6cc1ccd5bfb790",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261126200209.0.0",
+      "tag": "v261126200209.0.0",
+      "release_channel": "stable",
+      "release_sequence": 13,
+      "state": "published",
+      "reserved_at": "2026-11-26T20:02:09Z",
+      "tagged_at": "2026-11-26T20:03:50Z",
+      "published_at": null,
+      "headline": "release 261126200209.0.0 (stable #13): quiz mode (FUNK-39)",
+      "tickets": [
+        "FUNK-39"
+      ],
+      "changes": [
+        {
+          "commit": "ea99c6e1ec67046f0bf3a61799e6f65b8cd6a550",
+          "subject": "feat: quiz mode — hear a word or sound, press its letter (FUNK-39) (#16)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-39"
+          ],
+          "at": "2026-11-26T21:03:43+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "ea99c6e1ec67046f0bf3a61799e6f65b8cd6a550",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/ea99c6e1ec67046f0bf3a61799e6f65b8cd6a550",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261126125442.0.0",
+      "tag": "v261126125442.0.0",
+      "release_channel": "stable",
+      "release_sequence": 12,
+      "state": "published",
+      "reserved_at": "2026-11-26T12:54:42Z",
+      "tagged_at": "2026-11-26T12:56:20Z",
+      "published_at": null,
+      "headline": "release 261126125442.0.0 (stable #12): the parent page works offline (FUNK-69)",
+      "tickets": [
+        "FUNK-69"
+      ],
+      "changes": [
+        {
+          "commit": "f196617af3cad8a47b3930e7cd61f1809c77b332",
+          "subject": "fix: the parent page works offline, UI libraries pinned (FUNK-69) (#15)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-69"
+          ],
+          "at": "2026-11-26T13:56:12+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "f196617af3cad8a47b3930e7cd61f1809c77b332",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/f196617af3cad8a47b3930e7cd61f1809c77b332",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261126123344.0.0",
+      "tag": "v261126123344.0.0",
+      "release_channel": "stable",
+      "release_sequence": 11,
+      "state": "published",
+      "reserved_at": "2026-11-26T12:33:44Z",
+      "tagged_at": "2026-11-26T12:34:58Z",
+      "published_at": null,
+      "headline": "release 261126123344.0.0 (stable #11): the parent page fits a phone (FUNK-68)",
+      "tickets": [
+        "FUNK-68"
+      ],
+      "changes": [
+        {
+          "commit": "b3426f13f1a0a5a7f30ad06f10a1bdf49fe2654a",
+          "subject": "fix: the parent page fits a phone (FUNK-68) (#14)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-68"
+          ],
+          "at": "2026-11-26T13:34:51+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "b3426f13f1a0a5a7f30ad06f10a1bdf49fe2654a",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/b3426f13f1a0a5a7f30ad06f10a1bdf49fe2654a",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261126121221.0.0",
+      "tag": "v261126121221.0.0",
+      "release_channel": "stable",
+      "release_sequence": 10,
+      "state": "published",
+      "reserved_at": "2026-11-26T12:12:21Z",
+      "tagged_at": "2026-11-26T12:13:52Z",
+      "published_at": null,
+      "headline": "release 261126121221.0.0 (stable #10): ß is a letter (FUNK-46)",
+      "tickets": [
+        "FUNK-46"
+      ],
+      "changes": [
+        {
+          "commit": "3db6fb5f4a5cb180d3f2f85ad2664d2497e25306",
+          "subject": "feat: ß is a letter (FUNK-46) (#13)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-46"
+          ],
+          "at": "2026-11-26T13:13:47+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "90dd7f1a23246a28f3a34c7855d6af372ddfc098",
+          "subject": "docs: /data is one directory mount on hsb1 (FUNK-67) (#12)",
+          "type": "docs",
+          "scope": "",
+          "tickets": [
+            "FUNK-67"
+          ],
+          "at": "2026-11-26T08:17:49+01:00",
+          "group": "other"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "3db6fb5f4a5cb180d3f2f85ad2664d2497e25306",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/3db6fb5f4a5cb180d3f2f85ad2664d2497e25306",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261126064200.0.0",
+      "tag": "v261126064200.0.0",
+      "release_channel": "stable",
+      "release_sequence": 9,
+      "state": "published",
+      "reserved_at": "2026-11-26T06:42:00Z",
+      "tagged_at": "2026-11-26T06:43:21Z",
+      "published_at": null,
+      "headline": "funkeykid 261126064200.0.0 (inspr-calver-3, stable #9, FUNK-67 crash-safe settings)",
+      "tickets": [
+        "FUNK-67"
+      ],
+      "changes": [
+        {
+          "commit": "e17f6c5025c8d7d92fe82213e17d867e6b3a0b09",
+          "subject": "fix: crash-safe settings.json writes (FUNK-67) (#11)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-67"
+          ],
+          "at": "2026-11-26T07:43:15+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "e17f6c5025c8d7d92fe82213e17d867e6b3a0b09",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/e17f6c5025c8d7d92fe82213e17d867e6b3a0b09",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261125153613.0.0",
+      "tag": "v261125153613.0.0",
+      "release_channel": "stable",
+      "release_sequence": 8,
+      "state": "published",
+      "reserved_at": "2026-11-25T15:36:13Z",
+      "tagged_at": "2026-11-25T15:37:34Z",
+      "published_at": null,
+      "headline": "funkeykid 261125153613.0.0 (inspr-calver-3, stable #8, FUNK-43 set export/import)",
+      "tickets": [
+        "FUNK-43"
+      ],
+      "changes": [
+        {
+          "commit": "054b506a8919a341d90c250b8521f545e4b0784d",
+          "subject": "feat: export and import a set as ZIP (FUNK-43) (#10)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-43"
+          ],
+          "at": "2026-11-25T16:37:27+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "054b506a8919a341d90c250b8521f545e4b0784d",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/054b506a8919a341d90c250b8521f545e4b0784d",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261125142130.0.0",
+      "tag": "v261125142130.0.0",
+      "release_channel": "stable",
+      "release_sequence": 7,
+      "state": "published",
+      "reserved_at": "2026-11-25T14:21:30Z",
+      "tagged_at": "2026-11-25T14:22:50Z",
+      "published_at": null,
+      "headline": "funkeykid 261125142130.0.0 (inspr-calver-3, stable #7, FUNK-61 Alpine errors)",
+      "tickets": [
+        "FUNK-61"
+      ],
+      "changes": [
+        {
+          "commit": "cd6f8292526728c0734fa49517252f77bb02ce68",
+          "subject": "fix: no Alpine TypeErrors on page load (FUNK-61) (#9)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-61"
+          ],
+          "at": "2026-11-25T15:22:44+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "cd6f8292526728c0734fa49517252f77bb02ce68",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/cd6f8292526728c0734fa49517252f77bb02ce68",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261125140643.0.0",
+      "tag": "v261125140643.0.0",
+      "release_channel": "stable",
+      "release_sequence": 6,
+      "state": "published",
+      "reserved_at": "2026-11-25T14:06:43Z",
+      "tagged_at": "2026-11-25T14:08:03Z",
+      "published_at": null,
+      "headline": "funkeykid 261125140643.0.0 (inspr-calver-3, stable #6, FUNK-66 Mac profiles from photo)",
+      "tickets": [
+        "FUNK-66"
+      ],
+      "changes": [
+        {
+          "commit": "91be7bbce8d4ebe4f4366490a3e9648ed9e50832",
+          "subject": "feat: Mac profiles drawn from the Magic Keyboard photo (FUNK-66) (#8)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-66"
+          ],
+          "at": "2026-11-25T15:07:57+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "91be7bbce8d4ebe4f4366490a3e9648ed9e50832",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/91be7bbce8d4ebe4f4366490a3e9648ed9e50832",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261125135016.0.0",
+      "tag": "v261125135016.0.0",
+      "release_channel": "stable",
+      "release_sequence": 5,
+      "state": "published",
+      "reserved_at": "2026-11-25T13:50:16Z",
+      "tagged_at": "2026-11-25T13:51:46Z",
+      "published_at": null,
+      "headline": "funkeykid 261125135016.0.0 (inspr-calver-3, stable #5, FUNK-64 language, number pad, export/import)",
+      "tickets": [
+        "FUNK-64"
+      ],
+      "changes": [
+        {
+          "commit": "5a8199dafab12a4c2271e55d75829a27188eda1d",
+          "subject": "feat: keyboard language, Standard with number pad, export/import (FUNK-64) (#7)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-64"
+          ],
+          "at": "2026-11-25T14:51:39+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "5a8199dafab12a4c2271e55d75829a27188eda1d",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/5a8199dafab12a4c2271e55d75829a27188eda1d",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261125122211.0.0",
+      "tag": "v261125122211.0.0",
+      "release_channel": "stable",
+      "release_sequence": 4,
+      "state": "published",
+      "reserved_at": "2026-11-25T12:22:11Z",
+      "tagged_at": "2026-11-25T12:23:35Z",
+      "published_at": null,
+      "headline": "funkeykid 261125122211.0.0 (inspr-calver-3, stable #4, FUNK-63 badge fix)",
+      "tickets": [
+        "FUNK-63"
+      ],
+      "changes": [
+        {
+          "commit": "6bc9448c8c94d839e7ba598ed3538ec503378629",
+          "subject": "fix: guessed-code badge wraps inside its pill (FUNK-63) (#6)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-63"
+          ],
+          "at": "2026-11-25T13:23:29+01:00",
+          "group": "fixes"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "6bc9448c8c94d839e7ba598ed3538ec503378629",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/6bc9448c8c94d839e7ba598ed3538ec503378629",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261125121433.0.0",
+      "tag": "v261125121433.0.0",
+      "release_channel": "stable",
+      "release_sequence": 3,
+      "state": "published",
+      "reserved_at": "2026-11-25T12:14:33Z",
+      "tagged_at": "2026-11-25T12:16:00Z",
+      "published_at": null,
+      "headline": "funkeykid 261125121433.0.0 (inspr-calver-3, stable #3, FUNK-63 keyboard profiles)",
+      "tickets": [
+        "FUNK-63"
+      ],
+      "changes": [
+        {
+          "commit": "8b07fa4457f37f7e6e5463c0bd56382ef85f289d",
+          "subject": "feat: keyboard profiles and a drawn key-map editor (FUNK-63) (#5)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-63"
+          ],
+          "at": "2026-11-25T13:15:51+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "8b07fa4457f37f7e6e5463c0bd56382ef85f289d",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/8b07fa4457f37f7e6e5463c0bd56382ef85f289d",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261125075136.0.0",
+      "tag": "v261125075136.0.0",
+      "release_channel": "stable",
+      "release_sequence": 2,
+      "state": "published",
+      "reserved_at": "2026-11-25T07:51:36Z",
+      "tagged_at": "2026-11-25T08:23:14Z",
+      "published_at": null,
+      "headline": "funkeykid 261125075136.0.0 (inspr-calver-3, stable #2, FUNK-62 key map)",
+      "tickets": [
+        "FUNK-62"
+      ],
+      "changes": [
+        {
+          "commit": "a15d60902c1daed955d8a6bfa3548d3a8d54a00e",
+          "subject": "feat: key map — every key of the kids' keyboard can do something (FUNK-62) (#4)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-62"
+          ],
+          "at": "2026-11-25T09:21:06+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "ab1fa2c74ede63254b02342d505f0b863b5e9894",
+          "subject": "docs: describe how hsb1 really runs funkeykid — nixcfg compose spec, agenix, pixdcon2-edge (FUNK-56) (#3)",
+          "type": "docs",
+          "scope": "",
+          "tickets": [
+            "FUNK-56"
+          ],
+          "at": "2026-11-25T09:01:16+01:00",
+          "group": "other"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "a15d60902c1daed955d8a6bfa3548d3a8d54a00e",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/a15d60902c1daed955d8a6bfa3548d3a8d54a00e",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    },
+    {
+      "version_scheme": "inspr-calver-3",
+      "notes": {
+        "source": "unavailable",
+        "fallback": "historical-tag-headline",
+        "snapshot_sha256": "",
+        "captured_at": null,
+        "release_revision": 0,
+        "items": [],
+        "gaps": [
+          "Bilingual ticket benefits were not captured for this release."
+        ],
+        "hidden": 0
+      },
+      "version": "261124195854.0.0",
+      "tag": "v261124195854.0.0",
+      "release_channel": "stable",
+      "release_sequence": 1,
+      "state": "published",
+      "reserved_at": "2026-11-24T19:58:54Z",
+      "tagged_at": "2026-11-24T21:33:33Z",
+      "published_at": null,
+      "headline": "funkeykid 261124195854.0.0 (inspr-calver-3, stable #1, FUNK-60)",
+      "tickets": [
+        "FUNK-60"
+      ],
+      "changes": [
+        {
+          "commit": "82d024534e4dddbd4b506ff6e6ecb11507663b02",
+          "subject": "feat!: adopt INSPR Calendar Versioning (inspr-calver-3) — release 261124195854.0.0 (FUNK-60) (#2)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-60"
+          ],
+          "at": "2026-11-24T22:23:50+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "9e2c2fc90226b0f45e0b89dbf212a6fbe90b775a",
+          "subject": "feat: exclusive keyboard grab, configurable keyboard, Pixoo status payload (v3.2.0, FUNK-59) (#1)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FUNK-59"
+          ],
+          "at": "2026-11-24T20:33:32+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "041c125023949cea69ed29f9f2735004e1c4aece",
+          "subject": "fix: re-enable per-track Generieren/Neu buttons after entry swap (v3.1.1, FUNK-54)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [
+            "FUNK-54"
+          ],
+          "at": "2026-05-26T20:00:03+02:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "70f84fa091ee16306cd685ce2dc5fc11f59adab2",
+          "subject": "docs: refresh for v3.x — multi-track, normalization, VU-meter overlay",
+          "type": "docs",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-18T09:04:32+02:00",
+          "group": "other"
+        },
+        {
+          "commit": "70825554247308aa297dc7c4c7b14b72eb8e3c0f",
+          "subject": "feat: audio loudness normalization via ffmpeg loudnorm (v3.1.0, FKID-1)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [
+            "FKID-1"
+          ],
+          "at": "2026-04-18T07:10:55+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "3e4b308cfc0b58572b2784ec80e2c840fbe3b899",
+          "subject": "feat!: v3.0.0 — per-track volume, auto-chained KI generation, bigger keyboard",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-17T21:04:41+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "c8877829c2c440d8a8d0a50e44f00f3837b563c9",
+          "subject": "feat: KI-Vorschlag seeds EN track + grid track dots + cleanup (v2.9.2)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-17T20:54:17+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "842716d304647751653bea196b4e918b54df5366",
+          "subject": "feat: multi-track audio editor UI (v2.9.1)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-17T20:35:18+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "89815f0f5d5aabfe1b5c4423bf4ae0923b470717",
+          "subject": "feat(server): multi-track audio model + sequential playback (v2.9.0)",
+          "type": "feat",
+          "scope": "server",
+          "tickets": [],
+          "at": "2026-04-17T20:23:23+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "1124a9e721107ed4b0e4bb256afa9da3b96729fa",
+          "subject": "feat: editable KI-Vorschlag prompt + letter nav in editor (v2.8.4)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-17T19:59:08+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "3bd3e7936c2b532f397ff46939066e5ab3984b96",
+          "subject": "fix: generate buttons always enabled once entry has a word (v2.8.3)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-17T19:49:09+02:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "ba0c42273dcf0e59bdcfeff508dc4a5e93630a09",
+          "subject": "fix: init settings.ai_prompts stub + randomColor null guard (v2.8.2)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-17T19:44:09+02:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "522f07a5fbe945241d1a8d5ac7eb05f7ee41a086",
+          "subject": "feat: split sound/image editing into per-track cards (v2.8.1)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-17T19:32:54+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "9fb8c5c91182437dd308acab06de63c5590a62fd",
+          "subject": "feat: rework edit-entry modals + build-time tracking (v2.8.0)",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-17T19:23:13+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "3e30b2a262752f91bf3f8035ed783e392f25def2",
+          "subject": "feat: configurable image-gen model, default to Gemini 3 Pro",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-11T08:58:27+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "92043854fe453bdbef35c1d5fbe8cacaa054b8f6",
+          "subject": "chore: seed-number scripts + mark pulse-mount fix applied",
+          "type": "chore",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-11T08:27:58+02:00",
+          "group": "other"
+        },
+        {
+          "commit": "f404fbcc8b9b1809a026b42cd0270847ac4f21a2",
+          "subject": "feat: numbers keys 0-9 with German TTS + counting backgrounds",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-11T08:20:39+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "8f744d70c8314c17cff44eb7e2c67943cff1c1bc",
+          "subject": "docs: document pulse socket permission issue after reboot",
+          "type": "docs",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-04T14:57:16+02:00",
+          "group": "other"
+        },
+        {
+          "commit": "7138289b039141a8e80fc2476433838ecfc4c28b",
+          "subject": "fix: remove pipewire-0 socket mount that broke container startup",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-04-02T20:39:10+02:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "2078b1855e07aa19e0f1084cf4d52a3aa80a0499",
+          "subject": "feat: add favicon — green F with orange frame",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-29T09:49:35+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "21da776dfc62090b2fd249bcfa19df6239b51d14",
+          "subject": "docs: update dev guide, add deploy guide and FAQ",
+          "type": "docs",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-29T09:45:29+02:00",
+          "group": "other"
+        },
+        {
+          "commit": "1278692aec44761f9cb7207853d29a60e1d032c5",
+          "subject": "feat: UP/DOWN arrows jump by letter, publish keyboard status to MQTT",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-29T09:22:40+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "a5646f8901cef43f53e045a526417407fe4ccf14",
+          "subject": "feat: arrow keys navigate all sounds sequentially",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-29T09:12:59+02:00",
+          "group": "features"
+        },
+        {
+          "commit": "85044e22cfd3e50f0f388ceb30d3c953420e99cf",
+          "subject": "fix: pin PipeWire sink to 100% before every sound play",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-29T09:08:34+02:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "d7cb2226a58bde6755fb637fa0c8d5195402639b",
+          "subject": "chore: bump version to 2.5.0",
+          "type": "chore",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-28T19:49:38+01:00",
+          "group": "other"
+        },
+        {
+          "commit": "781502be2fe81d74e693a80daaaa84d1425cdb74",
+          "subject": "feat: add AI integrations health panel to KI \u0026 Dienste tab",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-28T19:28:22+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "e45a60c07a25b257f5ca5db2d3112632ac6a15f8",
+          "subject": "fix: include version.py in Docker image",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-23T19:48:59+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "5b82a4f8a43eadb4502c3e39743a5c05c000c636",
+          "subject": "feat: Enter key replays last sound without advancing cycle",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-23T18:40:39+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "7efc117ba87c44022423405610f3bff86d8f1ca2",
+          "subject": "fix: use 3-digit zero-padded suffixes for generated filenames",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T20:14:22+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "350893106fafd99cd1a1440a51a99db7cf302f93",
+          "subject": "fix: AI gen updates edit modal, dropdown race, numbered filenames",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T20:12:16+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "2177f6f9d099e6da4a5639664c940b0422ab1cf7",
+          "subject": "fix: replace Tailwind play CDN with pre-built CSS",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T19:51:26+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "46e05d390f1eea2a90217f509098d62c8294bf08",
+          "subject": "docs: add pixdcon rename checklist",
+          "type": "docs",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T19:09:06+01:00",
+          "group": "other"
+        },
+        {
+          "commit": "44b757cff7cc1c676511f6c96c5eee3e3d163ce2",
+          "subject": "docs: pidicon-light → pixdcon (rename complete)",
+          "type": "docs",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T19:08:47+01:00",
+          "group": "other"
+        },
+        {
+          "commit": "fc807fc20e5b17d7e881dbe20889df1e0154ae93",
+          "subject": "docs: DEVELOPMENT.md updated to v2.4 — all features documented",
+          "type": "docs",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T18:22:20+01:00",
+          "group": "other"
+        },
+        {
+          "commit": "ba020526b0ee8c790b3589e6a2fb0963fe6d4f64",
+          "subject": "feat: v2.4.0 — Clean entry card rewrite, native selects, fixed dropdowns",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T17:23:22+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "14f1cc2be9fa45b9196e8fd4f2dd394bb8edc104",
+          "subject": "feat: v2.3.6 — Auto-Retry, System-Message, konfigurierbares Modell",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T17:15:12+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "dab5f55396947b004280456ec9cb44138588aa32",
+          "subject": "feat: v2.3.5 — KI-Log Tab, Suggest-Prompt konfigurierbar, Blacklist-Fix",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T17:01:01+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "8243d33afb5ea2689ea535e42f06c279ed3fdb9a",
+          "subject": "feat: v2.3.4 — KI-Prompts in Einstellungen konfigurierbar",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:54:21+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "82bc40b9d118c797baa1392455db1bacc0851c0c",
+          "subject": "fix: v2.3.3 — Kompaktes Entry-Layout, Blacklist-Fix",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:46:19+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "8c1ae9263bb6a6df8ec587bb3aef1358ffa99a33",
+          "subject": "fix: v2.3.2 — Subtle KI-Sparkle icons, fix disabled buttons",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:38:36+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "d5f4125e15bbbaecb30d698eecd3a188ca4ec461",
+          "subject": "feat: v2.3.1 — KI-Vorschlag ohne Auto-Generierung, Blacklist",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:36:01+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "fb578b7147d9f83006bede0a7e38da7d067d376c",
+          "subject": "feat: v2.3.0 — SVG icons, polished UI, clearer button labels",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:30:28+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "ef7142489e1f37eda2bf555316694c87723ee30f",
+          "subject": "feat: v2.2.0 — Favorites, position memory, async AI generation",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:28:21+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "20dcb8b736588945677b01fd0db07b7ec2d1a0b4",
+          "subject": "feat: v2.1.0 — AI word suggestion, archive, better UX, full docs",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:16:32+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "2c71d41d969f8cbebda5082fdc10a38c54e60914",
+          "subject": "feat: v2.0 — AI Generation, Version Footer, Polish",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:09:25+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "20c51c4f74d410090f6bfce8052cdaae21be9e25",
+          "subject": "fix: Dropdown-Zuordnung — x-show auf option bricht Alpine x-model",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T16:01:26+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "65a0f412ff6be61b960e6fc1609b9246d2f6cad3",
+          "subject": "fix: Dropdown-Zuordnung — Dateilisten refresh beim Öffnen",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T15:54:16+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "ba750c0318345dd246b1a55b4be51c80ef22d80a",
+          "subject": "feat: UI Polish — Umlaute, Auto-Save, Scancode-Anzeige",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T15:21:36+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "6314078a6d5d55bc9fe607c6177b3981eb23408c",
+          "subject": "docs: DEVELOPMENT.md — architecture, audio routing, generation, deployment",
+          "type": "docs",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T15:15:37+01:00",
+          "group": "other"
+        },
+        {
+          "commit": "31ecc5a931a9b95f9db9ec45603dd70fa884bcd6",
+          "subject": "fix: startup grace period, stop all button, always-visible status bar",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T15:13:47+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "7dd537b4cfce90decfd2bd20240a1c9a3f1be192",
+          "subject": "fix: audio — use kiosk (uid 1001) PipeWire, not mba (uid 1000)",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T15:01:12+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "443bb2896b657f67714a83ba3c929c81384836ce",
+          "subject": "fix: MQTT publish verification + paplay PULSE_SERVER env",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T14:51:51+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "c565015cd6df74c78fa4fc7cf3d85dbf219f1eaf",
+          "subject": "fix: sound + display not firing — asyncio loop capture was broken",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T14:44:33+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "245a1c2c349d2be91ace80bb20d26250b2cbe246",
+          "subject": "feat: real-time SSE events — instant UI updates on keypress",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T14:39:08+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "618cb07c62c4d21ba387094e121179c13ab795da",
+          "subject": "feat: bluetoothctl in container — full BT diagnostics",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T14:34:21+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "a9774c921493193ae6d5e728400ec8c12d6f0a5c",
+          "subject": "feat: keyboard diagnostics panel + reconnect button",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T14:29:13+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "3e2c190f0e20983f4d96c6db44b78146f80eb96d",
+          "subject": "feat: v2.0 settings — 96 entries, 3-5 words per letter",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T14:10:23+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "a0350b9468f1095267d2eb5db39f6f13682fc073",
+          "subject": "feat: sets architecture — CRUD, per-entry sound/image/enabled, cycling",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T13:42:25+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "9f1d2c16e0a96bc0e7c1246e6646a354683657be",
+          "subject": "fix: keyboard thread crash on device removal",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T13:17:37+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "d39baabf7ece00425896659fd1c8694779e38209",
+          "subject": "feat: live keyboard status in web UI",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T13:01:41+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "409690818c11c369522bcff2d4a67b78d35e5d83",
+          "subject": "feat: add key handler debug logging, verify MQTT works",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T12:58:46+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "11c2891df2ddc1c7b11b42867d91c5a46aea834b",
+          "subject": "fix: MQTT auth — read password from MOSQITTO_PASS_HSB1 env var",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T12:56:53+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "825b1cc3ec9b97382555618700f7d6dfc6726d52",
+          "subject": "fix: Dockerfile — add gcc + linux-libc-dev for evdev build",
+          "type": "fix",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T12:35:47+01:00",
+          "group": "fixes"
+        },
+        {
+          "commit": "ad5df743d7fb23738f6be3ad130bddb8c424d240",
+          "subject": "feat: funkeykid v2 — Docker container + web UI + keyboard layout",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T12:34:34+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "7df309a278052c4dcad1950746c0110e5d351a7c",
+          "subject": "feat: add ElevenLabs sound generation script for missing sounds",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T11:06:35+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "a9a19de2bcafd26146b206bc1720a1485d920772",
+          "subject": "feat: add DE-AT sound mapping + copy script",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T09:45:48+01:00",
+          "group": "features"
+        },
+        {
+          "commit": "e42c9d13927f0271129fbdf516b64c6d3f7e11f8",
+          "subject": "feat: initial scaffold — educational keyboard toy for children",
+          "type": "feat",
+          "scope": "",
+          "tickets": [],
+          "at": "2026-03-22T09:37:36+01:00",
+          "group": "features"
+        }
+      ],
+      "changes_omitted": 0,
+      "evidence": {
+        "source_commit": "82d024534e4dddbd4b506ff6e6ecb11507663b02",
+        "source_url": "https://github.com/markus-barta/funkeykid/commit/82d024534e4dddbd4b506ff6e6ecb11507663b02",
+        "image": null,
+        "ci": null,
+        "release_run": null,
+        "release_url": "",
+        "unavailable": [
+          "GitHub publication time, image digest and CI runs were not recorded for this build."
+        ]
+      }
+    }
+  ],
+  "pending": {
+    "base_version": "261128164128.0.0",
+    "source_commit": "",
+    "source_ref": "",
+    "changes": [],
+    "changes_omitted": 0,
+    "unavailable": [
+      "The running release source or a local main ref is unavailable offline."
+    ]
+  }
+}

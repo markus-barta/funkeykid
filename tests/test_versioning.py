@@ -624,3 +624,82 @@ def test_recover_refuses_when_the_forge_holds_another_claim(tmp_path):
     rec = _run(a, env, "reserve_version.py", "--recover")
     assert rec.returncode != 0 and "different claim" in (rec.stderr + rec.stdout)
     assert (a / "version.json").read_text() == before
+
+
+# ── FUNK-88: an adopted checkout freezes the release's ticket texts and regenerates the history ──
+
+def _adopt(repo):
+    shutil.copy(os.path.join(REPO, "releasehistory.py"), repo / "releasehistory.py")
+    (repo / "release-history").mkdir()
+
+
+def _tickets(tmp_path, exports):
+    p = tmp_path / "tickets.json"
+    p.write_text(json.dumps(exports))
+    return str(p)
+
+
+EXPORT = {"issue_key": "FUNK-88", "type": "work", "tags": [], "pill_en": "Version history page",
+          "pill_de": "Seite mit Versionsverlauf", "benefit_en": "You can see what changed.", "benefit_de": "Du siehst, was sich geändert hat."}
+
+
+def test_an_adopted_reservation_freezes_notes_and_writes_the_history(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    _adopt(repo)
+    res = _run(repo, _env_with_fake_gh(tmp_path), "reserve_version.py", "--tickets", _tickets(tmp_path, [EXPORT]))
+    assert res.returncode == 0, res.stderr
+    new = json.loads((repo / "version.json").read_text())["version"]
+    snap = json.loads((repo / "release-notes" / f"{new}.json").read_text())
+    assert snap["items"][0]["key"] == "FUNK-88" and snap["captured_at"].startswith("20" + new[:2]) and snap["frozen"] is True
+    hist = json.loads((repo / "release-history" / "history.json").read_text())
+    assert [r["version"] for r in hist["releases"]] == [new, "261124195854.0.0"]
+    assert hist["releases"][0]["state"] == "reserved" and hist["releases"][0]["notes"]["items"][0]["pill_de"] == "Seite mit Versionsverlauf"
+    sys.path.insert(0, str(repo))
+    try:
+        import importlib
+        import releasehistory
+        importlib.reload(releasehistory)
+        releasehistory.validate_sources(str(repo), hist)
+    finally:
+        sys.path.remove(str(repo))
+
+
+def test_an_adopted_reservation_needs_complete_ticket_texts_before_claiming(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    _adopt(repo)
+    env = _env_with_fake_gh(tmp_path)
+    before = (repo / "version.json").read_text()
+    res = _run(repo, env, "reserve_version.py", "--tickets", _tickets(tmp_path, [dict(EXPORT, benefit_de="")]))
+    assert res.returncode != 0 and "release text missing" in res.stderr
+    assert (repo / "version.json").read_text() == before
+    remote = subprocess.run(["git", "ls-remote", "--tags", str(origin), "reservation/stable/2"], capture_output=True, text=True, check=True).stdout
+    assert remote == ""                                            # nothing was claimed
+    res = _run(repo, env, "reserve_version.py")
+    assert res.returncode != 0 and "--tickets FILE is required" in res.stderr
+
+
+def test_a_written_reservation_without_notes_is_finished_not_reserved_again(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"], reservations=[(1, "261124195854.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    _adopt(repo)
+    env = _env_with_fake_gh(tmp_path)
+    assert _run(repo, env, "reserve_version.py", "--tickets", _tickets(tmp_path, [EXPORT])).returncode == 0
+    new = json.loads((repo / "version.json").read_text())["version"]
+    (repo / "release-notes" / f"{new}.json").unlink()               # as if interrupted before the capture
+    res = _run(repo, env, "reserve_version.py")
+    assert res.returncode != 0 and "release notes are missing" in res.stderr
+    res = _run(repo, env, "reserve_version.py", "--tickets", _tickets(tmp_path, [EXPORT]))
+    assert res.returncode == 0 and "finished the release notes" in res.stdout, res.stderr
+    assert json.loads((repo / "version.json").read_text())["version"] == new and (repo / "release-notes" / f"{new}.json").exists()
+
+
+def test_recover_needs_the_tickets_when_adopted(tmp_path):
+    origin = _sandbox(tmp_path, _record(), tags=["v261124195854.0.0"],
+                      reservations=[(1, "261124195854.0.0"), (2, "261125000000.0.0")])
+    repo = _clone(origin, tmp_path / "a")
+    _adopt(repo)
+    before = (repo / "version.json").read_text()
+    res = _run(repo, _env_with_fake_gh(tmp_path), "reserve_version.py", "--recover")
+    assert res.returncode != 0 and "required to recover" in res.stderr and (repo / "version.json").read_text() == before

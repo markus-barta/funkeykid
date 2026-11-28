@@ -524,6 +524,45 @@
     .ui-danger-line { color: var(--ui-err); border-color: rgba(255,97,112,.4); }
     .ui-danger-line:hover { background: var(--ui-err-soft); }
     select.ui-inp { cursor: pointer; }
+    /* FUNK-88: Versionen */
+    .ui-relnew { min-height: 0; margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: var(--ui-pri-soft); color: #d4ceff; font-size: 13px; }
+    .ui-rel { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 18px; align-items: start; }
+    .ui-rel-list { display: flex; flex-direction: column; gap: 14px; max-height: calc(100vh - 220px); overflow: auto; padding-right: 4px; }
+    .ui-rel-list h4 { margin: 0 0 6px; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--ui-tx3); font-weight: 700; }
+    .ui-rel-row { display: flex; gap: 10px; padding: 10px 12px; border-radius: 12px; color: inherit; text-decoration: none; border: 1px solid transparent; }
+    .ui-rel-row:hover { background: rgba(255,255,255,.04); }
+    .ui-rel-row[aria-current="true"] { background: var(--ui-pri-soft); border-color: var(--ui-pri-line); }
+    .ui-rel-row .t { font-size: 12px; color: var(--ui-tx3); padding-top: 2px; flex: none; width: 38px; }
+    .ui-rel-row .m { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .ui-rel-row .m b { font-size: 13.5px; font-weight: 650; line-height: 1.35; }
+    .ui-rel .bd { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11.5px; }
+    .ui-rel .bd i { font-style: normal; padding: 1px 8px; border-radius: 99px; font-size: 11px; font-weight: 650; }
+    .ui-rel .bd i.run { background: rgba(62,207,142,.16); color: #8ce8bf; }
+    .ui-rel .bd i.new { background: var(--ui-pri-soft); color: #d4ceff; }
+    .ui-rel .bd i.pend { border: 1px dashed var(--ui-line2); color: var(--ui-tx3); }
+    .ui-rel .bd .c { color: var(--ui-tx3); }
+    .ui-rel .bd code { font-size: 11.5px; color: var(--ui-tx3); }
+    .ui-rel-detail { background: var(--ui-s1); border: 1px solid var(--ui-line); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .ui-rel-detail h2 { margin: 0; font-size: 22px; font-weight: 750; line-height: 1.25; outline: none; }
+    .ui-rel-back { display: none; align-self: flex-start; }
+    .ui-rel-hl { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+    .ui-rel-hl .card { padding: 12px 14px; border-radius: 12px; background: var(--ui-s2); border: 1px solid var(--ui-line); border-left: 3px solid var(--ui-pri-hi); }
+    .ui-rel-hl .card.fixes { border-left-color: var(--ui-ok); }
+    .ui-rel-hl .hh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+    .ui-rel-hl .hh b { font-size: 14px; }
+    .ui-rel-hl .hh i { font-style: normal; font-size: 11px; color: var(--ui-tx3); }
+    .ui-rel-hl .hh i.fb { color: #f3d79b; }
+    .ui-rel-hl p { margin: 6px 0 0; font-size: 13px; line-height: 1.45; color: var(--ui-tx2); }
+    .ui-rel-tk { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ui-rel-tk i { font-style: normal; font-size: 11.5px; padding: 2px 8px; border-radius: 8px; background: var(--ui-s3); color: var(--ui-tx2); }
+    .ui-rel-sec { border-top: 1px solid var(--ui-line); padding-top: 10px; }
+    .ui-rel-sec summary { cursor: pointer; font-size: 13px; font-weight: 650; color: var(--ui-tx2); }
+    .ui-rel-sec h5 { margin: 10px 0 4px; font-size: 12px; color: var(--ui-tx3); }
+    .ui-rel-sec ul { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ui-tx2); }
+    .ui-rel-sec li { margin: 2px 0; }
+    .ui-rel-sec .sha { margin-left: 6px; font-size: 11px; color: var(--ui-tx3); }
+    .ui-rel-sec dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; font-size: 12.5px; margin: 10px 0; }
+    .ui-rel-sec dt { color: var(--ui-tx3); } .ui-rel-sec dd { margin: 0; overflow-wrap: anywhere; }
     /* FUNK-85: languages and voices */
     .ui-vrow { display: flex; flex-direction: column; gap: 8px; padding: 12px 0 4px; border-top: 1px solid var(--ui-line); margin-top: 10px; }
     .ui-vrow-h { display: flex; align-items: center; gap: 10px; }
@@ -691,6 +730,9 @@
       .ui-tile .today { display: none; } .ui-st { padding: 0 5px; gap: 3px; }
       .ui-sum { margin-left: 0; width: 100%; }
       .ui-setgrid { grid-template-columns: minmax(0, 1fr); }
+      .ui-rel { grid-template-columns: minmax(0, 1fr); }
+      .ui-rel.has-sel .ui-rel-list { display: none; } .ui-rel:not(.has-sel) .ui-rel-detail { display: none; }
+      .ui-rel-back { display: inline-flex; } .ui-rel-list { max-height: none; }
       .ui-setcard { padding: 14px; } .ui-order { padding: 10px 8px; } .ui-order-row { gap: 6px; } .ui-order-row .ui-ibtn.sm { width: 30px; }
       .ui-fsearch { width: 100%; } .ui-fgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ui-farch-cols { grid-template-columns: 1fr; }
       .ui-fill { flex-wrap: wrap; align-items: flex-start; } .ui-fill > .ic, .ui-fill > .ui-ring { margin-top: 2px; }
@@ -1918,6 +1960,105 @@
       </div>
     </div>
 
+    <!-- ═══ VERSIONEN (FUNK-88): what each release made better; data: /api/releases (inspr.release-history.v1) ═══ -->
+    <div x-show="tab === 'releases'" x-cloak>
+      <div class="ui-bar">
+        <span class="ui-faint ui-sum" style="margin-left:0" x-text="relRunningLine()" :title="relRunningTitle()"></span>
+        <span class="ui-sp"></span>
+        <div class="ui-seg" role="group" aria-label="Sprache der Texte">
+          <button type="button" :class="rel.lang === 'de' && 'on'" :aria-pressed="rel.lang === 'de' ? 'true' : 'false'" @click="relSetLang('de')" lang="de">Deutsch</button>
+          <button type="button" :class="rel.lang === 'en' && 'on'" :aria-pressed="rel.lang === 'en' ? 'true' : 'false'" @click="relSetLang('en')" lang="en">English</button>
+        </div>
+      </div>
+      <div class="ui-relnew" role="status" title="In diesem Browser gemerkt" x-show="rel.fresh.length" x-text="rel.fresh.length === 1 ? '1 neue Version seit deinem letzten Besuch.' : rel.fresh.length + ' neue Versionen seit deinem letzten Besuch.'"></div>
+      <p class="ui-faint" role="status" x-show="rel.loading && !rel.data">Versionen werden geladen …</p>
+      <div class="ui-card" style="padding:16px" role="alert" x-show="rel.error && !rel.loading">
+        <b x-text="rel.error"></b> <button type="button" class="ui-btn sm ui-btn-line" style="margin-left:8px" @click="loadReleases()">Nochmal</button>
+      </div>
+      <p class="ui-faint" x-show="rel.data && !rel.data.releases.length">Diese Version enthält noch keinen Versionsverlauf.</p>
+      <div class="ui-rel" x-show="rel.data && rel.data.releases.length" :class="rel.sel && 'has-sel'">
+        <nav class="ui-rel-list" aria-label="Versionen">
+          <template x-for="day in relDays()" :key="day.key">
+            <section>
+              <h4 x-text="day.label"></h4>
+              <template x-for="r in day.items" :key="r.version">
+                <a class="ui-rel-row" :href="'#/releases/' + r.version" :aria-current="rel.sel === r.version ? 'true' : null"
+                   @click="if (!$event.metaKey && !$event.ctrlKey && !$event.shiftKey && $event.button === 0) { $event.preventDefault(); relSelect(r.version); }">
+                  <span class="t num" x-text="relTime(r)"></span>
+                  <span class="m">
+                    <b x-text="relHeadline(r)"></b>
+                    <span class="bd">
+                      <i class="run" x-show="r.version === rel.data.current">Läuft hier</i>
+                      <i class="new" x-show="rel.fresh.includes(r.version)">Neu</i>
+                      <i class="pend" x-show="!relPublished(r)">Noch nicht veröffentlicht</i>
+                      <span class="c" x-text="relCounts(r)"></span>
+                    </span>
+                  </span>
+                </a>
+              </template>
+            </section>
+          </template>
+        </nav>
+        <template x-if="relCur()">
+          <article class="ui-rel-detail" :aria-label="'Version ' + relCur().version">
+            <button type="button" class="ui-btn sm ui-btn-ghost ui-rel-back" @click="relSelect('')"><span x-html="ui.ic.chevD" style="transform:rotate(90deg)" aria-hidden="true"></span>Alle Versionen</button>
+            <p class="ui-faint" style="margin:0;font-size:12.5px" x-text="relDate(relCur())" :title="relCur().tagged_at || relCur().reserved_at"></p>
+            <h2 id="relHead" tabindex="-1" x-text="relHeadline(relCur())"></h2>
+            <div class="bd">
+              <i class="run" x-show="relCur().version === rel.data.current">Läuft hier</i>
+              <i class="new" x-show="rel.fresh.includes(relCur().version)">Neu seit deinem letzten Besuch</i>
+              <i class="pend" x-show="!relPublished(relCur())">Noch nicht veröffentlicht</i>
+              <code x-text="relCur().version"></code>
+              <button type="button" class="ui-btn xs ui-btn-ghost" @click="relCopy(relCur().version)" x-text="rel.copied === relCur().version ? 'Kopiert' : 'Kopieren'"></button>
+            </div>
+            <template x-if="relHighlights(relCur()).length">
+              <div class="ui-rel-hl">
+                <template x-for="h in relHighlights(relCur())" :key="h.key + h.pill">
+                  <div class="card" :class="h.group">
+                    <div class="hh"><b x-text="h.pill || h.key" :lang="h.pillLang"></b><i class="k" x-show="h.key" x-text="h.key"></i>
+                      <i class="fb" x-show="h.fallback" x-text="h.lang === 'en' ? 'nur auf Englisch' : 'nur auf Deutsch'"></i></div>
+                    <p x-text="h.benefit" :lang="h.benefitLang"></p>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <p class="ui-hint" x-show="relCur().notes.source === 'unavailable'">Aus der Zeit vor den Versionstexten: für diese Version wurden keine Texte für Eltern festgehalten. Die Überschrift stammt aus der Release-Markierung.</p>
+            <p class="ui-hint" x-show="relCur().notes.source !== 'unavailable' && !relHighlights(relCur()).length">Nur Wartung und Zuverlässigkeit.</p>
+            <div class="ui-rel-tk" x-show="relTickets(relCur()).length">
+              <template x-for="t in relTickets(relCur())" :key="t"><i x-text="t"></i></template>
+            </div>
+            <details class="ui-rel-sec" x-show="relCur().changes.length">
+              <summary x-text="'Änderungen im Code (' + relCur().changes.filter(c => c.type !== 'release').length + ')'"></summary>
+              <template x-for="g in relGroups(relCur())" :key="g.id">
+                <div>
+                  <h5 x-text="g.label + ' (' + g.items.length + ')'"></h5>
+                  <ul>
+                    <template x-for="c in g.items" :key="c.commit">
+                      <li><span x-text="relSubject(c)"></span>
+                        <a class="sha num" :href="'https://github.com/' + rel.data.repository + '/commit/' + c.commit" target="_blank" rel="noopener noreferrer" x-text="c.commit.slice(0, 7)"></a></li>
+                    </template>
+                  </ul>
+                </div>
+              </template>
+              <p class="ui-hint" x-show="relCur().changes_omitted" x-text="relCur().changes_omitted + ' weitere Änderungen sind nicht aufgeführt.'"></p>
+            </details>
+            <details class="ui-rel-sec">
+              <summary>Nachweise</summary>
+              <dl>
+                <dt>Quellcode</dt><dd><template x-if="relCur().evidence.source_url"><a :href="relCur().evidence.source_url" target="_blank" rel="noopener noreferrer" class="num" x-text="relCur().evidence.source_commit.slice(0, 12)"></a></template><span x-show="!relCur().evidence.source_url">nicht verfügbar</span></dd>
+                <dt>Markierung</dt><dd x-text="relCur().tag ? relCur().tag + (relCur().tagged_at ? ' · ' + relCur().tagged_at : '') : 'nicht verfügbar'"></dd>
+                <dt>Kanal</dt><dd x-text="relCur().release_channel + ' #' + relCur().release_sequence"></dd>
+                <dt>Versionstexte</dt><dd x-text="relCur().notes.source"></dd>
+                <dt>SHA-256</dt><dd class="num" x-text="relCur().notes.snapshot_sha256 || 'nicht verfügbar'"></dd>
+                <dt>Erfasst</dt><dd x-text="relCur().notes.captured_at || 'nicht erfasst'"></dd>
+              </dl>
+              <ul class="ui-hint"><template x-for="u in relCur().evidence.unavailable.concat(relCur().notes.gaps)" :key="u"><li x-text="u" lang="en"></li></template></ul>
+            </details>
+          </article>
+        </template>
+      </div>
+    </div>
+
     <!-- ═══ DATEIEN TAB (FUNK-78): every picture and sound, what uses it, what is left over ═══ -->
     <section x-show="tab === 'files'" x-cloak>
       <div class="ui-bar">
@@ -2173,6 +2314,7 @@
         <option value="pretty">Pretty</option>
         <option value="reduced">SemVer</option>
       </select>
+      <a href="#/releases" @click.prevent="go('releases')" style="color:inherit;text-decoration:underline;margin-left:4px">Versionen</a>
     </span>
     <span style="opacity:0.4">&bull;</span>
     <span x-show="appBuildTime" style="text-transform:uppercase; font-weight:600; font-size:9px; letter-spacing:0.1em">
@@ -2861,16 +3003,17 @@ const FK_UI = {
     eyeoff: FK_I('M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88'),
     pencil: FK_I('m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125'),
     more: FK_I('M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5'),
+    tag: FK_I('M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3ZM6 6h.008v.008H6V6Z'),
   },
   nav: [
     { g: 'Inhalte', items: [{ id: 'letters', label: 'Buchstaben', icon: 'grid' }, { id: 'numbers', label: 'Zahlen', icon: 'hash' }, { id: 'sets', label: 'Sets', icon: 'layers' }] },
     { g: 'Lernen', items: [{ id: 'quiz', label: 'Quiz', icon: 'quiz' }, { id: 'overview', label: 'Übersicht', icon: 'chart' }] },
-    { g: 'Gerät', items: [{ id: 'test', label: 'Tastatur', icon: 'keyboard' }, { id: 'settings', label: 'Einstellungen', icon: 'cog' }] },
+    { g: 'Gerät', items: [{ id: 'test', label: 'Tastatur', icon: 'keyboard' }, { id: 'settings', label: 'Einstellungen', icon: 'cog' }, { id: 'releases', label: 'Versionen', icon: 'tag' }] },
     { g: 'Medien & KI', items: [{ id: 'files', label: 'Dateien', icon: 'folder' }, { id: 'ailog', label: 'KI & Dienste', icon: 'bolt' }] },
   ],
   bnav: [{ id: 'letters', label: 'Buchstaben', icon: 'grid' }, { id: 'numbers', label: 'Zahlen', icon: 'hash' },
          { id: 'overview', label: 'Übersicht', icon: 'chart' }, { id: 'ailog', label: 'KI', icon: 'bolt' }, { id: 'more', label: 'Mehr', icon: 'more' }],
-  moreIds: ['sets', 'quiz', 'test', 'settings', 'files'],
+  moreIds: ['sets', 'quiz', 'test', 'settings', 'files', 'releases'],
   letterFilters: [{ id: 'all', label: 'Alle' }, { id: 'gaps', label: 'Mit Lücken' }, { id: 'played', label: 'Heute gespielt' }],
   letterFilter: 'all', acOpen: false, moreOpen: false, livePing: false,
 };
@@ -2913,6 +3056,7 @@ function funkeykid() {
     aiLogEntries: [],
     fill: null, _fillSeq: 0, fillAsk: false, fillBusy: false, fillHidden: '',   // FUNK-75; fillAsk: false | 'missing' | 'redo' (FUNK-87)
     outdated: null, _outdatedSeq: 0, _fillSamplePlayed: '', _fillStartedHere: '', // FUNK-87
+    rel: { loading: false, error: '', data: null, sel: '', lang: 'de', fresh: [], copied: '', seq: 0 },  // FUNK-88
     files: { kind: 'sounds', use: 'all', q: '', limit: 200, usage: null, archiveOpen: false, archive: null, confirm: '' },   // FUNK-78
     _fileUsageSeq: 0,
     dlg: null, _dlgReturn: null,   // FUNK-80
@@ -3701,6 +3845,11 @@ function funkeykid() {
       if (t === 'files') { this.loadFileUsage(); this._refreshLists(); }
       if (t === 'settings') this.loadVoiceLangs();          // FUNK-85: fresh, and a failed first load recovers
       if (t === 'letters') { this.loadOutdated(); this.loadVoiceLangs(); }   // FUNK-87: "Stimmen neu erzeugen" count
+      if (t === 'releases') {                               // FUNK-88: the list route, then the running release on desktop
+        if (!(location.hash || '').startsWith('#/releases')) history.replaceState(null, '', location.pathname + location.search + '#/releases');
+        this.loadReleases();
+      }
+      else if ((location.hash || '').startsWith('#/releases')) history.replaceState(null, '', location.pathname + location.search);
       window.scrollTo({ top: 0 });
     },
     pageMeta() {
@@ -3716,6 +3865,7 @@ function funkeykid() {
         settings: ['Einstellungen', 'Gerät, Ton und Anzeige'],
         files: ['Dateien', 'Alle Bilder und Töne'],
         ailog: ['KI & Dienste', 'ElevenLabs, OpenRouter und alle KI-Aufträge'],
+        releases: ['Versionen', 'Was jede Version für euch besser macht'],
       };
       const [title, sub] = pages[this.tab] || pages.letters;
       return { title, sub };
@@ -4905,6 +5055,136 @@ function funkeykid() {
     },
     wave(f) { const w = this.waves[f]; return w && w.length ? w : this._flat; },
     dur(f) { const d = this.durs[f]; return d ? d.toFixed(1).replace('.', ',') + ' s' : ''; },
+    // ══ Versionen (FUNK-88): the committed release history (inspr.release-history.v1), read-only ══
+    _relStore(k, v) {                         // localStorage can be off (private mode): never an error
+      try { if (v === undefined) return localStorage.getItem('funkeykid.releases.' + k); localStorage.setItem('funkeykid.releases.' + k, v); } catch { return null; }
+      return null;
+    },
+    _relValid(v) { return typeof v === 'string' && /^[1-9]\d(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])([01]\d|2[0-3])[0-5]\d[0-5]\d\.0\.0$/.test(v); },
+    async loadReleases() {
+      const seq = ++this.rel.seq;
+      this.rel.loading = true; this.rel.error = '';
+      this.rel.lang = this._relStore('language') === 'en' ? 'en' : 'de';
+      let d;
+      const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 10000);   // headers and body
+      try {
+        const res = await fetch('/api/releases', { cache: 'no-store', signal: ctl.signal });
+        d = await res.json();
+        if (!res.ok || d.schema !== 'inspr.release-history.v1' || !Array.isArray(d.releases)) throw new Error('bad');
+      } catch (err) {
+        if (seq !== this.rel.seq) return;
+        this.rel.loading = false;
+        this.rel.error = err && err.name === 'AbortError' ? 'Der Versionsverlauf antwortet nicht.' : 'Der Versionsverlauf konnte nicht geladen werden.';
+        return;
+      } finally { clearTimeout(timer); }
+      if (seq !== this.rel.seq) return;
+      // "new since your last visit": the newest release this build has proven (published, or not newer than the
+      // running one) is remembered; a rollback never lowers it, and a first visit shows nothing as new
+      const eligible = d.releases.filter(r => this.relPublished(r, d)).map(r => r.version);
+      const prev = this._relStore('lastSeen'), prevOk = this._relValid(prev) ? prev : null;
+      const newest = eligible.reduce((m, v) => (v > m ? v : m), '');
+      if (newest && (!prevOk || newest > prevOk)) this._relStore('lastSeen', newest);
+      this.rel.fresh = prevOk ? eligible.filter(v => v > prevOk) : [];
+      this.rel.data = d;
+      this.rel.loading = false;
+      this._relFromHash();
+    },
+    _relFromHash() {
+      const m = /^#\/releases(?:\/(.*))?$/.exec(location.hash || '');
+      if (!m) return;
+      const v = (m[1] || '').replace(/^v/, '');
+      if (v && (!this._relValid(v) || (this.rel.data && !this.rel.data.releases.some(r => r.version === v)))) {
+        this.rel.sel = ''; this.showToast('Diese Version ist nicht im Verlauf dieser Version.'); return;   // never the previous one
+      }
+      this.rel.sel = v || (this.window_wide() && this.rel.data ? (this.rel.data.current && this.rel.data.releases.some(r => r.version === this.rel.data.current) ? this.rel.data.current : (this.rel.data.releases[0] || {}).version || '') : '');
+    },
+    window_wide() { return window.matchMedia('(min-width: 900px)').matches; },
+    relSelect(v) {
+      this.rel.sel = v;
+      history.replaceState(null, '', location.pathname + location.search + (v ? '#/releases/' + v : '#/releases'));
+      if (v) this.$nextTick(() => { const h = document.getElementById('relHead'); if (h) h.focus({ preventScroll: !this.window_wide() ? false : true }); });
+    },
+    relSetLang(l) { this.rel.lang = l === 'en' ? 'en' : 'de'; this._relStore('language', this.rel.lang); },
+    relCur() { const d = this.rel.data; return (d && this.rel.sel && d.releases.find(r => r.version === this.rel.sel)) || null; },
+    relPublished(r, d) {
+      d = d || this.rel.data;
+      return r.state === 'published' || (!!d && this._relValid(d.current) && this._relValid(r.version) && r.version <= d.current);
+    },
+    relWhen(r) { return r.published_at || r.tagged_at || r.reserved_at || ''; },
+    relHeadline(r) {
+      const items = (r.notes && r.notes.items) || [];
+      const pills = items.map(it => (this.rel.lang === 'en' ? (it.pill_en || it.pill_de) : (it.pill_de || it.pill_en)) || '').filter(Boolean);
+      if (pills.length) return pills.slice(0, 3).join(' · ') + (pills.length > 3 ? ` · +${pills.length - 3}` : '');
+      return (r.presentation && r.presentation.headline) || r.headline || r.version;
+    },
+    relHighlights(r) {
+      const out = [], order = { features: 0, fixes: 1, other: 2 };
+      for (const it of (r.notes && r.notes.items) || []) {
+        const want = this.rel.lang, other = want === 'en' ? 'de' : 'en';
+        const pick = (f) => (it[f + '_' + want] ? [it[f + '_' + want], want] : it[f + '_' + other] ? [it[f + '_' + other], other] : ['', want]);
+        const [pill, pillLang] = pick('pill'), [benefit, benefitLang] = pick('benefit');
+        if (!benefit) continue;
+        out.push({ key: it.key || '', group: it.group || 'other', pill, pillLang, benefit, benefitLang,
+                   fallback: (pill && pillLang !== want) || benefitLang !== want, lang: benefitLang !== want ? benefitLang : pillLang });
+      }
+      return out.sort((a, b) => order[a.group] - order[b.group]);
+    },
+    relTickets(r) {
+      const set = new Set(r.tickets || []);
+      for (const c of r.changes || []) for (const t of c.tickets || []) set.add(t);
+      return [...set].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+    },
+    relGroupOf(c) { return c.group || (c.type === 'feat' ? 'features' : c.type === 'fix' ? 'fixes' : 'other'); },
+    relGroups(r) {
+      const g = { features: [], fixes: [], other: [] };
+      for (const c of r.changes || []) if (c.type !== 'release') g[this.relGroupOf(c)].push(c);
+      return [{ id: 'features', label: 'Neu' }, { id: 'fixes', label: 'Behoben' }, { id: 'other', label: 'Sonstiges' }]
+        .map(x => ({ ...x, items: g[x.id] })).filter(x => x.items.length);
+    },
+    relCounts(r) {
+      const n = { features: 0, fixes: 0 };
+      for (const it of (r.notes && r.notes.items) || []) if (n[it.group] !== undefined) n[it.group]++;
+      if (!n.features && !n.fixes) for (const c of r.changes || []) { const gg = this.relGroupOf(c); if (c.type !== 'release' && n[gg] !== undefined) n[gg]++; }
+      const parts = [];
+      if (n.features) parts.push(n.features === 1 ? '1 Neuerung' : n.features + ' Neuerungen');
+      if (n.fixes) parts.push(n.fixes === 1 ? '1 Behebung' : n.fixes + ' Behebungen');
+      return parts.join(' · ');
+    },
+    relSubject(c) { return (c.subject || '').replace(/^[a-z]+(\([^)]*\))?!?:\s*/, ''); },
+    _relDate(s) { const d = new Date(s); return isNaN(d) ? null : d; },
+    relTime(r) { const d = this._relDate(this.relWhen(r)); return d ? d.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }) : ''; },
+    relDate(r) {
+      const d = this._relDate(this.relWhen(r));
+      return d ? d.toLocaleDateString('de-AT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + ', ' + this.relTime(r) : 'Datum unbekannt';
+    },
+    relDays() {
+      const d = this.rel.data;
+      if (!d) return [];
+      const days = [];
+      for (const r of d.releases) {
+        const dt = this._relDate(this.relWhen(r));
+        const key = dt ? dt.toLocaleDateString('sv-SE') : 'unknown';
+        let day = days.find(x => x.key === key);
+        if (!day) days.push(day = { key, label: dt ? dt.toLocaleDateString('de-AT', { weekday: 'long', day: 'numeric', month: 'long' }) : 'Datum unbekannt', items: [] });
+        day.items.push(r);
+      }
+      return days;
+    },
+    relRunningLine() {
+      const d = this.rel.data;
+      if (!d) return '';
+      const r = d.releases.find(x => x.version === d.current);
+      const since = this._relDate(d.live_since);
+      return 'Läuft hier: ' + (r ? this.relHeadline(r) : d.current) + (since ? ' · seit ' + since.toLocaleString('de-AT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+    },
+    relRunningTitle() {
+      const d = this.rel.data, r = d && d.releases.find(x => x.version === d.current);
+      return r ? `${r.version} · ${r.release_channel} · #${r.release_sequence}` : '';
+    },
+    async relCopy(v) {
+      try { await navigator.clipboard.writeText(v); this.rel.copied = v; setTimeout(() => { if (this.rel.copied === v) this.rel.copied = ''; }, 1500); }
+      catch { this.showToast('Kopieren ging nicht: ' + v); }
+    },
     // ══ Languages and voices (FUNK-85) ══
     loadVoiceLangs() { return this._voiceSerial(() => this._loadVoiceLangsNow()); },   // never overtakes a save
     voiceMark() { return this._voiceFails; },   // taken at the click: a voice save failing after it cancels that action
@@ -5292,6 +5572,10 @@ function funkeykid() {
       this.loadDiagnostics();  // fills the keyboard picker in Settings
       this.loadVoiceLangs();   // FUNK-85
       this.loadOutdated();     // FUNK-87
+      // FUNK-88: #/releases[/<version>] opens the Versionen page (links can be shared and bookmarked)
+      const relHash = () => { if ((location.hash || '').startsWith('#/releases')) { if (this.tab !== 'releases') this.go('releases'); else this._relFromHash(); } };
+      window.addEventListener('hashchange', relHash);
+      relHash();
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
       setInterval(() => this.pollStatus(), 10000);
       // Update "ago" text every second

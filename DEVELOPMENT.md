@@ -570,6 +570,21 @@ The Dateien tab shows these uses as chips. A click opens the word or digit in th
 
 Only unused files offer "Archivieren", with a two-step confirm. `POST /api/archive` refuses a name that `_referenced_names()` still finds anywhere in the sets or key maps: 409, naming the first uses. So an entry, digit or key can no longer end up pointing at a missing file. The entry editor's own archive (FUNK-72) is unchanged: it archives only files nothing else uses.
 
+### Versionen: release history (FUNK-88)
+
+- **Module:** `releasehistory.py` ports hausnetz's `internal/releasehistory` at tag `v261128145301.0.0` (itself a port of Aeon `afb08c06`; UI after Hausvogt `4c23de53`). The schema is `inspr.release-history.v1`, written like Go's `encoding/json`, so the files are byte-compatible with the other INSPR products.
+- **Building the history** (`build`): annotated `v<version>` tags (funkeykid's earlier `"<v> (stable #N): …"` messages and the INSPR `"funkeykid v<v> · <scheme> · <channel> · release_sequence <n> · <headline>"` both parse), `version.json` at each tag, the first-parent `version.json` history for source commits, and the commits between releases.
+  - Commits are classified by their conventional prefix and grouped as features, fixes or other; a ticket's frozen group decides for unprefixed commits.
+  - At most 300 commits per release.
+- **Frozen notes:** `freeze` (at reservation) and `notes_from_snapshot` (strict reading) handle `release-notes/<v>.json`. Releases after `LAST_UNCAPTURED` (`261128154900.0.0`) must have one.
+- **Checks:** `validate` (schema) and `validate_sources` (offline: matches `version.json` and every capture; a test runs it on the committed files).
+- **API:** `GET /api/releases` (the history plus `current` and `live_since` = process start), `/api/releases/pending`, `/api/releases/{version}`. Responses are Go-style JSON, `Cache-Control: no-store`, and `503` if the file is missing or invalid.
+- **Page:** Versionen is in the navigation and the footer, with hash links `#/releases/<version>`.
+  - Releases are grouped by day, with the badges "Läuft hier", "Neu" and "Noch nicht veröffentlicht".
+  - The detail shows highlights from the frozen pills and benefits in DE or EN (falling back to the other language, marked), tickets, code changes by group, and evidence.
+  - "Neu seit deinem letzten Besuch" is kept in `localStorage` (`funkeykid.releases.lastSeen`, never lowered by a rollback; nothing on the first visit).
+  - Compare and weekly views from hausnetz are not ported yet.
+
 ### Redo old voices; a new voice starts with one word (FUNK-87)
 
 - **Modes:** a fill run has `mode`: `missing` (FUNK-75) or `redo`. `_fill_items(set, kind, mode)` covers the words by letter, then the digits.
@@ -981,6 +996,7 @@ Each entry carries a `tracks` dict keyed by kind. Kinds are defined in
 - `GET /api/voices/meta` — which voice, model and language made each generated file.
 - `POST /api/sets/{id}/fill-voices` `{kind, mode: missing|redo}`; `POST /api/fill/continue` `{run_id, job_id}` (`job_id` = `run.sample.job_id`) — first word approved, the run goes on (FUNK-87).
 - `POST /api/voice-languages/{code}/approve` `{voice_id, model}`; `GET /api/voices/outdated?set_id=` — redo count.
+- `GET /api/releases` · `/api/releases/pending` · `/api/releases/{version}` — the release history (FUNK-88), read-only.
 - `GET /api/sets/:id/letters/:L` — always returns normalized entries; additionally synthesizes a legacy `sound` alias from the first track with a file for back-compat.
 - `PUT /api/sets/:id/letters/:L` — accepts either legacy or new shape; always persists new shape.
 - `PUT /api/sets/:id` — accepts `track_order`.

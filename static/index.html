@@ -382,6 +382,25 @@
     .ui-saved svg.ui-i { color: var(--ui-ok); width: 16px; height: 16px; }
     .ui-saved.err { color: #ff9aa4; } .ui-saved.err svg.ui-i { color: var(--ui-err); }
     .ui-ed-b { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 0; }
+    .ui-ed.num .ui-ed-b { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }   /* FUNK-76: a digit has no word list */
+    .ui-bgs-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+    .ui-bgs-h h4 { margin: 0; font-size: 15px; font-weight: 700; }
+    .ui-bgs-note { font-size: 12.5px; margin: 0 0 12px; }
+    .ui-bggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+    .ui-bg { position: relative; aspect-ratio: 1; border-radius: 14px; overflow: hidden; background: var(--ui-s3); border: 1px solid var(--ui-line); }
+    .ui-bg img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity .2s, filter .2s; }
+    .ui-bg.off img { opacity: .35; filter: grayscale(.8); }
+    .ui-bg .dg { position: absolute; left: 8px; top: 4px; font-family: var(--ui-round); font-weight: 900; font-size: 26px; text-shadow: 0 2px 6px rgba(0,0,0,.55); pointer-events: none; }
+    .ui-bg .bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 5px 6px;
+      background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+    .ui-bg .bar .ui-ibtn { width: 28px; height: 28px; color: #fff; background: rgba(0,0,0,.35); }
+    .ui-bg.add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border: 1.5px dashed var(--ui-pri-line); background: var(--ui-pri-soft);
+      color: #d4ceff; font-size: 12.5px; font-weight: 650; cursor: pointer; }
+    .ui-bg.add:hover { background: rgba(139,125,255,.24); }
+    .ui-bg.add[disabled] { opacity: .45; cursor: not-allowed; }
+    .ui-bg.run .ui-genov { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: var(--ui-tx2); text-align: center; padding: 6px; }
+    .ui-bg.cand { border-color: var(--ui-pri-line); }
+    .ui-bg.cand .bar { justify-content: flex-end; }
     .ui-words { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ui-line); background: rgba(0,0,0,.12); }
     .ui-words-h { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 8px; }
     .ui-words-h h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--ui-tx3); font-weight: 700; }
@@ -804,180 +823,39 @@
       </div>
     </section>
 
-    <!-- ═══ NUMBERS TAB ═══ -->
-    <div x-show="tab === 'numbers'" x-cloak>
-      <div class="text-xs opacity-50 mb-3">
-        Ziffer gedrückt → TTS spricht das Wort, Ziffer + Hintergrundbild erscheinen.
-        Mehrfaches Drücken wechselt das Hintergrundbild. <span class="opacity-60">(Shift + Ziffer = Favorit)</span>
+    <!-- ═══ ZAHLEN TAB (FUNK-76): the same tiles as Buchstaben; a click opens the same editor ═══ -->
+    <section x-show="tab === 'numbers'" x-cloak>
+      <div class="ui-bar">
+        <span class="ui-muted" style="font-size:13px">Ziffer drücken: dein Kind hört das Wort und sieht die Ziffer auf einem Hintergrund. Nochmal drücken wechselt den Hintergrund. <span class="ui-faint">Shift + Ziffer = Favorit</span></span>
+        <span class="ui-faint ui-sum" x-text="numberSummary()"></span>
       </div>
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-        <template x-for="digit in ['0','1','2','3','4','5','6','7','8','9']" :key="digit">
-          <div class="card bg-base-100 shadow letter-card" @click="editNumber(digit)"
-               :style="progTint(digit)" :title="progTitle(digit)">
-            <div class="card-body p-3">
-              <div class="flex items-start gap-2">
-                <span class="text-3xl font-black" x-text="digit"
-                      :style="'color:' + randomColor(digit)"></span>
-                <img :src="firstNumberBg(digit) ? '/images/' + firstNumberBg(digit) : ''"
-                     class="img-preview ml-auto" loading="lazy"
-                     x-show="firstNumberBg(digit)">
-              </div>
-              <div class="text-sm opacity-70 mt-1" x-text="getNumber(digit)?.word || '—'"></div>
-              <div class="text-xs opacity-60 mt-1" x-show="prog.letters[digit]" x-text="progLine(digit)"></div>
-              <div class="flex items-center justify-between mt-1">
-                <div class="text-xs opacity-40"
-                     x-text="(getNumber(digit)?.backgrounds || []).filter(b=>b.enabled).length + '/' + (getNumber(digit)?.backgrounds || []).length + ' Bg'"></div>
-                <div class="fk-dot-row" :title="numberTrackPresenceTooltip(digit)">
-                  <template x-for="k in trackKinds" :key="k">
-                    <span class="fk-dot" :class="numberHasTrack(digit, k) ? k.toLowerCase() : 'off'"></span>
-                  </template>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
-
-      <!-- Edit Number Modal -->
-      <dialog class="modal" :class="editingNumber !== null && 'modal-open'">
-        <div class="modal-box fk-modal-md" x-show="editingNumber !== null">
-
-          <!-- Top bar -->
-          <div class="flex items-center gap-3 px-5 py-3 border-b border-base-content/5 flex-shrink-0">
-            <h3 class="font-bold text-lg flex-1">Ziffer bearbeiten</h3>
-            <kbd class="kbd kbd-sm opacity-60 fk-wide-only">Esc</kbd>
-            <button class="btn btn-sm btn-circle btn-ghost" @click="editingNumber=null" title="Schließen">
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
-            </button>
-          </div>
-
-          <div class="flex-1 overflow-y-auto px-6 py-5 space-y-5 min-w-0">
-
-            <!-- Hero row -->
-            <div class="flex items-center gap-5">
-              <span class="select-none fk-rail-glyph text-primary" x-text="editingNumber"></span>
-              <div class="flex-1 min-w-0 space-y-2">
-                <div>
-                  <label class="text-xs opacity-50">Gesprochenes Wort (TTS)</label>
-                  <input type="text" class="input input-sm input-bordered w-full font-semibold"
-                         x-model="editNumberData.word" placeholder="z.B. Drei Enten">
-                </div>
-                <div>
-                  <label class="text-xs opacity-50">Bild-Motiv (Englisch, für KI)</label>
-                  <input type="text" class="input input-sm input-bordered w-full"
-                         x-model="editNumberData.image_subject" placeholder="z.B. three ducks">
-                </div>
-              </div>
-            </div>
-
-            <!-- Tonspuren -->
-            <div class="space-y-2">
-              <div class="text-xs opacity-50">Tonspuren</div>
-              <template x-for="cfg in orderedTrackKinds()" :key="cfg.kind">
-                <div class="fk-track"
-                     :class="!(editNumberData.tracks[cfg.kind] && editNumberData.tracks[cfg.kind].enabled) && 'is-muted'">
-                  <div class="fk-track-head">
-                    <span class="fk-kind-badge" :class="cfg.kind.toLowerCase()" x-text="cfg.kind"></span>
-                    <span class="opacity-70" x-text="kindLabel(cfg.kind)"></span>
-                    <span class="ml-auto text-2xs opacity-50 truncate max-w-xs"
-                          x-show="editNumberData.tracks[cfg.kind] && editNumberData.tracks[cfg.kind].file"
-                          x-text="editNumberData.tracks[cfg.kind].file"></span>
-                    <span class="text-2xs opacity-40"
-                          x-show="!(editNumberData.tracks[cfg.kind] && editNumberData.tracks[cfg.kind].file)">nicht gesetzt</span>
-                    <input type="checkbox" class="toggle toggle-xs toggle-success ml-2"
-                           x-model="editNumberData.tracks[cfg.kind].enabled"
-                           title="Diese Tonspur abspielen">
-                  </div>
-                  <div class="flex items-stretch gap-2 min-w-0">
-                    <div class="fk-track-icon-sm" :class="editNumberData.tracks[cfg.kind].file && 'has-file'">
-                      <svg x-show="cfg.kind === 'FX'" fill="none" viewBox="0 0 24 24" stroke-width="1.3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.114 5.636a9 9 0 0 1 0 12.728M16.463 8.288a5.25 5.25 0 0 1 0 7.424M6.75 8.25 11.25 4.5v15L6.75 15.75H3.75a.75.75 0 0 1-.75-.75V9a.75.75 0 0 1 .75-.75h3Z"/></svg>
-                      <svg x-show="cfg.kind === 'DE' || cfg.kind === 'EN'" fill="none" viewBox="0 0 24 24" stroke-width="1.3" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.34 15.84c-.688-.06-1.386-.09-2.09-.09H7.5a4.5 4.5 0 1 1 0-9h.75c.704 0 1.402-.03 2.09-.09m0 9.18c.253.962.584 1.892.985 2.783.247.55.06 1.21-.463 1.511l-.657.38c-.551.318-1.26.117-1.527-.461a20.845 20.845 0 0 1-1.44-4.282m3.102.069a18.03 18.03 0 0 1-.59-4.59c0-1.586.205-3.124.59-4.59m0 9.18a23.848 23.848 0 0 1 8.835 2.535M10.34 6.66a23.847 23.847 0 0 0 8.835-2.535m0 0A23.74 23.74 0 0 0 18.795 3m.38 1.125a23.91 23.91 0 0 1 1.014 5.395m-1.014 8.855c-.118.38-.245.754-.38 1.125m.38-1.125a23.91 23.91 0 0 0 1.014-5.395m0-3.46c.495.413.811 1.035.811 1.73 0 .695-.316 1.317-.811 1.73m0-3.46a24.347 24.347 0 0 1 0 3.46"/></svg>
-                    </div>
-                    <div class="flex-1 min-w-0 flex flex-col gap-1.5">
-                      <select class="select select-sm select-bordered w-full text-xs"
-                              x-model="editNumberData.tracks[cfg.kind].file"
-                              x-init="$nextTick(() => { $el.value = (editNumberData.tracks[cfg.kind]&&editNumberData.tracks[cfg.kind].file) || ''; })">
-                        <option value="">— Datei wählen —</option>
-                        <template x-for="s in sounds" :key="s">
-                          <option :value="s"
-                                  :selected="editNumberData.tracks[cfg.kind] && s === editNumberData.tracks[cfg.kind].file"
-                                  x-text="s"></option>
-                        </template>
-                      </select>
-                      <input type="text" class="input input-xs input-bordered w-full"
-                             x-model="editNumberData.tracks[cfg.kind].prompt"
-                             :placeholder="kindPromptPlaceholder(cfg.kind)">
-                      <div class="flex items-center gap-2 text-2xs">
-                        <span class="opacity-50 w-10 flex-shrink-0">Laut.</span>
-                        <input type="range" min="0" max="200" step="5"
-                               class="range range-xs flex-1"
-                               x-model.number="editNumberData.tracks[cfg.kind].volume"
-                               :disabled="!editNumberData.tracks[cfg.kind].file">
-                        <span class="font-mono opacity-60 w-10 text-right"
-                              x-text="(editNumberData.tracks[cfg.kind].volume || 100) + '%'"></span>
-                      </div>
-                      <div class="flex gap-1.5">
-                        <button class="btn btn-xs btn-ghost gap-1 flex-1"
-                                @click="previewSound(editNumberData.tracks[cfg.kind].file, editNumberData.tracks[cfg.kind].volume)"
-                                :disabled="!editNumberData.tracks[cfg.kind].file">
-                          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/></svg>
-                          Abspielen
-                        </button>
-                        <button class="btn btn-xs btn-primary gap-1 flex-1"
-                                @click="generateTrack(editNumberData, null, cfg.kind, String(editingNumber))"
-                                :disabled="!editNumberData.word">
-                          <span x-show="editNumberData.tracks[cfg.kind]._generating" class="loading loading-spinner loading-xs"></span>
-                          <svg x-show="!editNumberData.tracks[cfg.kind]._generating" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
-                          <span x-text="editNumberData.tracks[cfg.kind].file ? 'Neu' : 'Generieren'"></span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+      <div class="ui-grid">
+        <template x-for="digit in numberKeys" :key="digit">
+          <button type="button" class="ui-tile" :class="!getNumber(digit)?.word && 'empty'" @click="openEditor(digit)"
+                  :aria-label="'Zahl ' + digit + ' bearbeiten'" :style="progTint(digit)" :title="progTitle(digit)">
+            <span class="ui-learned" x-show="progLearned(digit)">gelernt</span>
+            <div class="ui-tile-top">
+              <span class="ui-glyph" :style="'color:' + randomColor(digit)" x-text="digit"></span>
+              <template x-if="firstNumberBg(digit)">
+                <img class="ui-tile-img" :src="thumb(firstNumberBg(digit), 160)" alt="" loading="lazy">
               </template>
             </div>
-
-            <!-- Backgrounds -->
-            <div>
-              <div class="flex items-baseline justify-between mb-1.5">
-                <span class="text-xs opacity-50">Hintergrundbilder</span>
-                <span class="text-2xs opacity-40">Klicken = aktivieren/deaktivieren · Mehrfachdrücken wechselt</span>
-              </div>
-              <div class="flex flex-wrap gap-3">
-                <template x-for="(bg, bi) in editNumberData.backgrounds" :key="bi">
-                  <div class="relative group">
-                    <img :src="'/images/' + bg.image + '?v=' + (bg._v||0)"
-                         class="w-24 h-24 rounded-lg bg-base-300 border-2 cursor-pointer transition"
-                         :class="bg.enabled ? 'border-success' : 'border-base-300 opacity-40 hover:opacity-70'"
-                         style="image-rendering:pixelated"
-                         @click="bg.enabled = !bg.enabled">
-                    <button class="absolute -top-2 -right-2 btn btn-xs btn-circle btn-error shadow-lg opacity-0 group-hover:opacity-100 transition"
-                            @click="editNumberData.backgrounds.splice(bi,1)" title="Löschen">×</button>
-                  </div>
-                </template>
-                <button class="w-24 h-24 rounded-lg bg-base-200 border-2 border-dashed border-base-content/20 hover:border-primary hover:bg-base-300 text-xs opacity-70 hover:opacity-100 flex flex-col items-center justify-center gap-1 transition"
-                        @click="generateNumberBg()" :disabled="!editNumberData.image_subject">
-                  <span x-show="_genBg" class="loading loading-spinner loading-sm"></span>
-                  <template x-if="!_genBg">
-                    <div class="flex flex-col items-center gap-1">
-                      <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/></svg>
-                      <span>KI-Bg</span>
-                    </div>
-                  </template>
-                </button>
-              </div>
+            <div class="ui-tile-words" x-text="getNumber(digit)?.word || 'Noch kein Wort'"></div>
+            <div class="ui-tile-meta">
+              <span class="ui-st" :class="!numberBgOn(digit) && 'gap'" :title="numberBgOn(digit) + ' von ' + numberBgs(digit).length + ' Hintergründen aktiv'">
+                <span x-html="ui.ic.photo" aria-hidden="true"></span><span class="num" x-text="numberBgOn(digit) + '/' + numberBgs(digit).length"></span>
+              </span>
+              <template x-for="k in setKinds()" :key="k">
+                <span class="ui-st" :class="!numberHasTrack(digit, k) && 'gap'" :title="kindName(k) + (numberHasTrack(digit, k) ? ': vorhanden' : ': fehlt')">
+                  <span x-html="kindIcon(k)" aria-hidden="true"></span><span class="num" x-text="numberHasTrack(digit, k) ? '1/1' : '0/1'"></span>
+                </span>
+              </template>
+              <span class="today num" x-show="prog.letters[digit]?.today?.presses" x-text="(prog.letters[digit]?.today?.presses || 0) + '× heute'"></span>
             </div>
-          </div>
-
-          <!-- Footer -->
-          <div class="px-5 py-3 border-t border-base-content/5 flex gap-2 justify-end flex-shrink-0">
-            <button class="btn btn-sm btn-ghost" @click="editingNumber=null">Abbrechen</button>
-            <button class="btn btn-sm btn-primary" @click="saveNumber()">Speichern</button>
-          </div>
-        </div>
-        <form method="dialog" class="modal-backdrop" @click="editingNumber=null"></form>
-      </dialog>
-    </div>
+          </button>
+        </template>
+      </div>
+    </section>
 
     <!-- ═══ QUIZ TAB (FUNK-39) ═══ -->
     <div x-show="tab === 'quiz'" x-cloak>
@@ -2299,19 +2177,19 @@
   <!-- ═══ Entry editor (FUNK-72): word list + one word in focus; saves by itself; a generated file
        goes on its slot only when it exists, and replacing something is a choice (current vs new) ═══ -->
   <div class="ui-scrim" x-show="ed" x-cloak x-transition.opacity @mousedown.self="closeEditor()">
-    <div class="ui-ed" role="dialog" aria-modal="true" aria-labelledby="edTitle" x-show="ed">
+    <div class="ui-ed" :class="edNum() && 'num'" role="dialog" aria-modal="true" aria-labelledby="edTitle" x-show="ed">
       <template x-if="ed">
         <div style="display:contents">
           <header class="ui-ed-h">
             <div class="ui-ed-glyph" :style="'color:' + randomColor(ed.L)" x-text="ed.L"></div>
             <div class="ui-ed-title">
-              <h2 id="edTitle" x-text="'Buchstabe ' + ed.L"></h2>
+              <h2 id="edTitle" x-text="(edNum() ? 'Zahl ' : 'Buchstabe ') + ed.L"></h2>
               <p x-text="edSummary()"></p>
             </div>
-            <nav class="ui-strip" aria-label="Buchstabe wechseln (Shift + Pfeil links/rechts)">
-              <template x-for="l in letterAlphabet()" :key="l">
-                <button type="button" :class="ed.L === l && 'on'" @click="edSwitch(l)" :aria-label="'Buchstabe ' + l" :aria-current="ed.L === l ? 'true' : null">
-                  <span x-text="l"></span><i :class="!getEntries(l).length ? 'none' : letterHasGap(l) ? 'gap' : ''"></i>
+            <nav class="ui-strip" :aria-label="(edNum() ? 'Zahl' : 'Buchstabe') + ' wechseln (Shift + Pfeil links/rechts)'">
+              <template x-for="l in edStripKeys()" :key="l">
+                <button type="button" :class="ed.L === l && 'on'" @click="edSwitch(l)" :aria-label="(edNum() ? 'Zahl ' : 'Buchstabe ') + l" :aria-current="ed.L === l ? 'true' : null">
+                  <span x-text="l"></span><i :class="edStripMark(l)"></i>
                 </button>
               </template>
             </nav>
@@ -2327,7 +2205,7 @@
 
           <div class="ui-ed-b">
             <!-- word list -->
-            <aside class="ui-words" aria-label="Wörter">
+            <aside class="ui-words" aria-label="Wörter" x-show="!edNum()">
               <div class="ui-words-h"><h3 x-text="ed.entries.length === 1 ? '1 Wort' : ed.entries.length + ' Wörter'"></h3><span class="ui-faint" style="font-size:11.5px">↑ ↓ wechseln</span></div>
               <div class="ui-gapcall" x-show="edMissingVoices().length">
                 <span x-html="ui.ic.voice" aria-hidden="true"></span>
@@ -2428,9 +2306,9 @@
                         <label class="ui-sr" for="edWord">Wort</label>
                         <input id="edWord" class="ui-wordinp" x-model="e.word" @input="edText(e, 'word')" @change="edText(e, 'word', true)" maxlength="60"
                                :style="'color:' + (e.enabled ? 'var(--ui-tx)' : 'var(--ui-tx3)')">
-                        <label class="ui-switch"><input type="checkbox" role="switch" :checked="e.enabled"
+                        <label class="ui-switch" x-show="!edNum()"><input type="checkbox" role="switch" :checked="e.enabled"
                                @change="edSet(e, { enabled: $event.target.checked }, $event.target.checked ? '„' + e.word + '“ ist wieder an' : '„' + e.word + '“ ist aus')"><span class="tr"></span><span x-text="e.enabled ? 'Aktiv' : 'Aus'"></span></label>
-                        <div style="position:relative" x-data="{ m: false }" @click.outside="m = false" @keydown.escape.stop="m = false">
+                        <div style="position:relative" x-show="!edNum()" x-data="{ m: false }" @click.outside="m = false" @keydown.escape.stop="m = false">
                           <button type="button" class="ui-ibtn" @click="m = !m" aria-label="Mehr Aktionen" :aria-expanded="m ? 'true' : 'false'"><span x-html="ui.ic.dots"></span></button>
                           <div class="ui-menu" x-show="m" x-transition.origin.top.right x-cloak>
                             <button type="button" x-show="edHasFiles(e)" @click="m = false; edArchive(e)"><span x-html="ui.ic.archive"></span>Archivieren (Dateien aufheben)</button>
@@ -2442,7 +2320,8 @@
                       </div>
 
                       <div class="ui-cols">
-                        <!-- picture -->
+                        <!-- picture (a letter's word) -->
+                        <template x-if="!edNum()">
                         <section class="ui-card ui-pic" aria-label="Bild">
                           <template x-if="edSlot(e, 'IMG').state !== 'cand'">
                             <div class="ui-picbox">
@@ -2496,6 +2375,64 @@
                                       :placeholder="'Was soll man sehen? Leer lassen = „' + (e.word || 'das Wort') + '“'"></textarea>
                           </div>
                         </section>
+                        </template>
+
+                        <!-- backgrounds (a digit, FUNK-76): the digit shows on one of them; pressing again switches -->
+                        <template x-if="edNum()">
+                        <section class="ui-card ui-pic" aria-label="Hintergründe">
+                          <div class="ui-bgs-h"><h4>Hintergründe</h4><span class="ui-faint num" style="font-size:12.5px" x-text="edBgSummary()"></span></div>
+                          <p class="ui-faint ui-bgs-note">Beim Drücken erscheint die Ziffer auf einem aktiven Hintergrund. Nochmal drücken wechselt ihn.</p>
+                          <div class="ui-bggrid">
+                            <template x-for="(b, bi) in ed.backgrounds" :key="bi + ':' + b.image">
+                              <div class="ui-bg" :class="!b.enabled && 'off'">
+                                <img :src="thumb(b.image, 160)" :alt="'Hintergrund ' + b.image" loading="lazy">
+                                <span class="dg" :style="'color:' + randomColor(ed.L)" x-text="ed.L" aria-hidden="true"></span>
+                                <div class="bar">
+                                  <label class="ui-switch" :title="b.enabled ? 'Aktiv: wird gezeigt' : 'Aus: wird nicht gezeigt'">
+                                    <input type="checkbox" role="switch" :checked="b.enabled" @change="edBgSwitch(b, $event.target.checked)" :aria-label="'Hintergrund ' + b.image + ' zeigen'"><span class="tr"></span></label>
+                                  <button type="button" class="ui-ibtn" @click="edBgRemove(b)" :aria-label="'Hintergrund ' + b.image + ' entfernen'" title="Entfernen (die Datei bleibt in der Bibliothek)"><span x-html="ui.ic.x"></span></button>
+                                </div>
+                              </div>
+                            </template>
+                            <template x-if="edSlot(e, 'BG').state === 'run'">
+                              <div class="ui-bg run ui-shimmer" aria-live="polite"><div class="ui-genov"><span class="ui-ring sm"></span><span x-text="'Wird gemalt … ' + edElapsed(edSlot(e, 'BG'))"></span></div></div>
+                            </template>
+                            <template x-if="edSlot(e, 'BG').state === 'cand'">
+                              <div class="ui-bg cand">
+                                <img :src="thumb(edSlot(e, 'BG').cand, 160)" alt="Neuer Hintergrund">
+                                <div class="bar">
+                                  <button type="button" class="ui-btn xs ui-btn-ghost" style="color:#fff" @click="edDiscard(e, 'BG')">Verwerfen</button>
+                                  <button type="button" class="ui-btn xs ui-btn-pri" @click="edTake(e, 'BG')">Hinzufügen</button>
+                                </div>
+                              </div>
+                            </template>
+                            <button type="button" class="ui-bg add" @click="edGen(e, 'BG')" :disabled="edSlot(e, 'BG').state === 'run' || !edBgSubject(e)"
+                                    :title="edBgSubject(e) ? 'Einen neuen Hintergrund mit KI malen' : 'Trag zuerst unten ein Bild-Motiv ein'">
+                              <span x-html="ui.ic.sparkle" aria-hidden="true"></span><span>KI-Hintergrund</span>
+                            </button>
+                          </div>
+                          <template x-if="edSlot(e, 'BG').state === 'err'">
+                            <div class="ui-errbox" role="alert">
+                              <span x-html="ui.ic.alert"></span>
+                              <div><b>Hintergrund konnte nicht gemalt werden</b><p x-text="edSlot(e, 'BG').msg"></p>
+                                <details x-show="edSlot(e, 'BG').detail"><summary>Details</summary><span x-text="edSlot(e, 'BG').detail"></span></details>
+                                <div class="acts"><button type="button" class="ui-btn xs ui-btn-line" @click="edGen(e, 'BG')"><span x-html="ui.ic.retry"></span>Erneut versuchen</button>
+                                  <button type="button" class="ui-btn xs ui-btn-ghost" @click="edClearSlot(e, 'BG')">Schließen</button></div>
+                              </div>
+                            </div>
+                          </template>
+                          <div class="ui-picacts">
+                            <button type="button" class="ui-btn sm ui-btn-line" @click="libOpen(e, 'BG')"><span x-html="ui.ic.folder"></span>Bibliothek</button>
+                            <label class="ui-btn sm ui-btn-line" style="cursor:pointer"><span x-html="ui.ic.upload"></span>Hochladen
+                              <input type="file" class="ui-sr" accept=".png,.jpg,.jpeg,.gif" @change="edUpload($event, e, 'BG')" aria-label="Hintergrund hochladen"></label>
+                          </div>
+                          <div class="ui-field">
+                            <label for="edBgIdea">Bild-Motiv <span>Englisch</span></label>
+                            <input id="edBgIdea" class="ui-inp" x-model="e._imageDesc" @input="edText(e, '_imageDesc')" @change="edText(e, '_imageDesc', true)" maxlength="500" placeholder="z. B. apples">
+                            <span class="ui-faint" style="font-size:12px" x-text="'Die KI malt davon so viele, wie die Ziffer sagt' + (ed.L === '0' ? ' (bei 0: keine).' : ': ' + ed.L + '.')"></span>
+                          </div>
+                        </section>
+                        </template>
 
                         <!-- sound -->
                         <div style="min-width:0">
@@ -2656,14 +2593,14 @@
         </div>
         <div style="padding:12px 18px 0"><input class="ui-inp" x-model="lib.q" placeholder="Suchen …" aria-label="Suchen" x-init="$nextTick(() => $el.focus())"></div>
         <div class="ui-sheet-b">
-          <template x-if="lib.kind === 'IMG'">
+          <template x-if="lib.kind === 'IMG' || lib.kind === 'BG'">
             <div class="ui-libgrid">
               <template x-for="f in libItems()" :key="f">
                 <button type="button" class="ui-libimg" @click="libPick(f)" :title="f" :aria-label="'Bild wählen: ' + f"><img :src="thumb(f, 160)" alt="" loading="lazy"><span x-text="f"></span></button>
               </template>
             </div>
           </template>
-          <template x-if="lib.kind !== 'IMG'">
+          <template x-if="lib.kind !== 'IMG' && lib.kind !== 'BG'">
             <div>
               <template x-for="f in libItems()" :key="f">
                 <div class="ui-librow">
@@ -2791,7 +2728,6 @@ function funkeykid() {
     settings: { ai_prompts: { suggest_model: '', suggest: '', sound: '', image: '' } },
     sets: {},
     activeSetId: '',
-    editSetId: '',      // set an open letter/number editor belongs to (a set switch elsewhere must not redirect its save)
     activeSet: null,
     sounds: [],
     images: [],
@@ -2806,10 +2742,7 @@ function funkeykid() {
     appVersion: '?', appBuild: 'dev', appRepo: '', appBuildTime: null,
 
     // Edit state
-    editingNumber: null,
-    editNumberData: { word:'', image_subject:'', sound:'', backgrounds:[], tracks:{} },   // tracks filled in init() (FUNK-61)
     _genTTS: false,
-    _genBg: false,
     _suggestPrompt: '',
     _normAllBusy: false,
     _normAllStatus: '',
@@ -3774,8 +3707,8 @@ function funkeykid() {
         if (d && d.run) this._fillInstall(d.run, d.seq);
       } catch { this.showToast('Keine Verbindung zum Server.', 'error'); }
     },
-    kindName(k) { return { IMG: 'Bild', FX: 'Geräusch', DE: 'Stimme Deutsch', EN: 'Stimme Englisch' }[k] || k; },
-    kindIcon(k) { return k === 'IMG' ? this.ui.ic.photo : k === 'FX' ? this.ui.ic.note : this.ui.ic.voice; },
+    kindName(k) { return { IMG: 'Bild', BG: 'Hintergrund', FX: 'Geräusch', DE: 'Stimme Deutsch', EN: 'Stimme Englisch' }[k] || k; },
+    kindIcon(k) { return k === 'IMG' || k === 'BG' ? this.ui.ic.photo : k === 'FX' ? this.ui.ic.note : this.ui.ic.voice; },
     kindColor(k) { return { IMG: 'var(--ui-img)', FX: 'var(--ui-fx)', DE: 'var(--ui-de)', EN: 'var(--ui-en)' }[k]; },
 
     // ══ Entry editor (FUNK-72) ══
@@ -3789,7 +3722,17 @@ function funkeykid() {
       if (opts.json !== undefined) { headers['Content-Type'] = 'application/json'; opts = Object.assign({}, opts, { body: JSON.stringify(opts.json) }); }
       return fetch(url, Object.assign({}, opts, { headers }));
     },
-    _edUrl(setId, L, rest = '') { return `/api/sets/${encodeURIComponent(setId)}/letters/${encodeURIComponent(L)}${rest}`; },
+    // a digit is edited like a letter with one entry ("number") plus backgrounds (FUNK-76)
+    _isNumKey(L) { return typeof L === 'string' && /^[0-9]$/.test(L); },
+    edNum() { return !!this.ed && this._isNumKey(this.ed.L); },
+    _edUrl(setId, L, rest = '') {
+      return `/api/sets/${encodeURIComponent(setId)}/${this._isNumKey(L) ? 'numbers' : 'letters'}/${encodeURIComponent(L)}${rest}`;
+    },
+    edStripKeys() { return this.edNum() ? this.numberKeys : this.letterAlphabet(); },
+    edStripMark(l) {
+      if (this._isNumKey(l)) return this.numberHasGap(l) ? 'gap' : '';
+      return !this.getEntries(l).length ? 'none' : this.letterHasGap(l) ? 'gap' : '';
+    },
     _newId() {
       const a = new Uint8Array(5);
       crypto.getRandomValues(a);
@@ -3909,7 +3852,7 @@ function funkeykid() {
       this.plStop();
       if (!this.ed) this._edReturnFocus = document.activeElement;
       const token = ++this._edToken;
-      this.ed = { L, setId, token, entries: [], sel: null, loading: true, loadError: '', trackOrder: [], blacklist: [] };
+      this.ed = { L, setId, token, entries: [], sel: null, loading: true, loadError: '', trackOrder: [], blacklist: [], backgrounds: [] };
       this.edSuggest = null; this.edNewWord = '';
       this._edEnqueue({ type: 'load', run: () => this._edLoadRun(L, setId, token, sel) });
       this.$nextTick(() => { const el = document.querySelector('.ui-ed [data-autofocus]'); if (el) el.focus(); });
@@ -3936,8 +3879,8 @@ function funkeykid() {
         if (this.ed && this.ed.token === token) this.ed.loadError = 'Konnte nicht laden (' + err.message + '). Neuer Versuch …';
         return false;
       }
-      let bl;
-      try {
+      let bl = [];
+      if (!this._isNumKey(L)) try {                       // a digit has no word suggestions
         const res = await this._api('/api/blacklist/' + encodeURIComponent(L));
         if (!res.ok) throw new Error('HTTP ' + res.status);
         bl = await res.json();
@@ -3955,6 +3898,8 @@ function funkeykid() {
       const keep = sel || this.ed.sel;
       this.ed.entries = entries;
       this.ed.trackOrder = Array.isArray(data.track_order) ? data.track_order : [];
+      this.ed.backgrounds = Array.isArray(data.backgrounds)
+        ? data.backgrounds.filter(b => b && typeof b.image === 'string' && b.image).map(b => ({ image: b.image, enabled: b.enabled !== false })) : [];
       this.ed.sel = entries.some(e => e.id === keep) ? keep : (entries[0] ? entries[0].id : null);
       this.ed.loading = false; this.ed.loadError = '';
       // a new sound for the word in focus plays once, only if the server's entry really has it
@@ -4176,6 +4121,12 @@ function funkeykid() {
     edSummary() {
       if (!this.ed) return '';
       if (this.ed.loading) return this.ed.loadError || 'Lädt …';
+      if (this.edNum()) {
+        const e = this.ed.entries[0];
+        if (!e) return '';
+        const miss = this.edKinds().filter(k => !e.tracks[k].file).map(k => this.kindName(k));
+        return (e.word.trim() ? '' : 'Noch kein Wort · ') + this.edBgSummary() + (miss.length ? ' · ' + miss.join(', ') + ' fehlt' : '');
+      }
       const n = this.ed.entries.length;
       if (!n) return 'Noch keine Wörter';
       const miss = this.edMissingVoices().length;
@@ -4277,7 +4228,7 @@ function funkeykid() {
     edElapsed(s) { return s && s.t0 ? Math.max(0, Math.floor((this.clockNow - s.t0) / 1000)) + ' s' : ''; },
     edGen(e, k) {
       if (!this.ed || this.ed.loading || !e) return;
-      const word = e.word.trim();
+      const word = e.word.trim() || (k === 'BG' ? this.ed.L : '');   // a background needs the subject, not the word
       if (!word) return;
       const { setId, L } = this.ed, key = this._slotKey(setId, L, e.id, k);
       if ((this.edSlots[key] || {}).state === 'run') return;
@@ -4295,8 +4246,9 @@ function funkeykid() {
       this._slotRev[key] = rev;
       this._setSlot(key, { state: 'run', t0, job: null });
       const target = { set_id: setId, letter: L, entry_id: e.id };
-      const prompt = k === 'IMG' ? '' : (e.tracks[k].prompt || '').trim();
+      const prompt = k === 'IMG' || k === 'BG' ? '' : (e.tracks[k].prompt || '').trim();
       const desc = (e._imageDesc || '').trim();
+      const bgReq = k === 'BG' ? this._edBgRequest(L, word, desc, target) : null;
       // queued: after the entry and its prompt are on the server (a new word's add comes first)
       this._edEnqueue({ type: 'gen', run: async () => {
         if (this._slotRev[key] !== rev) return 'drop';        // the parent chose something else meanwhile
@@ -4304,6 +4256,8 @@ function funkeykid() {
         try {
           if (k === 'IMG') {
             res = await this._api('/api/generate/image', { method: 'POST', json: { word, description: desc || word, filename: `${this.fileSlug(L)}_${this.fileSlug(word)}.png`, target } });
+          } else if (k === 'BG') {
+            res = await this._api('/api/generate/image', { method: 'POST', json: bgReq });
           } else {
             const body = { kind: k, word, slug_prefix: this.fileSlug(L), target };
             if (prompt) body.prompt = prompt;
@@ -4344,7 +4298,7 @@ function funkeykid() {
         if (open) {
           // never written into the local copy: the entry may have changed since (another page removed
           // the file); the server's entry decides, read after this page's own writes
-          if (j.kind !== 'IMG' && !j.batch && this._slotRev[j.key] === j.rev) {
+          if (j.kind !== 'IMG' && j.kind !== 'BG' && !j.batch && this._slotRev[j.key] === j.rev) {
             this._edPendingPlay = { setId: j.setId, L: j.L, entryId: j.entryId, kind: j.kind, file: d.filename, until: Date.now() + 8000 };
           }
           this._edRefreshSoon();
@@ -4385,6 +4339,7 @@ function funkeykid() {
       const f = s.cand;
       this._edChoose(e, k);
       this.plStop();
+      if (k === 'BG') { this.edBgAdd(f, 'Hintergrund hinzugefügt'); return; }
       this.edSet(e, this._edFileBody(k, f), 'Neue Version übernommen');
     },
     edDiscard(e, k) {
@@ -4393,6 +4348,101 @@ function funkeykid() {
       this.edClearSlot(e, k);
       this.plStop();
       this.showToast('Verworfen: die neue Datei bleibt in der Bibliothek');
+    },
+    // ── backgrounds of a digit (FUNK-76): small writes by name in the editor's queue, each with undo ──
+    edBgSummary() {
+      const b = (this.ed && this.ed.backgrounds) || [];
+      return b.length ? `${b.filter(x => x.enabled).length} von ${b.length} ${b.length === 1 ? 'Hintergrund' : 'Hintergründen'} aktiv` : 'Noch kein Hintergrund';
+    },
+    edBgSubject(e) { return ((e && e._imageDesc) || '').trim(); },
+    _edBgRequest(L, word, subject, target) {     // the counting picture the old editor asked for
+      const count = L === '0' ? 'no' : L;
+      const slug = subject.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'bg';
+      return { word: word || L, description: `${count} ${subject}`, filename: `${L}_${slug}.png`, target,
+        prompt: `Flat bold child-friendly cartoon illustration showing exactly ${count} ${subject}, arranged clearly on a plain white background, each object large and unambiguous with clear outlines, high contrast, no text, no numbers, no shadows, readable at 64x64 pixels. Minimalist counting picture for a toddler.` };
+    },
+    _edBgUrl(setId, L, image) { return this._edUrl(setId, L, '/backgrounds' + (image ? '/' + encodeURIComponent(image) : '')); },
+    _edBgOp(method, setId, L, image, body, onOk) {
+      this._edEnqueue({ type: 'bg', setId, L, run: this._edWrite(method, this._edBgUrl(setId, L, method === 'POST' ? '' : image), body, onOk) });
+    },
+    // an undo step that runs only if the write before it really changed something on the server:
+    // queued after it, so its answer is known when the undo's turn comes (another page may have done the same)
+    _edBgUndo(setId, L, did, fn) {
+      this._edEnqueue({ type: 'bg', setId, L, run: async () => (did.v === true ? fn() : 'drop') });
+    },
+    _edBgLocal(setId, L) { return this._edOpen(setId, L) ? this.ed.backgrounds : null; },
+    edBgAdd(image, label) {
+      if (!this.ed || this.ed.loading || !this.edNum()) return;
+      const { setId, L } = this.ed;
+      if (this.ed.backgrounds.some(b => b.image === image)) { this.showToast('Diesen Hintergrund hat die Zahl schon'); return; }
+      this.ed.backgrounds.push({ image, enabled: true });
+      const did = { v: null };                                 // inserted by this page? (a retry answers the same)
+      this._edBgOp('POST', setId, L, image, { image, op: this._newId() + this._newId() }, r => {
+        did.v = !(r && r.existed);
+        if (did.v) did.token = r.token;                        // this insertion's identity
+      });
+      this._edPushUndo(() => {
+        const list = this._edBgLocal(setId, L);
+        if (list && did.v !== false) { const i = list.findIndex(x => x.image === image); if (i >= 0) list.splice(i, 1); }
+        // only that insertion is taken off (if_token), with one op id for every retry
+        const op = this._newId() + this._newId();
+        let write = null;
+        this._edBgUndo(setId, L, did, () => {
+          if (!write) write = this._edWrite('DELETE', this._edBgUrl(setId, L, image), { op, if_token: did.token || '' });
+          return write();
+        });
+        this._edNeedRefresh = true;
+      });
+      this.showToast(label || 'Hintergrund hinzugefügt', 'success', true);
+    },
+    edBgSwitch(b, on) {
+      if (!this.ed || this.ed.loading) return;
+      const { setId, L } = this.ed, image = b.image;
+      const did = { v: null };                                 // did this switch change it? (and from what)
+      b.enabled = on;
+      this._edBgOp('PATCH', setId, L, image, { enabled: on, op: this._newId() + this._newId() }, r => {   // a retry never re-applies
+        did.v = !!(r && r.changed);
+        if (did.v) { did.was = r.was !== false; did.token = r.token || ''; }
+      });
+      this._edPushUndo(() => {
+        const list = this._edBgLocal(setId, L), cur = list && list.find(x => x.image === image);
+        if (cur && did.v !== false && cur.enabled === on) cur.enabled = !on;
+        // only if this switch changed it, and only if it is still as this page left it
+        const op = this._newId() + this._newId();
+        let write = null;
+        this._edBgUndo(setId, L, did, () => {
+          if (!write) write = this._edWrite('PATCH', this._edBgUrl(setId, L, image), { enabled: did.was, if_enabled: on, if_token: did.token, op });
+          return write();
+        });
+        this._edNeedRefresh = true;
+      });
+      this.showToast(on ? 'Hintergrund an' : 'Hintergrund aus', 'success', true);
+    },
+    edBgRemove(b) {
+      if (!this.ed || this.ed.loading) return;
+      const { setId, L } = this.ed, image = b.image, enabled = b.enabled;
+      const index = this.ed.backgrounds.indexOf(b);
+      const did = { v: null };                                 // removed by this page?
+      const list0 = this._edBgLocal(setId, L);
+      if (list0) { const i = list0.findIndex(x => x.image === image); if (i >= 0) list0.splice(i, 1); }
+      // the server says where it was and whether it was on: the undo puts back exactly that
+      this._edBgOp('DELETE', setId, L, image, { op: this._newId() + this._newId() }, r => {
+        did.v = !!(r && r.removed);
+        if (did.v) { did.index = r.index; did.enabled = r.enabled !== false; }
+      });
+      this._edPushUndo(() => {
+        const list = this._edBgLocal(setId, L);
+        const at = did.v ? did.index : index, on = did.v ? did.enabled : enabled;
+        if (list && did.v !== false && !list.some(x => x.image === image)) list.splice(Math.min(at, list.length), 0, { image, enabled: on });
+        const op = this._newId() + this._newId();
+        let write = null;                                      // made once, on the undo's turn (the removal's answer is known then)
+        this._edBgUndo(setId, L, did, () => {
+          if (!write) write = this._edWrite('POST', this._edBgUrl(setId, L), { image, enabled: did.enabled, index: did.index, restore: true, op });
+          return write();
+        });
+        this._edNeedRefresh = true;
+      });
+      this.showToast('Hintergrund entfernt (bleibt in der Bibliothek)', 'success', true);
     },
     async _refreshLists() {
       try {
@@ -4418,7 +4468,7 @@ function funkeykid() {
     },
     libItems() {
       if (!this.lib) return [];
-      const list = this.lib.kind === 'IMG' ? this.images : this.sounds;
+      const list = this.lib.kind === 'IMG' || this.lib.kind === 'BG' ? this.images : this.sounds;
       const q = (this.lib.q || '').toLowerCase().trim();
       const pre = this.ed ? this.fileSlug(this.ed.L) + '_' : '';
       return list.filter(f => !q || f.toLowerCase().includes(q))
@@ -4431,6 +4481,7 @@ function funkeykid() {
       if (!l || !this.ed || this.ed.loading || this.ed.token !== l.token) return;
       const e = this.ed.entries.find(x => x.id === l.entryId);
       if (!e) return;
+      if (l.kind === 'BG') { this.edBgAdd(f, `Hintergrund: ${f}`); return; }   // adds one; a running job is not affected
       this._edChoose(e, l.kind);
       this.edSet(e, this._edFileBody(l.kind, f), `${this.kindName(l.kind)}: ${f}`);
     },
@@ -4439,19 +4490,20 @@ function funkeykid() {
       ev.target.value = '';
       if (!file || !this.ed || this.ed.loading) return;
       const { setId, L, token } = this.ed, id = e.id, key = this._slotKey(setId, L, id, k);
-      this._edChoose(e, k);
+      if (k !== 'BG') this._edChoose(e, k);                   // a background is added: a running job stays
       const rev = this._slotRev[key];
       const form = new FormData();
       form.append('file', file);
       this.showToast('Lädt hoch …');
       let r;
       try {
-        const res = await fetch(`/api/${k === 'IMG' ? 'images' : 'sounds'}/upload`, { method: 'POST', body: form, headers: { 'X-FK-Client': FK_CLIENT } });
+        const res = await fetch(`/api/${k === 'IMG' || k === 'BG' ? 'images' : 'sounds'}/upload`, { method: 'POST', body: form, headers: { 'X-FK-Client': FK_CLIENT } });
         r = await res.json().catch(() => ({}));
         if (!res.ok || !r.file) { this.showToast(r.error || 'Hochladen fehlgeschlagen', 'error'); return; }
       } catch (err) { this.showToast('Hochladen fehlgeschlagen: ' + err.message, 'error'); return; }
       this._refreshLists();
       const cur = this.ed && this.ed.token === token && !this.ed.loading ? this.ed.entries.find(x => x.id === id) : null;
+      if (k === 'BG' && cur) { this.edBgAdd(r.file, `Hochgeladen: ${r.file}`); return; }
       if (!cur || this._slotRev[key] !== rev) { this.showToast(`Hochgeladen als ${r.file}: liegt in der Bibliothek`); return; }   // a newer choice wins
       this.edSet(cur, this._edFileBody(k, r.file), `Hochgeladen: ${r.file}`);
     },
@@ -4537,7 +4589,8 @@ function funkeykid() {
       const t = this.jobTarget(j);
       this.ui.acOpen = false;
       if (!t) return;
-      if (this.tab !== 'letters') this.go('letters');
+      const tabFor = this._isNumKey(t.L) ? 'numbers' : 'letters';   // a number job opens Zahlen (FUNK-76)
+      if (this.tab !== tabFor) this.go(tabFor);
       if (this.ed && this.ed.L === t.L && this.ed.setId === t.setId && !this.ed.loading) { this.ed.sel = t.entryId; return; }
       this.openEditor(t.L, t.setId, t.entryId);
     },
@@ -4606,7 +4659,7 @@ function funkeykid() {
       if (typing || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       if (ev.shiftKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')) {
         ev.preventDefault();
-        const a = this.letterAlphabet(), i = a.indexOf(this.ed.L), d = ev.key === 'ArrowLeft' ? -1 : 1;
+        const a = this.edStripKeys(), i = a.indexOf(this.ed.L), d = ev.key === 'ArrowLeft' ? -1 : 1;
         this.edSwitch(a[(i + d + a.length) % a.length]);
         return;
       }
@@ -4657,9 +4710,6 @@ function funkeykid() {
 
     async init() {
       this.$watch('ed?.sel', (n, o) => { if (n !== o) { this.plStop(); this._edPendingPlay = null; } });
-      // The number editor is always in the DOM (x-show): give its empty state the track
-      // objects its bindings read, before Alpine renders them (FUNK-61: ~1000 TypeErrors per load).
-      this._ensureTracks(this.editNumberData);
       // Load version info
       try {
         const v = await fetch('/api/version').then(r => r.json());
@@ -4755,7 +4805,7 @@ function funkeykid() {
         await this.refresh();
         this.loadKeymap();                     // built-in labels follow the set's content
         this.loadQuiz();                       // the quiz asks the active set's letters (FUNK-39)
-        const edSet = this.ed ? this.ed.setId : (this.editingNumber !== null ? this.editSetId : '');
+        const edSet = this.ed ? this.ed.setId : '';
         const editing = !!edSet && edSet !== d.active_set;
         this.showToast(editing
           ? `Set "${d.name}" ist jetzt aktiv. Der offene Editor speichert weiter in "${this.sets[edSet]?.name || edSet}".`
@@ -4789,17 +4839,6 @@ function funkeykid() {
           ]).then(([snd, img]) => {
             this.sounds = snd;
             this.images = img;
-            // The number editor refreshes what shows this job's file (FUNK-46: by file name, never by word)
-            if (this.editingNumber !== null && this.editNumberData) {
-              const t = d.type === 'sound' && d.kind ? this.editNumberData.tracks?.[d.kind] : null;
-              if (t && t.file === d.filename && t._autoPlay) {
-                t._autoPlay = false;
-                this.previewSound(d.filename, t.volume);
-              }
-              for (const bg of this.editNumberData.backgrounds || []) {
-                if (bg.image === d.filename) bg._v = (bg._v||0) + 1;
-              }
-            }
           }).catch(() => {});
         } else if (d.status === 'error') {
           this.showToast(d.word + ': ' + d.error, 'error');
@@ -4953,6 +4992,19 @@ function funkeykid() {
     },
 
     // ── Number helpers ──
+    numberKeys: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'],
+    numberBgs(d) { const n = this.getNumber(d); return Array.isArray(n?.backgrounds) ? n.backgrounds.filter(b => b && b.image) : []; },
+    numberBgOn(d) { return this.numberBgs(d).filter(b => b.enabled !== false).length; },
+    numberHasGap(d) {
+      const n = this.getNumber(d);
+      return !n || !n.word || !this.numberBgOn(d) || this.setKinds().some(k => !this.numberHasTrack(d, k));
+    },
+    numberSummary() {
+      const ds = this.numberKeys;
+      const words = ds.filter(d => this.getNumber(d)?.word).length, bgs = ds.reduce((s, d) => s + this.numberBgs(d).length, 0);
+      const voices = ds.filter(d => this.numberHasTrack(d, 'DE')).length;
+      return `${words} von 10 mit Wort · ${bgs} Hintergründe · ${voices} ${voices === 1 ? 'Stimme' : 'Stimmen'}`;
+    },
     getNumber(digit) {
       return this.activeSet?.numbers?.[digit] || null;
     },
@@ -4961,12 +5013,6 @@ function funkeykid() {
       if (!n) return '';
       const bg = (n.backgrounds || []).find(b => b.enabled);
       return bg ? bg.image : (n.backgrounds?.[0]?.image || '');
-    },
-    numberHasAnyTrack(digit) {
-      const n = this.getNumber(digit);
-      const t = n && n.tracks;
-      if (!t) return false;
-      return ['FX','DE','EN'].some(k => t[k] && t[k].file);
     },
     numberHasTrack(digit, kind) {
       const t = this.getNumber(digit)?.tracks;
@@ -4993,77 +5039,6 @@ function funkeykid() {
     numberTrackPresenceTooltip(digit) {
       return this._trackTooltip(this.numberHasTrack, digit);
     },
-    async editNumber(digit) {
-      const [snd, img] = await Promise.all([
-        fetch('/api/sounds').then(r => r.json()),
-        fetch('/api/images').then(r => r.json()),
-      ]);
-      this.sounds = snd;
-      this.images = img;
-      const setId = this.activeSetId;          // same step as the content read below
-      const cur = this.getNumber(digit) || {};
-      const data = JSON.parse(JSON.stringify({
-        word: cur.word || '',
-        image_subject: cur.image_subject || '',
-        backgrounds: cur.backgrounds || [],
-        tracks: cur.tracks || {},
-      }));
-      this._ensureTracks(data);
-      this.editNumberData = data;
-      await this.$nextTick();
-      this.editSetId = setId;
-      this.editingNumber = digit;
-    },
-    async saveNumber() {
-      const digit = this.editingNumber;
-      const tracks = this._cleanTracks(this.editNumberData.tracks);
-      const payload = {
-        word: this.editNumberData.word,
-        image_subject: this.editNumberData.image_subject,
-        backgrounds: this.editNumberData.backgrounds,
-        tracks,
-      };
-      await fetch(`/api/sets/${this.editSetId || this.activeSetId}/numbers/${digit}`, {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload),
-      });
-      this.editingNumber = null;
-      await this.refresh();
-      this.showToast(`${digit} gespeichert ✓`);
-    },
-    async generateNumberBg() {
-      if (!this.editNumberData.image_subject) return;
-      this._genBg = true;
-      const digit = this.editingNumber;
-      const count = digit === '0' ? 'no' : digit;
-      const subject = this.editNumberData.image_subject;
-      const slug = subject.toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-      const filename = this._nextFilename(`${digit}_${slug}`, 'png', this.images);
-      const prompt = `Flat bold child-friendly cartoon illustration showing exactly ${count} ${subject}, arranged clearly on a plain white background, each object large and unambiguous with clear outlines, high contrast, no text, no numbers, no shadows, readable at 64x64 pixels. Minimalist counting picture for a toddler.`;
-      try {
-        const r = await fetch('/api/generate/image', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            word: this.editNumberData.word || digit,
-            description: `${count} ${subject}`,
-            prompt,
-            filename,
-          }),
-        }).then(r => r.json());
-        if (r.ok) {
-          // the server may pick a free variant of the name (FUNK-46): use the one it writes
-          this.editNumberData.backgrounds.push({ image: r.filename || filename, enabled: true, _v: 0 });
-        } else {
-          this.showToast(r.error || 'Fehler', 'error');
-        }
-      } catch (e) { this.showToast(e.message, 'error'); }
-      this._genBg = false;
-    },
-
     // ── Letter editing ──
     // ── Track-kind helpers (client-side mirror of server TRACK_KIND_META) ──
     trackKinds: ['FX', 'DE', 'EN'],
@@ -5105,62 +5080,10 @@ function funkeykid() {
       }
       return obj;
     },
-    _cleanTracks(tracks) {
-      // Drop empty tracks (no file, no prompt, default volume) so settings.json stays tidy.
-      const out = {};
-      for (const k of this.trackKinds) {
-        const t = tracks && tracks[k];
-        if (!t) continue;
-        const file = t.file || '';
-        const prompt = t.prompt || '';
-        const vol = parseInt(t.volume, 10);
-        const volume = Number.isFinite(vol) ? Math.max(0, Math.min(200, vol)) : 100;   // 0 % stays 0 % (FUNK-72)
-        if (!file && !prompt && volume === 100) continue;
-        out[k] = { file, enabled: t.enabled !== false, prompt, volume };
-      }
-      return out;
-    },
     _blankEntry() {
       const e = { word: '', image: '', enabled: true, _imageDesc: '' };
       this._ensureTracks(e);
       return e;
-    },
-
-    async generateTrack(entry, idx, kind, slugPrefix, opts = {}) {
-      if (!entry.word) return;
-      if (!entry.tracks || !entry.tracks[kind]) {
-        this._ensureTracks(entry);
-      }
-      const track = entry.tracks[kind];
-      const autoPlay = opts.autoPlay !== false; // default true
-      track._generating = true;
-      // Mark so the SSE handler knows to auto-play (or not) when this job completes.
-      track._autoPlay = !!autoPlay;
-      try {
-        const body = {
-          kind,
-          word: entry.word,
-          slug_prefix: (slugPrefix || '').toString().toLowerCase(),
-        };
-        if (track.prompt) body.prompt = track.prompt;
-        const r = await fetch('/api/generate/track', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }).then(r => r.json());
-        if (r.ok && r.filename) {
-          track.file = r.filename;
-          track.enabled = true;
-          // Job runs in background — SSE gen_update will notify on completion.
-        } else {
-          this.showToast(r.error || 'Fehler', 'error');
-          track._autoPlay = false;
-        }
-      } catch (e) {
-        this.showToast(e.message, 'error');
-        track._autoPlay = false;
-      }
-      track._generating = false;
     },
 
     // ── track_order editor (Sets tab) ──
@@ -5410,16 +5333,6 @@ function funkeykid() {
 
 
 
-    _nextFilename(base, ext, existing) {
-      const first = `${base}.${ext}`;
-      if (!existing.includes(first)) return first;
-      const pad = n => String(n).padStart(3, '0');
-      for (let n = 2; n < 1000; n++) {
-        const name = `${base}_${pad(n)}.${ext}`;
-        if (!existing.includes(name)) return name;
-      }
-      return `${base}_${Date.now()}.${ext}`;
-    },
 
 
     // is a gen_update about the wizard's sound or image job? Only by job id: an event that comes

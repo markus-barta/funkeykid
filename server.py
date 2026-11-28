@@ -4740,8 +4740,74 @@ def _unarchive(file_type, filename, dst):
         print(f"[archive] could not restore {filename}: {e}", flush=True)
 
 
+# ── What uses which file (FUNK-78) ──────────────────────────────────────────
+FILE_USES_MAX = 50          # per file: enough to show and to say who uses it
+
+
+def _file_usage():
+    """{"sounds": {name: [use]}, "images": {name: [use]}} from every set and key map. A use is
+    {set_id, set, key, entry_id, word, kind} for a letter's entry (IMG, FX, DE, EN) or a digit
+    (FX/DE/EN, BG), or {profile, key, kind: "KEY", word} for a key of a key map."""
+    sounds, images = {}, {}
+
+    def add(index, name, use):
+        if isinstance(name, str) and name:
+            uses = index.setdefault(name, [])
+            if len(uses) < FILE_USES_MAX:
+                uses.append(use)
+
+    def tracks(e, base, legacy_kind):
+        ts = e.get("tracks") if isinstance(e.get("tracks"), dict) else {}
+        for kind, t in ts.items():
+            if isinstance(t, dict):
+                add(sounds, t.get("file"), {**base, "kind": kind})
+        if e.get("sound") and not (isinstance(ts.get(legacy_kind), dict) and ts[legacy_kind].get("file")):
+            add(sounds, e.get("sound"), {**base, "kind": legacy_kind})       # before multi-track
+
+    for sid, s in (settings.get("sets") or {}).items():
+        if not isinstance(s, dict):
+            continue
+        sname = s.get("name") if isinstance(s.get("name"), str) else sid
+        for letter, cfg in (s.get("letters") or {}).items():
+            for e in (cfg.get("entries") if isinstance(cfg, dict) else None) or []:
+                if not isinstance(e, dict):
+                    continue
+                base = {"set_id": sid, "set": sname, "key": letter, "entry_id": e.get("id") or "",
+                        "word": e.get("word") if isinstance(e.get("word"), str) else ""}
+                add(images, e.get("image"), {**base, "kind": "IMG"})
+                tracks(e, base, "FX")
+        for digit, n in (s.get("numbers") or {}).items():
+            if not isinstance(n, dict):
+                continue
+            base = {"set_id": sid, "set": sname, "key": digit, "entry_id": NUMBER_ENTRY_ID,
+                    "word": n.get("word") if isinstance(n.get("word"), str) else ""}
+            tracks(n, base, "DE")
+            for b in n.get("backgrounds") or [] if isinstance(n.get("backgrounds"), list) else []:
+                if isinstance(b, dict):
+                    add(images, b.get("image"), {**base, "kind": "BG"})
+    for pid, km in (settings.get("keymaps") or {}).items():
+        for kid, a in (km.items() if isinstance(km, dict) else []):
+            if isinstance(a, dict):
+                use = {"profile": pid, "key": kid, "kind": "KEY", "word": a.get("word") if isinstance(a.get("word"), str) else ""}
+                add(sounds, a.get("file"), use)
+                add(images, a.get("image"), use)
+    return {"sounds": sounds, "images": images}
+
+
+async def api_file_usage(request):
+    """What uses each sound and picture (FUNK-78): sets (letters, digits) and key maps."""
+    return web.json_response(_file_usage())
+
+
+def _use_label(u):
+    kinds = {"IMG": "Bild", "BG": "Hintergrund", "FX": "Geräusch", "DE": "Stimme", "EN": "Englisch"}
+    if u.get("kind") == "KEY":
+        return f"Taste {u.get('key')}"
+    return f"{u.get('key')} · {u.get('word') or '—'} ({kinds.get(u.get('kind'), u.get('kind'))})"
+
+
 async def api_archive_file(request):
-    """Move a sound or image to the archive folder."""
+    """Move a sound or image to the archive folder; never one that a set or key map still uses (FUNK-78)."""
     try:
         data = await request.json()
     except ValueError:
@@ -4752,6 +4818,12 @@ async def api_archive_file(request):
     filename = data.get("filename", "")
     if not filename or file_type not in ("sound", "image"):
         return web.json_response({"error": "type und filename erforderlich"}, status=400)
+    if isinstance(filename, str) and filename in _referenced_names():
+        # an entry, a digit or a key still points at it: archiving would leave it pointing at nothing
+        uses = _file_usage()["sounds" if file_type == "sound" else "images"].get(filename, [])
+        who = ", ".join(_use_label(u) for u in uses[:3]) + (" …" if len(uses) > 3 else "")
+        return web.json_response({"error": "Wird noch benutzt" + (f": {who}" if who else "") + ". Erst dort entfernen.",
+                                  "uses": uses}, status=409)
     try:
         dst = _archive_one(file_type, filename)
     except _ArchiveError as e:
@@ -4971,6 +5043,7 @@ def create_app():
     app.router.add_get("/api/favorites", lambda r: web.json_response(favorites))
     app.router.add_post("/api/archive", api_archive_file)
     app.router.add_get("/api/archive", api_list_archive)
+    app.router.add_get("/api/files/usage", api_file_usage)
     app.router.add_get("/ai/{path:.+}", serve_ai_file)
     # File serving
     app.router.add_get("/sounds/{filename}", serve_sound)

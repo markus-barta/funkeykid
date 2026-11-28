@@ -2126,6 +2126,16 @@ def _save_or_restore(entries, snapshot):
 _SAVE_FAILED = {"error": "Die Einstellungen konnten nicht gespeichert werden; nichts wurde geändert"}
 
 
+def _drop_jobs_for_entry(set_id, letter, entry_id):
+    """The entry is gone (removed or archived, FUNK-74): every job aiming at it, running or waiting for
+    review, now only fills the library, and the pages drop its slot and its "Prüfen" offer."""
+    for j in gen_jobs.values():
+        t = j.get("target")
+        if t and (t.get("set_id"), t.get("letter"), t.get("entry_id")) == (set_id, letter, entry_id):
+            j["target"] = None
+            sse_broadcast("gen_update", j)
+
+
 def _detach_jobs_for(set_id, letter, entry_id, kinds):
     """An explicit choice for a slot, from any page: running jobs for that slot only fill the library."""
     for j in gen_jobs.values():
@@ -2190,6 +2200,7 @@ async def api_delete_entry_by_id(request):
         _save_or_restore(entries, snapshot)
     except _SaveFailed:
         return web.json_response(_SAVE_FAILED, status=500)
+    _drop_jobs_for_entry(set_id, letter, entry["id"])
     _letter_changed(request, set_id, letter, entry["id"])
     return web.json_response({"ok": True, "index": i, "entry": entry})
 
@@ -2244,6 +2255,7 @@ async def api_archive_entry(request):
         for ft, n, dst in reversed(moved):                # the entry stays: its files come back too
             _unarchive(ft, n, dst)
         return web.json_response(_SAVE_FAILED, status=500)
+    _drop_jobs_for_entry(set_id, letter, entry["id"])
     _letter_changed(request, set_id, letter, entry["id"])
     return web.json_response({"ok": True, "archived": [n for _, n, _ in moved], "kept": kept})
 

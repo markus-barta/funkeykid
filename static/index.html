@@ -2014,7 +2014,8 @@
                 </div>
                 <div class="flex justify-between">
                   <span>Credits</span>
-                  <span><span class="font-semibold" x-text="'$' + integrations.openrouter.credits_remaining?.toFixed(2)"></span> verbleibend</span>
+                  <span x-show="typeof integrations.openrouter.credits_remaining === 'number'"><span class="font-semibold" x-text="'$' + integrations.openrouter.credits_remaining?.toFixed(2)"></span> verbleibend</span>
+                  <span x-show="typeof integrations.openrouter.credits_remaining !== 'number' && typeof integrations.openrouter.credits_used === 'number'"><span class="font-semibold" x-text="'$' + integrations.openrouter.credits_used?.toFixed(2)"></span> verbraucht</span>
                 </div>
                 <template x-if="integrations.openrouter.credits_limit">
                   <div>
@@ -4418,15 +4419,23 @@ function funkeykid() {
       const j = this.edJobs[d.id];
       if (!j || d.target) return;
       const s = this.edSlots[j.key];
-      if (s && s.job === d.id && (s.state === 'cand' || (s.state === 'run' && (d.status === 'done' || d.status === 'error')))) this._setSlot(j.key, null);
+      // a detached job no longer aims at this slot: its offer and its spinner go at once (FUNK-79)
+      if (s && s.job === d.id && (s.state === 'cand' || s.state === 'run')) this._setSlot(j.key, null);
     },
     edTake(e, k) {
       const s = this.edSlot(e, k);
       if (s.state !== 'cand' || !s.cand) return;
       const f = s.cand;
+      if (k === 'BG') {                                        // the offer stays until the add succeeded (FUNK-77)
+        const key = this._slotKey(this.ed.setId, this.ed.L, e.id, k), job = s.job;
+        this.edBgAdd(f, 'Hintergrund hinzugefügt', () => {
+          if (job) this._edEnqueue({ type: 'detach', run: this._edWrite('POST', `/api/jobs/${encodeURIComponent(job)}/detach`, {}) });
+          if ((this.edSlots[key] || {}).cand === f) this._setSlot(key, null);
+        });
+        return;
+      }
       this._edChoose(e, k);
       this.plStop();
-      if (k === 'BG') { this.edBgAdd(f, 'Hintergrund hinzugefügt'); return; }
       this.edSet(e, this._edFileBody(k, f), 'Neue Version übernommen');
     },
     edDiscard(e, k) {
@@ -4458,15 +4467,21 @@ function funkeykid() {
       this._edEnqueue({ type: 'bg', setId, L, run: async () => (did.v === true ? fn() : 'drop') });
     },
     _edBgLocal(setId, L) { return this._edOpen(setId, L) ? this.ed.backgrounds : null; },
-    edBgAdd(image, label) {
+    edBgAdd(image, label, onAdded) {
       if (!this.ed || this.ed.loading || !this.edNum()) return;
       const { setId, L } = this.ed;
-      if (this.ed.backgrounds.some(b => b.image === image)) { this.showToast('Diesen Hintergrund hat die Zahl schon'); return; }
+      if (this.ed.backgrounds.some(b => b.image === image)) {
+        // already listed here: an accepted offer still confirms it on the server (idempotent), then clears
+        if (onAdded) this._edBgOp('POST', setId, L, image, { image, op: this._newId() + this._newId() }, () => onAdded());
+        this.showToast('Diesen Hintergrund hat die Zahl schon');
+        return;
+      }
       this.ed.backgrounds.push({ image, enabled: true });
       const did = { v: null };                                 // inserted by this page? (a retry answers the same)
       this._edBgOp('POST', setId, L, image, { image, op: this._newId() + this._newId() }, r => {
         did.v = !(r && r.existed);
         if (did.v) did.token = r.token;                        // this insertion's identity
+        if (onAdded) onAdded();                                // it is on the digit now (added here or before)
       });
       this._edPushUndo(() => {
         const list = this._edBgLocal(setId, L);

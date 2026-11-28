@@ -605,3 +605,37 @@ def test_the_job_list_names_the_server_process(monkeypatch):
     monkeypatch.setattr(server, "gen_jobs", {"a": {"id": "a", "status": "generating"}})
     resp = asyncio.run(server.api_get_jobs(Req()))
     assert resp.headers["X-FK-Boot"] == server.BOOT_ID and json.loads(resp.body) == [{"id": "a", "status": "generating"}]
+
+
+# ── FUNK-74: a removed or archived word takes its jobs' targets with it ─────────
+
+def _jobs_for(st, monkeypatch):
+    monkeypatch.setattr(server, "gen_jobs", {
+        "run1": {"id": "run1", "status": "generating", "target": {"set_id": "s", "letter": "B", "entry_id": "bieneid1", "kind": "DE"}},
+        "rev1": {"id": "rev1", "status": "done", "applied": False, "target": {"set_id": "s", "letter": "B", "entry_id": "bieneid1", "kind": "IMG"}},
+        "oth1": {"id": "oth1", "status": "generating", "target": {"set_id": "s", "letter": "B", "entry_id": "ballid01", "kind": "DE"}},
+    })
+
+
+def test_removing_a_word_detaches_its_jobs_and_tells_the_pages(st, monkeypatch):
+    _jobs_for(st, monkeypatch)
+    status, _ = call(server.api_delete_entry_by_id, Req(set_id="s", letter="B", entry_id="bieneid1"))
+    assert status == 200
+    assert server.gen_jobs["run1"]["target"] is None and server.gen_jobs["rev1"]["target"] is None
+    assert server.gen_jobs["oth1"]["target"]["entry_id"] == "ballid01"                 # another word's job stays
+    told = {d["id"] for ev, d in st.sent if ev == "gen_update"}
+    assert told == {"run1", "rev1"}
+
+
+def test_archiving_a_word_detaches_its_jobs(st, monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "DATA_DIR", str(tmp_path))
+    _jobs_for(st, monkeypatch)
+    status, _ = call(server.api_archive_entry, Req(set_id="s", letter="B", entry_id="bieneid1"))
+    assert status == 200 and server.gen_jobs["rev1"]["target"] is None and server.gen_jobs["oth1"]["target"]
+
+
+def test_a_failed_removal_keeps_the_jobs(st, monkeypatch):
+    _jobs_for(st, monkeypatch)
+    monkeypatch.setattr(server, "save_settings", lambda: (_ for _ in ()).throw(OSError("full")))
+    status, _ = call(server.api_delete_entry_by_id, Req(set_id="s", letter="B", entry_id="bieneid1"))
+    assert status == 500 and server.gen_jobs["rev1"]["target"]["entry_id"] == "bieneid1"

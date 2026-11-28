@@ -501,6 +501,7 @@ The UI uses Server-Sent Events (`/api/events`) for instant updates:
 | `progress` | Progress snapshot (see `/api/progress`) | Counts or play sessions changed, at most once a second (FUNK-40/42); the Übersicht tab then fetches `/api/dashboard` |
 | `gen_update` | A generation job (`id`, `kind`, `status`, `filename`, `started`, `finished`, `error`, `error_code`, `error_detail`) | Every job state change; the entry editor routes its own jobs by id (FUNK-72) |
 | `letter` | `{set_id, letter, entry_id?}` | A letter was saved, or a finished file was put on an entry; the Buchstaben grid reloads the active set (FUNK-72) |
+| `fill_update` | The fill run (`id`, `set_id`, `status`, `total`, `done`, `skipped`, `failed`, `failed_words`, `current`, `stopping`, `error`, `seq`) | Every step of "Fehlende Stimmen erzeugen" (FUNK-75) |
 
 `/api/status` keyboard fields: `connected`, `exclusive`, `grabbed`, `nodes[{path,name,grabbed}]`,
 `device_name`, `device_path`, `battery_level`, `battery_low`, `battery_low_threshold`,
@@ -544,6 +545,18 @@ Clicking a letter opens the editor: the letter's words on the left (picture, wor
 - **Errors in plain words.** `_provider_error()` turns a failed ElevenLabs/OpenRouter call into a German sentence: 401 key, 402 paid plan or credit, 403, 429, 5xx, no connection. The provider's own words go into `error_detail` (≤ 300 chars) and the AI log; an HTML error page is never echoed.
 - **Activity.** A button bottom right lists every AI job of the server (running, to check, failed) with "Prüfen" / "Öffnen". `/api/jobs` keeps the newest 300 finished jobs (`GEN_JOBS_KEEP`).
 - **Also:** suggest a word (accept → picture and every track the set plays are generated at once; reject → never suggested again), the suggestion prompt, rejected words, library picker with search and preview, upload, archive (files to the archive), remove.
+
+### Fehlende Stimmen erzeugen (FUNK-75)
+
+The Buchstaben tab shows "Fehlende Stimmen erzeugen" with a count when words of the active set have no German voice and the set plays DE. A confirmation shows the ElevenLabs characters it will use, compared with what is left, and roughly how long it takes. Then `POST /api/sets/{id}/fill-voices` (`{kind: "DE"}`) starts one run on the server.
+
+- **One run at a time, word by word.** A second start gets 409 and the running state. The run goes through the letters in order, on the event loop (`_fill_worker`). Each word is an ordinary DE job (`/api/generate/track`'s TTS path, with the spoken text if one is set, else the word). It carries a target, so `_finalize_job` fills the slot only if it is still empty. Its job is marked `batch: <run id>`.
+- **Checked again before each word, and when its voice is done.** If the entry is gone, its slot is filled, its track is switched off for that word, or another job is filling it (`_slot_job`), the word counts as skipped. A batch job also stores its `text`. `_finalize_job` puts the file on the entry only if the word still wants that same text. If the word was renamed or got a new spoken text, switched off or filled meanwhile, the file only goes to the library (target cleared, no review offer), and the word counts as skipped.
+- **One paid job per slot.** `/api/generate/track` with a target returns a job already running for that slot with the same text (any of them; `existing: true`) instead of starting a second one. When the parent clicked "Erzeugen" for a word the run is just making, the page treats that job as its own click: it plays once when it lands, like any other. Another text gets its own job. The page starts a run through the editor's write queue, so a word renamed a moment ago is saved before the run reads it.
+- **Errors.** A 401, 402 or 403, or an exhausted quota, stops the run with the parent-facing reason: every further word would fail too. So does a voice that could not be saved on its word (`save_settings()` failed; the job has `save_failed`, and its file waits for review in the editor). The next run ("Weiter") attaches that file to its word if the word still wants the same text (`_fill_saved_result`, `_fill_attach`), so the same voice is never paid for twice. An exception that escapes a worker still ends its job as failed, so no slot stays "busy" for ever. A 429 is retried after 10 s and again after 30 s. Three failures in a row stop the run. Any other failure is counted, the word is listed, and the run goes on.
+- **Progress.** Every step goes out as `fill_update`. `GET /api/fill` serves the current or last run, so a reloaded or second page shows the banner too. Every state, and every response, carries one `seq` across runs and restarts (wall-clock ms, then +1). A page never installs an older one, such as a late GET from before a run ended. Its states: running (with "Anhalten"), done, stopped or error (with "Weiter"). `POST /api/fill/stop` ends the run after the word it is on.
+- **Restarts.** The run lives in memory like the jobs. After a restart it is gone: a newer `seq` with no run, where the page knew one running, shows "Unterbrochen …". "Weiter" starts a new run, which only makes what is still missing.
+- **Quiet.** Batch jobs never autoplay in the editor and get no toast each. The library refreshes once, when the run ends, with one summary toast.
 
 ### Settings Auto-Save
 

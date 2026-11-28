@@ -869,39 +869,51 @@
                     @click="ui.letterFilter = f.id"><span x-text="f.label"></span><span class="c num" x-text="letterAlphabet().filter(l => letterFilterOk(l, f.id)).length"></span></button>
           </template>
         </div>
-        <button type="button" class="ui-btn sm ui-btn-soft" x-show="fillOfferInBar()" @click="fillOpen()">
+        <button type="button" class="ui-btn sm ui-btn-soft" x-show="fillOfferInBar()" @click="fillOpen('missing')">
           <span x-html="ui.ic.voice" aria-hidden="true"></span><span>Fehlende Stimmen erzeugen</span><span class="ui-fillcnt num" x-text="fillMissingList().length"></span>
+        </button>
+        <button type="button" class="ui-btn sm ui-btn-line" x-show="redoOfferInBar()" @click="fillOpen('redo')"
+                :title="'Stimmen, die nicht von ' + (outdated?.voice_name || 'der aktuellen Stimme') + ' stammen'">
+          <span x-html="ui.ic.retry" aria-hidden="true"></span><span>Stimmen neu erzeugen</span><span class="ui-fillcnt num" x-text="outdated?.count"></span>
         </button>
         <span class="ui-faint ui-sum" x-text="letterSummary()"></span>
       </div>
       <!-- FUNK-75: one server run makes the German voice for every word of the set that has none -->
       <div class="ui-fill" x-show="fillAsk && !fillRunning()" x-cloak>
-        <span class="ic" x-html="ui.ic.voice" aria-hidden="true"></span>
+        <span class="ic" x-html="fillAsk === 'redo' ? ui.ic.retry : ui.ic.voice" aria-hidden="true"></span>
         <div class="tx">
-          <b x-text="fillMissingList().length === 1 ? '1 Wort bekommt eine deutsche Stimme' : fillMissingList().length + ' Wörter bekommen eine deutsche Stimme'"></b>
+          <b x-text="fillAskTitle()"></b>
           <p x-text="fillAskLine()"></p>
         </div>
         <div class="acts">
           <button type="button" class="ui-btn sm ui-btn-ghost" @click="fillAsk = false">Abbrechen</button>
-          <button type="button" class="ui-btn sm ui-btn-pri" :disabled="fillBusy || !fillMissingList().length" @click="fillStart()">
-            <span x-html="ui.ic.sparkle" aria-hidden="true"></span><span>Erzeugen</span>
+          <button type="button" class="ui-btn sm ui-btn-pri" :disabled="fillBusy || !fillAskCount()" @click="fillStart(fillAsk)">
+            <span x-html="ui.ic.sparkle" aria-hidden="true"></span><span x-text="fillAskApproved() ? 'Erzeugen' : 'Erstes Wort anhören'"></span>
           </button>
         </div>
       </div>
       <div class="ui-fill" :class="fillTone()" x-show="fillShown()" x-cloak role="status" aria-live="polite">
-        <template x-if="fillRunning()"><span class="ui-ring sm" aria-hidden="true"></span></template>
+        <template x-if="fillRunning() && !fillSampling()"><span class="ui-ring sm" aria-hidden="true"></span></template>
+        <template x-if="fillSampling()"><span class="ic" x-html="ui.ic.voice" aria-hidden="true"></span></template>
         <template x-if="!fillRunning()"><span class="ic" x-html="fillTone() === 'done' ? ui.ic.check : ui.ic.alert" aria-hidden="true"></span></template>
         <div class="tx">
           <b x-text="fillTitle()"></b>
           <p x-text="fillLine()"></p>
-          <div class="ui-fillbar" x-show="fillRunning()"><i :style="'width:' + fillPct() + '%'"></i></div>
+          <div class="ui-fillbar" x-show="fillRunning() && !fillSampling()"><i :style="'width:' + fillPct() + '%'"></i></div>
         </div>
-        <div class="acts">
+        <div class="acts" x-show="fillSampling()">
+          <button type="button" class="ui-btn sm ui-btn-line" @click="fillPlaySample()" :aria-label="'Erstes Wort anhören: ' + (fill?.sample?.word || '')">
+            <span x-html="pl.f === fill?.sample?.file ? ui.ic.pause : ui.ic.play" aria-hidden="true"></span><span>Anhören</span></button>
+          <button type="button" class="ui-btn sm ui-btn-ghost" @click="fillSampleOther()">Andere Stimme</button>
+          <button type="button" class="ui-btn sm ui-btn-ghost" @click="fillStop()">Abbrechen</button>
+          <button type="button" class="ui-btn sm ui-btn-pri" :disabled="fillBusy" @click="fillContinue()"><span x-html="ui.ic.check" aria-hidden="true"></span><span>Klingt gut, weiter</span></button>
+        </div>
+        <div class="acts" x-show="!fillSampling()">
           <button type="button" class="ui-btn sm ui-btn-line" x-show="fillRunning()" :disabled="fill?.stopping" @click="fillStop()">
             <span x-html="ui.ic.stop" aria-hidden="true"></span><span x-text="fill?.stopping ? 'Hält an …' : 'Anhalten'"></span>
           </button>
-          <button type="button" class="ui-btn sm ui-btn-soft" x-show="!fillRunning() && fillMissingList().length && fill?.set_id === activeSetId"
-                  :disabled="fillBusy" @click="fillStart()" x-text="fill?.status === 'done' ? 'Nochmal versuchen' : 'Weiter'"></button>
+          <button type="button" class="ui-btn sm ui-btn-soft" x-show="!fillRunning() && fillLeft() && fill?.set_id === activeSetId"
+                  :disabled="fillBusy" @click="fillStart(fill?.mode || 'missing')" x-text="fill?.status === 'done' ? 'Nochmal versuchen' : 'Weiter'"></button>
           <button type="button" class="ui-ibtn" x-show="!fillRunning()" @click="fillHidden = fill.id" aria-label="Meldung schließen" x-html="ui.ic.x"></button>
         </div>
       </div>
@@ -1803,6 +1815,7 @@
               <div class="ui-vrow-h">
                 <span class="ui-kind ui-kind-code" :class="l.kind.toLowerCase()" x-text="l.kind" aria-hidden="true"></span>
                 <div style="min-width:0;flex:1"><b x-text="l.label"></b><span class="ui-hint" style="margin-top:1px" x-text="'Stimme: ' + (l.voice_name || l.voice_id)"></span></div>
+                <span class="ui-active" x-show="l.approved" title="Du hast diese Stimme angehört und freigegeben: viele Wörter auf einmal laufen ohne Rückfrage"><span x-html="ui.ic.check" aria-hidden="true"></span>freigegeben</span>
               </div>
               <div class="ui-row">
                 <button type="button" class="ui-btn sm ui-btn-soft" @click="openVoicePicker(l.code, $el)">Stimme wählen</button>
@@ -1813,6 +1826,10 @@
                 </select>
               </div>
               <span class="ui-hint ui-warn" x-show="!l.sets_language">Dieses Modell rät die Sprache: kurze Wörter klingen damit oft englisch.</span>
+              <div class="ui-row" x-show="!l.approved && vtestReady(l.code)">
+                <span class="ui-hint" style="margin:0;flex:1">Klingt die Stimme gut? Freigeben, dann laufen viele Wörter auf einmal ohne Rückfrage.</span>
+                <button type="button" class="ui-btn sm ui-btn-pri" :disabled="_voicePending > 0" @click="voiceApprove(l.code)"><span x-html="ui.ic.check" aria-hidden="true"></span>Freigeben</button>
+              </div>
             </div>
           </template>
           <p class="ui-hint" x-show="!vlangs.languages.length && !vlangsError">Stimmen werden geladen …</p>
@@ -2894,7 +2911,8 @@ function funkeykid() {
     waves: {}, durs: {}, _flat: Array.from({ length: 48 }, () => 0.08),
     toastUndo: false, _toastTimer: null,
     aiLogEntries: [],
-    fill: null, _fillSeq: 0, fillAsk: false, fillBusy: false, fillHidden: '',   // FUNK-75
+    fill: null, _fillSeq: 0, fillAsk: false, fillBusy: false, fillHidden: '',   // FUNK-75; fillAsk: false | 'missing' | 'redo' (FUNK-87)
+    outdated: null, _outdatedSeq: 0, _fillSamplePlayed: '', _fillStartedHere: '', // FUNK-87
     files: { kind: 'sounds', use: 'all', q: '', limit: 200, usage: null, archiveOpen: false, archive: null, confirm: '' },   // FUNK-78
     _fileUsageSeq: 0,
     dlg: null, _dlgReturn: null,   // FUNK-80
@@ -3682,6 +3700,7 @@ function funkeykid() {
       if (t === 'ailog') { this.loadAiLog(); this.loadIntegrations(); }
       if (t === 'files') { this.loadFileUsage(); this._refreshLists(); }
       if (t === 'settings') this.loadVoiceLangs();          // FUNK-85: fresh, and a failed first load recovers
+      if (t === 'letters') { this.loadOutdated(); this.loadVoiceLangs(); }   // FUNK-87: "Stimmen neu erzeugen" count
       window.scrollTo({ top: 0 });
     },
     pageMeta() {
@@ -3820,21 +3839,71 @@ function funkeykid() {
     // ══ Fehlende Stimmen erzeugen (FUNK-75) ══
     // The server runs it word by word (one run at a time) and announces every step (fill_update);
     // the page only shows that state. Its words are ordinary jobs marked `batch`: no autoplay, no toast each.
-    fillMissingList() {                    // what each voice would say, as the server picks them
+    fillMissingList() {                    // what each voice would say, as the server picks them (words, then digits: FUNK-87)
       if (!this.setKinds().includes('DE')) return [];
       const out = [];
-      for (const cfg of Object.values(this.activeSet?.letters || {})) for (const e of (cfg && cfg.entries) || []) {
+      const add = (e) => {
         const t = e && e.tracks && e.tracks.DE;
-        const text = ((t && t.prompt) || '').trim() || (e && e.word || '').trim();
+        const text = ((t && t.prompt) || '').trim() || (e && typeof e.word === 'string' ? e.word : '').trim();
         if (text && !(t && t.file) && !(t && t.enabled === false)) out.push(text);   // switched off for this word: left alone
-      }
+      };
+      for (const cfg of Object.values(this.activeSet?.letters || {})) for (const e of (cfg && cfg.entries) || []) add(e);
+      for (const d of '0123456789') { const n = this.activeSet?.numbers?.[d]; if (n) add(n); }
       return out;
+    },
+    // ══ Stimmen neu erzeugen + erstes Wort zum Anhören (FUNK-87) ══
+    async loadOutdated() {
+      const setId = this.activeSetId;
+      if (!setId) return;
+      const seq = ++this._outdatedSeq;
+      try {
+        const res = await fetch('/api/voices/outdated?set_id=' + encodeURIComponent(setId));
+        const d = await res.json();
+        if (seq === this._outdatedSeq && res.ok) this.outdated = d;
+      } catch { /* the button just stays as it was */ }
+    },
+    redoOfferInBar() {
+      const o = this.outdated;
+      return !!o && o.set_id === this.activeSetId && o.count > 0 && !this.fillRunning() && !this.fillAsk
+        && !(this.fillShown() && this.fill.set_id === this.activeSetId && this.fill.mode === 'redo');   // its banner offers "Weiter"
+    },
+    fillSampling() { return this.fillRunning() && this.fill.phase === 'sample' && !!this.fill.sample; },
+    fillAskCount() { return this.fillAsk === 'redo' ? ((this.outdated && this.outdated.count) || 0) : this.fillMissingList().length; },
+    fillAskApproved() { const l = this._vlang('de'); return !!(l && l.approved); },
+    fillAskTitle() {
+      const n = this.fillAskCount();
+      if (this.fillAsk === 'redo') {
+        const v = (this._vlang('de') || {}).voice_name || (this.outdated && this.outdated.voice_name) || 'der aktuellen Stimme';
+        return (n === 1 ? '1 Stimme wird' : n + ' Stimmen werden') + ` neu gesprochen, von „${v}“`;
+      }
+      return n === 1 ? '1 Wort bekommt eine deutsche Stimme' : n + ' Wörter bekommen eine deutsche Stimme';
+    },
+    fillLeft() { return (this.fill && this.fill.mode === 'redo') ? ((this.outdated && this.outdated.count) || 0) : this.fillMissingList().length; },
+    async fillContinue() {
+      const f = this.fill;
+      if (!f || !this.fillSampling() || this.fillBusy) return;
+      this.fillBusy = true;
+      this.plStop();
+      try {
+        const res = await this._api('/api/fill/continue', { method: 'POST', json: { run_id: f.id, job_id: f.sample.job_id } });
+        const d = await res.json().catch(() => ({}));
+        if (d.run) this._fillInstall(d.run, d.seq);
+        if (!res.ok) this.showToast(d.error || 'Ging nicht.', 'error');
+        else this.loadVoiceLangs();          // the voice is approved now
+      } catch { this.showToast('Keine Verbindung zum Server.', 'error'); }
+      this.fillBusy = false;
+    },
+    fillPlaySample() { const sm = this.fill && this.fill.sample; if (sm && sm.file) this.plToggle(sm.file, 100); },
+    async fillSampleOther() {
+      await this.fillStop();
+      this.go('settings');
+      this.$nextTick(() => { const el = document.getElementById('st-voices'); if (el) el.scrollIntoView({ block: 'start' }); });
     },
     fillRunning() { return !!this.fill && this.fill.status === 'running'; },
     // the bar's button, unless the question is open or the banner already offers "Weiter" for this set
     fillOfferInBar() {
       return !!this.fillMissingList().length && !this.fillRunning() && !this.fillAsk
-        && !(this.fillShown() && this.fill.set_id === this.activeSetId);
+        && !(this.fillShown() && this.fill.set_id === this.activeSetId && (this.fill.mode || 'missing') === 'missing');
     },
     fillShown() { const f = this.fill; return !!f && f.id !== this.fillHidden && (f.status === 'running' || f.total > 0 || !!f.error); },
     fillDoneCount() { const f = this.fill; return f ? f.done + f.skipped + f.failed : 0; },
@@ -3845,39 +3914,57 @@ function funkeykid() {
       return f.status === 'done' ? (f.failed ? 'warn' : 'done') : f.status;
     },
     fillAskLine() {
-      const list = this.fillMissingList(), chars = list.reduce((n, t) => n + t.length, 0);
+      const redo = this.fillAsk === 'redo', o = this.outdated || {};
+      const list = redo ? [] : this.fillMissingList();
+      const chars = redo ? (o.chars || 0) : list.reduce((n, t) => n + t.length, 0);
+      const count = redo ? (o.count || 0) : list.length;
       const left = this.integrations.elevenlabs && this.integrations.elevenlabs.characters_remaining;
-      const min = Math.max(1, Math.round(list.length * 3 / 60));
-      return `Mit ElevenLabs, etwa ${chars.toLocaleString('de-AT')} Zeichen` + (typeof left === 'number' ? ` von ${left.toLocaleString('de-AT')} übrigen` : '')
-        + ` · dauert etwa ${min} Min. Du kannst währenddessen weiterarbeiten.`;
+      const min = Math.max(1, Math.round(count * 3 / 60));
+      const was = redo && (o.by_voice || []).length ? 'Bisher: ' + o.by_voice.map(b => `${b.name || 'unbekannt'} (${b.count})`).join(', ') + ' · ' : '';
+      const first = this.fillAskApproved() ? '' : ' Zuerst entsteht nur ein Wort: du hörst es an und entscheidest, ob die Stimme passt.';
+      return was + `Mit ElevenLabs, etwa ${chars.toLocaleString('de-AT')} Zeichen` + (typeof left === 'number' ? ` von ${left.toLocaleString('de-AT')} übrigen` : '')
+        + ` · dauert etwa ${min} Min.` + first + (redo ? ' Die alten Dateien bleiben in der Bibliothek.' : ' Du kannst währenddessen weiterarbeiten.');
     },
     fillTitle() {
       const f = this.fill;
       if (!f) return '';
       const n = f.done, st = n === 1 ? 'Stimme' : 'Stimmen';
-      if (f.status === 'running') return `Stimmen werden erzeugt · ${this.fillDoneCount()} von ${f.total}`;
-      if (f.status === 'stopped') return `Angehalten: ${n} von ${f.total} ${st} erzeugt`;
-      if (f.status === 'error') return `Abgebrochen: ${n} von ${f.total} ${st} erzeugt`;
-      return f.failed ? `${n} ${st} erzeugt, ${f.failed} fehlgeschlagen` : `Fertig: ${n} ${st} erzeugt`;
+      const made = f.mode === 'redo' ? 'neu erzeugt' : 'erzeugt';
+      if (this.fillSampling()) return 'Hör dir das erste Wort an';
+      if (f.status === 'running') return `Stimmen werden ${made} · ${this.fillDoneCount()} von ${f.total}`;
+      if (f.status === 'stopped') return `Angehalten: ${n} von ${f.total} ${st} ${made}`;
+      if (f.status === 'error') return `Abgebrochen: ${n} von ${f.total} ${st} ${made}`;
+      return f.failed ? `${n} ${st} ${made}, ${f.failed} fehlgeschlagen` : `Fertig: ${n} ${st} ${made}`;
     },
     fillLine() {
       const f = this.fill;
       if (!f) return '';
       const other = f.set_id !== this.activeSetId ? ` · Set „${f.set_name || f.set_id}“` : '';
+      if (this.fillSampling()) {
+        const sm = f.sample, rest = Math.max(0, f.total - 1);
+        return `„${sm.word}“ mit ${sm.voice_name}. Klingt die Stimme gut? Dann ` + (rest ? `kommen die übrigen ${rest}.` : 'ist es fertig.') + other;
+      }
       if (f.status === 'running') {
         if (f.stopping) return 'Hält nach diesem Wort an …' + other;
         return (f.current ? `Gerade: ${f.current} (${f.current_letter})` : 'Startet …') + other;
       }
       if (f.status === 'error') return (f.error || 'Unbekannter Fehler') + other;
-      const left = f.set_id === this.activeSetId ? this.fillMissingList().length : 0;
+      if (f.status === 'stopped' && f.error) return f.error + other;       // FUNK-87: stopped at the first word
+      const left = f.set_id === this.activeSetId ? this.fillLeft() : 0;
       const parts = [];
       if (f.failed) parts.push('Fehlgeschlagen: ' + f.failed_words.join(', ') + (f.failed > f.failed_words.length ? ' …' : '') + '.');
       if (f.skipped) parts.push(`${f.skipped} übersprungen (inzwischen schon vertont, gelöscht oder gerade in Arbeit).`);
-      if (f.status === 'stopped' && left) parts.push(`Noch ${left} ohne Stimme: „Weiter“ macht dort weiter.`);
-      if (!parts.length) parts.push(left ? `Noch ${left} ohne Stimme.` : 'Jedes Wort hat jetzt eine deutsche Stimme.');
+      const what = f.mode === 'redo' ? 'mit älterer Stimme' : 'ohne Stimme';
+      if (f.status === 'stopped' && left) parts.push(`Noch ${left} ${what}: „Weiter“ macht dort weiter.`);
+      if (!parts.length) parts.push(left ? `Noch ${left} ${what}.` : (f.mode === 'redo' ? 'Alle Stimmen sprechen jetzt mit der aktuellen Stimme.' : 'Jedes Wort hat jetzt eine deutsche Stimme.'));
       return parts.join(' ') + other;
     },
-    fillOpen() { this.fillAsk = true; this.loadIntegrations(); },
+    fillOpen(mode) {
+      this.fillAsk = mode === 'redo' ? 'redo' : 'missing';
+      this.loadIntegrations();
+      this.loadVoiceLangs();
+      if (this.fillAsk === 'redo') this.loadOutdated();
+    },
     // every state has one order (seq) across runs and restarts: a late answer never replaces a newer state
     _fillInstall(run, seq) {
       if (typeof seq !== 'number' || seq < this._fillSeq) return;
@@ -3887,15 +3974,23 @@ function funkeykid() {
       this.fill = run || null;
       if (run && run.status === 'running') this.fillAsk = false;   // started here or on another page: no stale question after it
       if (was && run && run.id === was && run.status !== 'running') this._fillEnded(run);
+      // FUNK-87: the first word plays once, on the page that started the run (other pages show it to tap)
+      const sm = run && run.phase === 'sample' && run.sample;
+      if (sm && sm.file && run.id === this._fillStartedHere && this._fillSamplePlayed !== sm.job_id) {
+        this._fillSamplePlayed = sm.job_id;
+        this.plPlay(sm.file, 100);
+      }
     },
     _fillEnded(run) {                      // once per run this page saw running: the library and the tiles follow
       this._refreshLists();
       this._scheduleSetReload();
+      this.loadOutdated();
+      this.loadVoiceLangs();
       if (this.tab === 'letters' && !this.ed && run.id !== this.fillHidden) return;   // the banner in view says it already
       if (run.status === 'error') { this.showToast('Stimmen: ' + (run.error || 'abgebrochen'), 'error'); return; }
-      const n = run.done, st = n === 1 ? 'Stimme' : 'Stimmen';
-      if (run.status === 'stopped') this.showToast(`Angehalten: ${n} ${st} erzeugt`);
-      else this.showToast(`Fertig: ${n} ${st} erzeugt` + (run.failed ? ` · ${run.failed} fehlgeschlagen` : ''), run.failed ? 'error' : 'success');
+      const n = run.done, st = n === 1 ? 'Stimme' : 'Stimmen', made = run.mode === 'redo' ? 'neu erzeugt' : 'erzeugt';
+      if (run.status === 'stopped') this.showToast(run.error || `Angehalten: ${n} ${st} ${made}`);
+      else this.showToast(`Fertig: ${n} ${st} ${made}` + (run.failed ? ` · ${run.failed} fehlgeschlagen` : ''), run.failed ? 'error' : 'success');
     },
     async loadFill() {
       try {
@@ -3912,7 +4007,8 @@ function funkeykid() {
       } catch {}
     },
     // queued behind the editor's writes: a word renamed a moment ago is on the server before the run reads it
-    fillStart() {
+    fillStart(mode) {
+      mode = mode === 'redo' ? 'redo' : 'missing';
       if (this.fillBusy || this.fillRunning()) return;
       const vmark = this.voiceMark();           // FUNK-85: the voice setup as it was at this click
       const setId = this.activeSetId;
@@ -3926,11 +4022,12 @@ function funkeykid() {
             this.fillBusy = false;
             return 'drop';
           }
-          const res = await this._api(`/api/sets/${encodeURIComponent(setId)}/fill-voices`, { method: 'POST', json: { kind: 'DE' } });
+          const res = await this._api(`/api/sets/${encodeURIComponent(setId)}/fill-voices`, { method: 'POST', json: { kind: 'DE', mode } });
           const d = await res.json().catch(() => ({}));
+          if (res.ok && d.run) this._fillStartedHere = d.run.id;
           if (d.run) { this._fillInstall(d.run, d.seq); this.fillAsk = false; }
           if (!res.ok) this.showToast(d.error || 'Konnte nicht starten.', 'error');
-          else if (d.run && !d.run.total) this.showToast('Jedes Wort hat schon eine deutsche Stimme');
+          else if (d.run && !d.run.total) this.showToast(mode === 'redo' ? 'Alle Stimmen sprechen schon mit der aktuellen Stimme' : 'Jedes Wort hat schon eine deutsche Stimme');
         } catch { this.showToast('Keine Verbindung zum Server.', 'error'); }
         this.fillBusy = false;
         return 'drop';
@@ -4387,7 +4484,16 @@ function funkeykid() {
       if (!this.ed || this.ed.loading || !this.edKinds().includes('DE')) return [];
       return this.ed.entries.filter(e => e.word.trim() && !e.tracks.DE.file && this.edSlot(e, 'DE').state !== 'run');
     },
-    edGenMissingVoices() { for (const e of this.edMissingVoices()) this.edGen(e, 'DE'); },
+    edGenMissingVoices() {
+      const list = this.edMissingVoices();
+      if (!list.length) return;
+      if (!this.fillAskApproved()) {         // FUNK-87: a voice nobody approved makes one word to listen to first
+        this.edGen(list[0], 'DE');
+        if (list.length > 1) this.showToast('Erst ein Wort zum Anhören. Klingt die Stimme gut, gib sie in Einstellungen › Sprachen & Stimmen frei; dann macht „Alle erzeugen“ den Rest.');
+        return;
+      }
+      for (const e of list) this.edGen(e, 'DE', { bulk: true });
+    },
     edRowStatus(e) {
       if (e._archiving) return 'wird archiviert …';
       if (!e.enabled) return 'ausgeschaltet';
@@ -4477,8 +4583,9 @@ function funkeykid() {
     },
     edClearSlot(e, k) { this._setSlot(this._slotKey(this.ed.setId, this.ed.L, e.id, k), null); },
     edElapsed(s) { return s && s.t0 ? Math.max(0, Math.floor((this.clockNow - s.t0) / 1000)) + ' s' : ''; },
-    edGen(e, k) {
+    edGen(e, k, opts) {
       const vmark = this.voiceMark();           // FUNK-85: the voice setup as it was at this click
+      const bulk = !!(opts && opts.bulk);       // FUNK-87: part of "Alle erzeugen": the server checks the voice is approved
       if (!this.ed || this.ed.loading || !e) return;
       const word = e.word.trim() || (k === 'BG' ? this.ed.L : '');   // a background needs the subject, not the word
       if (!word) return;
@@ -4513,6 +4620,7 @@ function funkeykid() {
           } else {
             const body = { kind: k, word, slug_prefix: this.fileSlug(L), target };
             if (prompt) body.prompt = prompt;
+            if (bulk) body.bulk = true;
             // FUNK-85: a voice or model change being saved goes first; if it failed, nothing is made with the old one
             if (k !== 'FX' && !(await this.voiceSettled(vmark))) throw new Error('voice-unsaved');
             res = await this._api('/api/generate/track', { method: 'POST', json: body });
@@ -4842,11 +4950,34 @@ function funkeykid() {
         const want = this._vWant[code];
         const l = (this.vlangs.languages || []).find(x => x.code === code);
         if (!l || l.model === want) return;
-        if (await this._voicePatch(code, { model: want }) && this._vWant[code] === want)
+        if (await this._voicePatch(code, { model: want }) && this._vWant[code] === want) {
+          this.loadOutdated();
           this.showToast(`${l.label}: ${this.vlangs.models.find(m => m.id === want)?.label || want}`);
+        }
       });
     },
     vtestBusy(key) { return !!(this.vtest[key] && this.vtest[key].busy); },
+    vtestReady(code) {                       // the saved voice of this language was tested as it is now (FUNK-87)
+      const l = this._vlang(code), t = this.vtest[code];
+      return !!(l && t && t.url && t.lang === code && t.voice === l.voice_id && t.model === l.model);
+    },
+    voiceApprove(code) {
+      const t = this.vtest[code];               // what the parent heard: approved only if that is still the voice
+      if (!this.vtestReady(code) || this._voicePending) return;
+      const tested = { voice_id: t.voice, model: t.model };
+      return this._voiceSerial(async () => {
+        const l = this._vlang(code);
+        if (!l) return;
+        try {
+          const res = await this._api('/api/voice-languages/' + encodeURIComponent(code) + '/approve', { method: 'POST', json: tested });
+          const d = await res.json().catch(() => ({}));
+          if (d.languages) this.vlangs = d;
+          if (!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
+          this.showToast(`${l.label}: „${l.voice_name || l.voice_id}“ freigegeben`);
+          this.loadOutdated();
+        } catch (err) { this.showToast('Nicht freigegeben: ' + err.message, 'error'); }
+      });
+    },
     async voiceTest(code, v) {
       const key = v ? code + ':' + v.voice_id : code;    // per language: one voice sounds different in German and English
       if (this.vtestBusy(key)) return;
@@ -4857,16 +4988,15 @@ function funkeykid() {
         return;
       }
       this.vtest = { ...this.vtest, [key]: { busy: true } };
-      let d = {}, failed = null, used = null;
+      let d = {}, failed = null;
       // after any voice or model change still being saved, with the model the server confirmed: the parent
       // hears exactly what new voices will sound like (FUNK-85 review)
       await this._voiceSerial(async () => {
         if (tok !== this._vpTok) return;        // superseded while waiting (picker closed, another audition): not paid
         const l = this._vlang(code);
-        const body = { lang: code };
-        if (l) body.model = l.model;
+        const body = { lang: code };            // always the voice this page shows: never another page's choice
+        if (l) { body.model = l.model; body.voice_id = l.voice_id; body.voice_name = l.voice_name; }
         if (v) { body.voice_id = v.voice_id; body.voice_name = v.name; }
-        used = { lang: code, model: body.model, voice: v ? v.voice_id : (l && l.voice_id) };
         try {
           const res = await this._api('/api/voices/test', { method: 'POST', json: body });
           d = await res.json().catch(() => ({}));
@@ -4879,7 +5009,8 @@ function funkeykid() {
         return;
       }
       if (!d.url) { this.vtest = { ...this.vtest, [key]: { busy: false } }; return; }     // skipped: superseded
-      this.vtest = { ...this.vtest, [key]: { busy: false, url: d.url, ...used } };
+      // what the server says it spoke: "Freigeben" can only approve that (FUNK-87)
+      this.vtest = { ...this.vtest, [key]: { busy: false, url: d.url, lang: d.lang, model: d.model, voice: d.voice_id } };
       if (tok === this._vpTok) this._vpPlayUrl(d.url, key, true);
     },
     _vpPlayUrl(url, key, tellIfBlocked) {
@@ -4940,6 +5071,7 @@ function funkeykid() {
       const ok = await this._voiceSerial(() => this._voicePatch(vp.code, { voice_id: v.voice_id, voice_name: v.name }));
       vp.choosing = false;
       if (!ok) return;
+      this.loadOutdated();
       this.showToast(`Stimme für ${vp.label}: ${v.name}. Neue Stimmen sprechen jetzt so; vorhandene bleiben, bis du sie neu erzeugst.`);
       if (this.vp === vp) this.vpClose();
     },
@@ -5159,6 +5291,7 @@ function funkeykid() {
       });
       this.loadDiagnostics();  // fills the keyboard picker in Settings
       this.loadVoiceLangs();   // FUNK-85
+      this.loadOutdated();     // FUNK-87
       // Fallback poll every 10s (SSE handles real-time, poll is backup)
       setInterval(() => this.pollStatus(), 10000);
       // Update "ago" text every second
@@ -5178,6 +5311,7 @@ function funkeykid() {
         if (this.ed && !this.ed.loading) this._edRefreshSoon();
         this._scheduleSetReload();
         this.loadFill();                     // FUNK-75: a fill run's steps may have been missed, or the server restarted
+        this.loadVoiceLangs(); this.loadOutdated();   // FUNK-87: a voice changed elsewhere while disconnected
         if (this.tab === 'files') this.loadFileUsage();   // FUNK-78
       };
       es.addEventListener('status', (e) => {
@@ -5283,6 +5417,8 @@ function funkeykid() {
         if (this.ed && d.origin !== FK_CLIENT && d.set_id === this.ed.setId && d.letter === this.ed.L) this._edRefreshSoon();
       });
       es.addEventListener('fill_update', (e) => { const d = JSON.parse(e.data); this._fillInstall(d, d.seq); });   // FUNK-75
+      // FUNK-87: a voice chosen or approved on another page: the voice card and the redo count follow
+      es.addEventListener('voices', () => { this.loadVoiceLangs(); this.loadOutdated(); });
       es.addEventListener('ai_log', (e) => {
         const d = JSON.parse(e.data);
         this.aiLogEntries.unshift(d);
@@ -5569,6 +5705,7 @@ function funkeykid() {
       await this.refresh();
       this.loadQuiz();
       this.showToast(`Set „${this.sets[this.activeSetId]?.name}“ aktiviert`);
+      this.loadOutdated();                 // FUNK-87: the count belongs to the active set
     },
     async createSet() {
       const name = await this.ask({ title: 'Neues Set', text: 'Name für das neue Set:', input: true, max: SET_NAME_MAX, ok: 'Anlegen' });

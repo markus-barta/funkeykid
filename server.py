@@ -3932,11 +3932,14 @@ def _finalize_job(job_id):
     job.pop("_done", None)
     job["status"] = "done"
     t, applied = job.get("target"), False       # a detached job has no target any more
+    if t and job.get("hold"):
+        # FUNK-87: a run's sample waits for the parent's "Klingt gut"; no page offers it for review meanwhile
+        job["held_target"], job["target"], t = t, None, None
     if t:
         e = _slot_entry(t["set_id"], t["letter"], t["entry_id"])
         fname, kind = job.get("filename"), t["kind"]
         folder = IMAGES_DIR if kind in ("IMG", "BG") else SOUNDS_DIR
-        if e is not None and job.get("batch") and (not _fill_wanted(e, kind) or _fill_text(e, kind) != job.get("text")):
+        if e is not None and job.get("batch") and not _batch_slot_wants(e, kind, t, job):
             # FUNK-75: a fill run's voice for a word that changed meanwhile (renamed, new spoken text,
             # switched off or filled): it only goes to the library, and no page offers it for review
             job["target"] = None
@@ -3952,6 +3955,8 @@ def _finalize_job(job_id):
                 current = fname if _bg_index(e, fname) >= 0 else ("full" if len(e["backgrounds"]) >= NUMBER_BG_MAX else "")
             else:
                 current = e.get("image") if kind == "IMG" else (e["tracks"].get(kind) or {}).get("file")
+            if t.get("replace") and current == t["replace"]:
+                current = None                  # FUNK-87: a redo swaps exactly the file it was made for
             if not current:
                 before = json.dumps(e)
                 if kind == "BG":
@@ -3961,7 +3966,9 @@ def _finalize_job(job_id):
                     e["image"] = fname
                 else:
                     track = e["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
-                    track["file"], track["enabled"] = fname, True
+                    track["file"] = fname
+                    if not t.get("replace"):
+                        track["enabled"] = True
                 try:
                     save_settings()
                     applied = True
@@ -3981,6 +3988,50 @@ def _finalize_job(job_id):
 
 
 _apply_job_target = _finalize_job              # the name the tests and the docs used first
+
+
+def _batch_slot_wants(e, kind, t, job):
+    """A run's word still wants this job's file: the same text, and for a redo the slot still holds the
+    file the job replaces (and the track is not switched off); otherwise the slot is still empty."""
+    if _fill_text(e, kind) != job.get("text"):
+        return False
+    if t.get("replace"):
+        track = (e.get("tracks") or {}).get(kind) if isinstance(e.get("tracks"), dict) else None
+        return _slot_file(e, kind) == t["replace"] and not (isinstance(track, dict) and track.get("enabled") is False)
+    return _fill_wanted(e, kind)
+
+
+def _fill_apply_held(job):
+    """Put an approved sample on its word, like _finalize_job would have (FUNK-87). True if it landed;
+    False if the word changed meanwhile (the file stays in the library). Raises _SaveFailed."""
+    t = job.get("held_target")
+    if not t:
+        return False
+    e = _slot_entry(t["set_id"], t["letter"], t["entry_id"])
+    fname, kind = job.get("filename"), t["kind"]
+    if e is None or not fname or not os.path.isfile(os.path.join(SOUNDS_DIR, fname)) or not _batch_slot_wants(e, kind, t, job):
+        return False
+    before = json.dumps(e)
+    if t["letter"] in NUMBER_KEYS:
+        _normalize_number_entry(e)
+    else:
+        _normalize_letter_entry(e)
+    track = e["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
+    track["file"] = fname
+    if not t.get("replace"):
+        track["enabled"] = True
+    try:
+        save_settings()
+    except Exception as ex:
+        e.clear()
+        e.update(json.loads(before))
+        print(f"[fill] sample {job.get('id')} not saved on its word: {ex}", flush=True)
+        raise _SaveFailed() from ex
+    job["target"], job["applied"] = t, True
+    job.pop("held_target", None)
+    sse_broadcast("letter", {"set_id": t["set_id"], "letter": t["letter"], "entry_id": t["entry_id"], "origin": "job"})
+    sse_broadcast("gen_update", job)
+    return True
 
 
 async def api_get_jobs(request):
@@ -4379,6 +4430,11 @@ async def api_generate_track(request):
         # fall back to the word (works for DE; EN callers should send an English word).
         text = want
         profile = _profile_for_kind(kind)               # FUNK-85: the language's voice, model and code
+        if data.get("bulk") and not _voice_approved(profile):
+            # FUNK-87: many words at once only in a voice the parent heard and approved (another page may have
+            # switched the voice since this page looked)
+            return web.json_response({"error": "Diese Stimme ist noch nicht freigegeben: erst ein Wort anhören, dann in "
+                                                "Einstellungen › Sprachen & Stimmen freigeben.", "error_code": "voice_unapproved"}, status=409)
         if data.get("voice_id") and _VOICE_ID_RE.match(str(data["voice_id"])):
             profile = dict(profile, voice_id=data["voice_id"], voice_name=KNOWN_VOICE_NAMES.get(data["voice_id"], ""))
         job_id = f"trk_{uuid.uuid4().hex[:8]}"
@@ -4405,7 +4461,8 @@ def _voice_language_view():
         langs.append({"code": code, "kind": code.upper(), "label": cfg.get("label") or VOICE_LANGUAGE_LABELS.get(code, code),
                       "voice_id": p["voice_id"], "voice_name": p["voice_name"], "model": p["model"],
                       "model_label": TTS_MODELS.get(p["model"], p["model"]),
-                      "sets_language": p["model"] in TTS_MODELS_WITH_LANGUAGE})
+                      "sets_language": p["model"] in TTS_MODELS_WITH_LANGUAGE,
+                      "approved": _voice_approved(p)})
     return {"languages": langs, "models": [{"id": k, "label": v, "sets_language": k in TTS_MODELS_WITH_LANGUAGE}
                                            for k, v in TTS_MODELS.items()]}
 
@@ -4454,6 +4511,7 @@ async def api_patch_voice_language(request):
                 settings[k] = v
         print(f"[voices] {code} not saved: {e}", flush=True)
         return web.json_response({"error": "Nicht gespeichert (Speicher nicht beschreibbar)."}, status=500)
+    sse_broadcast("voices", {"code": code})          # FUNK-87: other pages refresh their voice card and redo count
     return web.json_response(_voice_language_view())
 
 
@@ -4541,8 +4599,9 @@ async def api_voice_test(request):
     import hashlib
     name = hashlib.sha1(f"{profile['voice_id']}|{profile['model']}|{lang}|{text}".encode()).hexdigest()[:20] + ".mp3"
     url = f"/api/voices/test-audio/{name}"
+    used = {"voice_id": profile["voice_id"], "model": profile["model"], "lang": lang}   # what was spoken (FUNK-87)
     if _safe_file(_voice_test_dir(), name):
-        return web.json_response({"ok": True, "url": url, "text": text, "cached": True})
+        return web.json_response({"ok": True, "url": url, "text": text, "cached": True, **used})
     if not os.environ.get("ELEVENLABS_API_KEY"):
         return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
     task = _voice_test_inflight.get(name)
@@ -4555,7 +4614,7 @@ async def api_voice_test(request):
     if err:
         msg, code = err
         return web.json_response({"error": msg, "error_code": code}, status=502)
-    return web.json_response({"ok": True, "url": url, "text": text, "cached": shared})
+    return web.json_response({"ok": True, "url": url, "text": text, "cached": shared, **used})
 
 
 async def _voice_test_make(name, text, profile, lang):
@@ -4583,6 +4642,59 @@ async def api_voice_test_audio(request):
     return web.FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
 
 
+async def api_approve_voice_language(request):
+    """Body {voice_id, model}: the parent heard this voice (a test in Einstellungen) and approves it, so bulk
+    runs need no first word to confirm (FUNK-87). Only the voice that is set now can be approved."""
+    code = request.match_info["code"].lower()
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if code not in (settings.get("voice_languages") or {}):
+        return web.json_response({"error": "Unbekannte Sprache"}, status=404)
+    p = _voice_profile(code)
+    if not isinstance(data, dict) or data.get("voice_id") != p["voice_id"] or data.get("model") != p["model"]:
+        return web.json_response({"error": "Inzwischen ist eine andere Stimme gewählt.", **_voice_language_view()}, status=409)
+    cfg = settings["voice_languages"][code]
+    old = cfg.get("approved")
+    cfg["approved"] = {"voice_id": p["voice_id"], "model": p["model"]}
+    try:
+        save_settings()
+    except Exception as e:
+        if old is None:
+            cfg.pop("approved", None)
+        else:
+            cfg["approved"] = old
+        print(f"[voices] approval of {code} not saved: {e}", flush=True)
+        return web.json_response({"error": "Nicht gespeichert (Speicher nicht beschreibbar)."}, status=500)
+    sse_broadcast("voices", {"code": code})
+    return web.json_response(_voice_language_view())
+
+
+async def api_voice_outdated(request):
+    """?set_id=: how many voices of the set an older voice made (FUNK-87): what "Stimmen neu erzeugen" would redo."""
+    set_id = request.query.get("set_id") or settings.get("active_set") or ""
+    if set_id not in settings.get("sets", {}):
+        return web.json_response({"error": "Set nicht gefunden"}, status=404)
+    kind = "DE"
+    profile = _profile_for_kind(kind)
+    items = _fill_items(set_id, kind, "redo", profile)
+    by_voice, chars, numbers = {}, 0, 0
+    meta = _voice_meta()
+    for letter, entry_id in items:
+        e = _slot_entry(set_id, letter, entry_id)
+        if e is None:
+            continue
+        chars += len(_fill_text(e, kind))
+        numbers += letter in NUMBER_KEYS
+        m = meta.get(_slot_file(e, kind)) or {}
+        name = m.get("voice_name") or ("" if m else "vor den Stimmen-Einstellungen erzeugt")
+        by_voice[name] = by_voice.get(name, 0) + 1
+    return web.json_response({"set_id": set_id, "kind": kind, "count": len(items), "numbers": numbers, "chars": chars,
+                              "voice_name": profile.get("voice_name") or profile["voice_id"], "approved": _voice_approved(profile),
+                              "by_voice": [{"name": k, "count": v} for k, v in sorted(by_voice.items(), key=lambda kv: -kv[1])]})
+
+
 async def api_voice_meta(request):
     """Which voice made which generated file (FUNK-85)."""
     return web.json_response(_voice_meta())
@@ -4596,6 +4708,8 @@ async def api_voice_meta(request):
 # the entry is there, its slot empty and no other job filling it. The run lives in memory like the
 # jobs: after a restart it is gone, and starting again only makes what is still missing.
 FILL_KINDS = ("DE",)
+FILL_MODES = ("missing", "redo")          # FUNK-87: make what is missing / redo what an older voice made
+FILL_SAMPLE_WAIT = 1800                   # seconds a run waits for the parent to hear its first word
 FILL_STOP_CODES = (401, 402, 403)          # the key or the plan: every further word would fail too
 FILL_RETRY_429 = (10, 30)                  # seconds before the first and the second retry of a 429
 FILL_MAX_FAILS_IN_ROW = 3
@@ -4664,28 +4778,73 @@ def _slot_busy(set_id, letter, entry_id, kind):
     return bool(_slot_jobs(set_id, letter, entry_id, kind))
 
 
-def _fill_missing(set_id, kind):
-    """(letter, entry_id) of every entry of the set whose voice of kind a run should make (_fill_wanted)."""
-    letters = (settings.get("sets", {}).get(set_id) or {}).get("letters")
+def _voice_approved(profile, run=None):
+    """True if the parent approved this exact voice and model for its language (FUNK-87): from a run's
+    first word ("Klingt gut") or a test in Einstellungen. A run also remembers its own approval."""
+    if run is not None and run.get("approved_profile") == [profile["voice_id"], profile["model"]]:
+        return True
+    a = ((settings.get("voice_languages") or {}).get(profile["lang"]) or {}).get("approved") or {}
+    return a.get("voice_id") == profile["voice_id"] and a.get("model") == profile["model"]
+
+
+def _made_by(filename, profile):
+    """True if the voice record says this file was made with exactly this voice, model and language."""
+    m = _voice_meta().get(filename) or {}
+    return (m.get("voice_id") == profile["voice_id"] and m.get("model") == profile["model"]
+            and m.get("lang") == profile["lang"])
+
+
+def _redo_wanted(e, kind, profile):
+    """True if a redo run should make e's voice again: something to say, a file in the slot that the
+    current voice did not make (no record = made before the records), and the track not switched off."""
+    if not isinstance(e, dict) or not _fill_text(e, kind):
+        return False
+    f = _slot_file(e, kind)
+    if not f or _made_by(f, profile):
+        return False
+    track = (e.get("tracks") or {}).get(kind) if isinstance(e.get("tracks"), dict) else None
+    return not (isinstance(track, dict) and track.get("enabled") is False)
+
+
+def _fill_items(set_id, kind, mode, profile=None):
+    """(letter, entry_id) a run of this mode works on: every word of the set by letter, then the digits."""
+    s = (settings.get("sets", {}).get(set_id) or {})
+    profile = profile or _profile_for_kind(kind)
+    want = (lambda e: _fill_wanted(e, kind)) if mode == "missing" else (lambda e: _redo_wanted(e, kind, profile))
     out = []
-    if not isinstance(letters, dict):
-        return out
-    for letter in sorted(letters):
-        cfg = letters[letter]
-        if not isinstance(cfg, dict) or not isinstance(cfg.get("entries"), list):
-            continue
-        for e in cfg["entries"]:
-            if isinstance(e, dict) and isinstance(e.get("id"), str) and _fill_wanted(e, kind):
-                out.append((letter, e["id"]))
+    letters = s.get("letters")
+    if isinstance(letters, dict):
+        for letter in sorted(letters):
+            cfg = letters[letter]
+            if not isinstance(cfg, dict) or not isinstance(cfg.get("entries"), list):
+                continue
+            for e in cfg["entries"]:
+                if isinstance(e, dict) and isinstance(e.get("id"), str) and want(e):
+                    out.append((letter, e["id"]))
+    if isinstance(s.get("numbers"), dict):              # FUNK-87: the digits' voices take part too
+        for d in NUMBER_KEYS:
+            e = _slot_entry(set_id, d, NUMBER_ENTRY_ID)
+            if e is not None and want(e):
+                out.append((d, NUMBER_ENTRY_ID))
     return out
 
 
-def _fill_saved_result(set_id, letter, entry_id, kind, text):
+def _fill_missing(set_id, kind):
+    """(letter, entry_id) of every entry of the set whose voice of kind a run should make (_fill_wanted)."""
+    return _fill_items(set_id, kind, "missing")
+
+
+def _fill_saved_result(set_id, letter, entry_id, kind, text, replace=None, profile=None):
     """A finished, unreviewed job for this slot and text whose file exists but could not be saved on
     the word (save_failed): a run attaches that file instead of paying for the same voice again."""
     for j in gen_jobs.values():
         t = j.get("target")
+        v = j.get("voice") or {}
         if (t and j.get("status") == "done" and j.get("save_failed") and j.get("text") == text and j.get("filename")
+                and t.get("replace") == replace
+                # made with the voice wanted now (FUNK-87): one made by an earlier voice stays in the library
+                and (profile is None or (v.get("voice_id"), v.get("model"), v.get("lang"))
+                     == (profile["voice_id"], profile["model"], profile["lang"]))
                 and (t.get("set_id"), t.get("letter"), t.get("entry_id"), t.get("kind")) == (set_id, letter, entry_id, kind)
                 and os.path.isfile(os.path.join(SOUNDS_DIR, j["filename"]))):
             return j
@@ -4693,16 +4852,31 @@ def _fill_saved_result(set_id, letter, entry_id, kind, text):
 
 
 def _fill_attach(set_id, letter, entry_id, kind, job):
-    """Put a save_failed job's file on its (still empty, still wanting) slot. True if saved; the job
-    then counts as reviewed (no page offers it again). Raises _SaveFailed if the save fails again."""
-    import copy as _copy
-    entries = _letter_entries(set_id, letter)
-    _, e = _find_entry(entries, entry_id)
-    snapshot = _copy.deepcopy(entries)
-    _normalize_letter_entry(e)
+    """Put a save_failed job's file on its slot while the slot still wants it (still empty, or for a redo
+    still holding the file it replaces); a word or a digit (FUNK-87). True if saved, False if the slot
+    changed meanwhile (then the file only stays in the library). Raises _SaveFailed if the save fails again."""
+    e = _slot_entry(set_id, letter, entry_id)
+    t = job.get("target") or {}
+    if e is None or not _batch_slot_wants(e, kind, t, job):
+        job.pop("save_failed", None)
+        job["target"], job["applied"] = None, False
+        sse_broadcast("gen_update", job)
+        return False
+    before = json.dumps(e)
+    if letter in NUMBER_KEYS:
+        _normalize_number_entry(e)
+    else:
+        _normalize_letter_entry(e)
     track = e["tracks"].setdefault(kind, {"file": "", "enabled": True, "prompt": "", "volume": 100})
-    track["file"], track["enabled"] = job["filename"], True
-    _save_or_restore(entries, snapshot)
+    track["file"] = job["filename"]
+    if not t.get("replace"):
+        track["enabled"] = True
+    try:
+        save_settings()
+    except Exception as ex:
+        e.clear()
+        e.update(json.loads(before))
+        raise _SaveFailed() from ex
     job.pop("save_failed", None)
     job["target"], job["applied"] = None, True
     sse_broadcast("letter", {"set_id": set_id, "letter": letter, "entry_id": entry_id, "origin": "job"})
@@ -4715,14 +4889,19 @@ def _fill_fatal(job):
     return code in FILL_STOP_CODES or "quota" in (job.get("error_detail") or "").lower()
 
 
-async def _fill_one(run, letter, entry_id, word, text, profile):
-    """One word of a run: an ordinary DE job with a target, run in a worker thread; its end state."""
+async def _fill_one(run, letter, entry_id, word, text, profile, replace=None, hold=False):
+    """One word of a run: an ordinary DE job with a target, run in a worker thread; its end state.
+    replace: the file a redo swaps out (only while the slot still holds it). hold: the run's sample,
+    made but not put on the word until the parent approves the voice (FUNK-87)."""
     kind = run["kind"]
     filename = _claim_media_name(None, f"{_slugify(letter)}_{_slugify(word)}_{kind.lower()}", "mp3", SOUND_DIRS)
     job_id = f"trk_{uuid.uuid4().hex[:8]}"
+    target = {"set_id": run["set_id"], "letter": letter, "entry_id": entry_id, "kind": kind}
+    if replace:
+        target["replace"] = replace
     _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind,
                    "status": "queued", "started": time.time(), "batch": run["id"], "text": text,
-                   "target": {"set_id": run["set_id"], "letter": letter, "entry_id": entry_id, "kind": kind}})
+                   "target": target, **({"hold": True} if hold else {})})
     sse_broadcast("gen_update", gen_jobs[job_id])
     try:
         await asyncio.get_running_loop().run_in_executor(None, _gen_tts_worker, job_id, text, profile, filename)
@@ -4745,7 +4924,7 @@ async def _fill_one(run, letter, entry_id, word, text, profile):
 
 
 async def _fill_worker(run, items):
-    kind = run["kind"]
+    kind, mode = run["kind"], run.get("mode", "missing")
     fails_in_row, ended_early = 0, False
     try:
         for letter, entry_id in items:
@@ -4753,30 +4932,54 @@ async def _fill_worker(run, items):
                 ended_early = True
                 break
             waits = list(FILL_RETRY_429)
+            held = False
             while True:
-                _, e = _find_entry(_letter_entries(run["set_id"], letter), entry_id)
-                if e is None or not _fill_wanted(e, kind) or _slot_busy(run["set_id"], letter, entry_id, kind):
+                e = _slot_entry(run["set_id"], letter, entry_id)
+                profile = _profile_for_kind(kind)        # the voice as it is now (FUNK-85)
+                # a redo replaces exactly the file the slot had when the run started: a choice made since stays
+                old = (run.get("_replace") or {}).get(f"{letter}\u0000{entry_id}") if mode == "redo" else None
+                wanted = (_fill_wanted(e, kind) if mode == "missing"
+                          else _redo_wanted(e, kind, profile) and _slot_file(e, kind) == old)
+                if e is None or not wanted or _slot_busy(run["set_id"], letter, entry_id, kind):
                     job = None                      # removed, filled or switched off meanwhile, or another job fills it
                     break
                 text = _fill_text(e, kind)
                 word = e["word"].strip() if isinstance(e.get("word"), str) and e["word"].strip() else text
-                made = _fill_saved_result(run["set_id"], letter, entry_id, kind, text)
+                made = _fill_saved_result(run["set_id"], letter, entry_id, kind, text, old, profile)
                 if made is not None:            # made before, not saved then: attached now, never paid twice
                     try:
-                        _fill_attach(run["set_id"], letter, entry_id, kind, made)
-                        job = {"status": "done", "applied": True}
+                        job = {"status": "done", "applied": _fill_attach(run["set_id"], letter, entry_id, kind, made)}
                     except _SaveFailed:
                         job = {"status": "done", "save_failed": True}
                     break
+                # FUNK-87: a voice the parent has not approved yet makes one word, then waits for "Klingt gut"
+                held = not _voice_approved(profile, run)
                 run["current"], run["current_letter"] = word, letter
                 _fill_broadcast(run)
-                # the voice as it is now (FUNK-85): a voice or model chosen during the run applies to the rest
-                job = await _fill_one(run, letter, entry_id, word, text, _profile_for_kind(kind))
+                job = await _fill_one(run, letter, entry_id, word, text, profile, replace=old, hold=held)
                 if job.get("status") == "error" and job.get("error_code") == 429 and waits and not run["stopping"]:
                     await asyncio.sleep(waits.pop(0))
                     if not run["stopping"]:
                         continue                    # checked again from the top: the slot may be filled now
                 break
+            if held and job is not None and job.get("status") == "done" and job.get("held_target"):
+                decision = "stop" if run["stopping"] else await _fill_wait_sample(run, job, profile, word, letter)
+                if decision != "go":
+                    run["skipped"] += 1
+                    ended_early = True
+                    break
+                run["approved_profile"] = [profile["voice_id"], profile["model"]]
+                _fill_approve(profile)
+                reg = gen_jobs.get(job["id"], job)      # the registered job: what a later run finds again
+                try:
+                    if not _fill_apply_held(reg):
+                        reg.pop("held_target", None)
+                        reg["applied"] = False
+                except _SaveFailed:
+                    # the paid sample waits on its slot like any save_failed job: the next run attaches it
+                    reg["target"] = reg.pop("held_target", None)
+                    reg["save_failed"], reg["applied"] = True, False
+                job = reg
             if job is None:
                 run["skipped"] += 1
             elif job.get("status") == "done" and job.get("save_failed"):
@@ -4808,11 +5011,64 @@ async def _fill_worker(run, items):
         print(f"[fill] {run['id']}: {type(ex).__name__}: {ex}", flush=True)
         run["status"], run["error"] = "error", f"Unerwarteter Fehler ({type(ex).__name__})."
     finally:
+        run["phase"], run["sample"] = None, None
         if run["status"] == "running":
             run["status"] = "stopped" if ended_early else "done"
         run["current"], run["current_letter"] = "", ""
         run["finished"] = time.time()
         _fill_broadcast(run)
+
+
+async def _fill_wait_sample(run, job, profile, word, letter):
+    """The run's first word in a not yet approved voice is made: show it and wait for the parent
+    (FUNK-87). "go" | "stop" | "changed" (another voice chosen meanwhile) | "timeout"."""
+    if run["stopping"]:
+        return "stop"
+    run["_decide"] = asyncio.get_running_loop().create_future()
+    run["phase"] = "sample"
+    run["sample"] = {"job_id": job["id"], "file": job.get("filename"), "word": word, "letter": letter,
+                     "voice_id": profile["voice_id"], "voice_name": profile.get("voice_name") or profile["voice_id"],
+                     "model": profile["model"], "lang": profile["lang"]}
+    run["current"], run["current_letter"] = "", ""
+    _fill_broadcast(run)
+    try:
+        decision = await asyncio.wait_for(asyncio.shield(run["_decide"]), FILL_SAMPLE_WAIT)
+    except asyncio.TimeoutError:
+        decision = "timeout"
+    if decision == "go":
+        now = _profile_for_kind(run["kind"])
+        if [now["voice_id"], now["model"]] != [profile["voice_id"], profile["model"]]:
+            decision = "changed"
+    if decision != "go":
+        run["stopping"] = True
+        run["error"] = {"timeout": "Niemand hat das erste Wort bestätigt: angehalten. Das Wort liegt in der Bibliothek.",
+                        "changed": "Inzwischen ist eine andere Stimme gewählt: angehalten. Starte neu, um sie zu hören.",
+                        }.get(decision, "")
+    run["phase"], run["sample"] = None, None
+    run.pop("_decide", None)
+    _fill_broadcast(run)
+    return decision
+
+
+def _fill_approve(profile):
+    """Remember that the parent approved this voice and model for its language. A failed save only costs
+    the memory for later runs; this run goes on (it keeps its own approval)."""
+    vl = settings.get("voice_languages") or {}
+    cfg = vl.get(profile["lang"])
+    if not isinstance(cfg, dict):
+        return
+    old = cfg.get("approved")
+    cfg["approved"] = {"voice_id": profile["voice_id"], "model": profile["model"]}
+    try:
+        save_settings()
+    except Exception as e:
+        if old is None:
+            cfg.pop("approved", None)
+        else:
+            cfg["approved"] = old
+        print(f"[fill] approval of {profile['lang']} not saved: {e}", flush=True)
+        return
+    sse_broadcast("voices", {"code": profile["lang"]})
 
 
 async def api_fill_get(request):
@@ -4833,6 +5089,9 @@ async def api_fill_start(request):
     kind = str((data if isinstance(data, dict) else {}).get("kind") or "DE").upper()
     if kind not in FILL_KINDS:
         return web.json_response({"error": f"Nur diese Stimmen: {', '.join(FILL_KINDS)}"}, status=400)
+    mode = str((data if isinstance(data, dict) else {}).get("mode") or "missing")
+    if mode not in FILL_MODES:
+        return web.json_response({"error": "Unbekannte Art"}, status=400)
     sets = settings.get("sets", {})
     if set_id not in sets or not isinstance(sets[set_id], dict):
         return web.json_response({"error": "Set nicht gefunden"}, status=404)
@@ -4841,9 +5100,16 @@ async def api_fill_start(request):
                                   "seq": _fill_seq}, status=409)
     if not os.environ.get("ELEVENLABS_API_KEY"):
         return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
-    items = _fill_missing(set_id, kind)
+    profile = _profile_for_kind(kind)
+    items = _fill_items(set_id, kind, mode, profile)
+    replace = {}
+    if mode == "redo":                      # the file each slot holds now: a redo never replaces a later choice
+        for letter, entry_id in items:
+            replace[f"{letter}\u0000{entry_id}"] = _slot_file(_slot_entry(set_id, letter, entry_id), kind)
     run = {"id": f"fill_{uuid.uuid4().hex[:8]}", "set_id": set_id, "set_name": sets[set_id].get("name") or set_id,
-           "kind": kind, "status": "running" if items else "done", "stopping": False,
+           "kind": kind, "mode": mode, "phase": None, "sample": None, "_replace": replace,
+           "voice_name": profile.get("voice_name") or profile["voice_id"], "approved": _voice_approved(profile),
+           "status": "running" if items else "done", "stopping": False,
            "total": len(items), "done": 0, "skipped": 0, "failed": 0, "failed_words": [],
            "current": "", "current_letter": "", "error": "", "started": time.time(), "finished": None, "seq": 0}
     fill_run = run
@@ -4856,11 +5122,35 @@ async def api_fill_start(request):
 
 
 async def api_fill_stop(request):
-    """Stop the running fill after the word it is on (that word still lands)."""
+    """Stop the running fill after the word it is on (that word still lands). A run waiting on its first
+    word stops at once; that word stays in the library."""
     run = fill_run
-    if run is not None and run["status"] == "running" and not run["stopping"]:
+    if run is not None and run["status"] == "running":
+        changed = not run["stopping"]
         run["stopping"] = True
-        _fill_broadcast(run)
+        fut = run.get("_decide")
+        if fut is not None and not fut.done():
+            fut.set_result("stop")
+            changed = True
+        if changed:
+            _fill_broadcast(run)
+    return web.json_response({"ok": True, "run": _fill_public(run), "seq": _fill_seq})
+
+
+async def api_fill_continue(request):
+    """Body {run_id, job_id}: the parent heard this first word and approves its voice: the run goes on (FUNK-87)."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    run = fill_run
+    fut = run.get("_decide") if run is not None else None
+    if (run is None or run["status"] != "running" or run.get("phase") != "sample" or fut is None or fut.done()
+            or not isinstance(data, dict) or data.get("run_id") != run["id"]
+            or data.get("job_id") != (run.get("sample") or {}).get("job_id")):   # the sample this page played
+        return web.json_response({"error": "Dieser Lauf wartet nicht (mehr) auf dich.", "run": _fill_public(run),
+                                  "seq": _fill_seq}, status=409)
+    fut.set_result("go")
     return web.json_response({"ok": True, "run": _fill_public(run), "seq": _fill_seq})
 
 
@@ -5485,6 +5775,9 @@ def create_app():
     app.router.add_post("/api/voices/test", api_voice_test)
     app.router.add_get("/api/voices/test-audio/{name}", api_voice_test_audio)
     app.router.add_get("/api/voices/meta", api_voice_meta)
+    app.router.add_post("/api/voice-languages/{code}/approve", api_approve_voice_language)   # FUNK-87
+    app.router.add_get("/api/voices/outdated", api_voice_outdated)
+    app.router.add_post("/api/fill/continue", api_fill_continue)
     app.router.add_get("/api/fill", api_fill_get)
     app.router.add_post("/api/fill/stop", api_fill_stop)
     app.router.add_post("/api/sets/{set_id}/fill-voices", api_fill_start)

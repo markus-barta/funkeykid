@@ -570,6 +570,20 @@ The Dateien tab shows these uses as chips. A click opens the word or digit in th
 
 Only unused files offer "Archivieren", with a two-step confirm. `POST /api/archive` refuses a name that `_referenced_names()` still finds anywhere in the sets or key maps: 409, naming the first uses. So an entry, digit or key can no longer end up pointing at a missing file. The entry editor's own archive (FUNK-72) is unchanged: it archives only files nothing else uses.
 
+### Redo old voices; a new voice starts with one word (FUNK-87)
+
+- **Modes:** a fill run has `mode`: `missing` (FUNK-75) or `redo`. `_fill_items(set, kind, mode)` covers the words by letter, then the digits.
+- **Redo selection:** redo takes every DE voice whose file the current voice did not make (`_made_by`: the voice record matches voice, model and language; no record = an older voice). Switched-off tracks are skipped.
+- **The swap:** each redo job's target carries `replace: <old file>`. `_finalize_job` swaps only while the slot still holds that file; otherwise the new file goes to the library. Old files are never deleted.
+- **First word:** a voice not yet approved (`voice_languages[lang].approved == {voice_id, model}`, or the run's own `approved_profile`) makes one word with `hold`. `_finalize_job` keeps it off the word (`held_target`), and the run waits in `phase: "sample"` with `sample {word, file, voice_name, …}`.
+  - POST /api/fill/continue `{run_id, job_id}` (`job_id` = `run.sample.job_id`, the sample the page played): approves the voice, puts the sample on its word (`_fill_apply_held`, same checks) and goes on.
+  - POST /api/fill/stop: ends it; the sample stays in the library.
+  - Another voice chosen meanwhile, or 30 min without an answer: the run stops.
+  - The page that started the run plays the sample once; others offer "Anhören".
+- **Approval in Einstellungen:** POST /api/voice-languages/{code}/approve `{voice_id, model}`, only for the voice set now. The card offers "Freigeben" after a test of exactly that voice.
+- **Editor:** "Alle erzeugen" makes only the first word while the voice is not approved.
+- **Count:** GET /api/voices/outdated?set_id= counts what a redo would make (count, numbers, chars, by_voice). It drives the "Stimmen neu erzeugen" button.
+
 ### Voices per language (FUNK-85)
 
 `settings.voice_languages` is the one source for every spoken track. It maps a language code to its label, ElevenLabs `voice_id` and name, and `model`. The track kind is the code in capitals (de → DE).
@@ -965,6 +979,8 @@ Each entry carries a `tracks` dict keyed by kind. Kinds are defined in
 - `GET /api/voices?source=library|mine&lang=&gender=&age=&search=` — voices for the picker (needs "Voices: Read").
 - `POST /api/voices/test` `{lang, voice_id?, voice_name?, model?}` → `{url}` — the test words in that voice, cached; `GET /api/voices/test-audio/{name}`.
 - `GET /api/voices/meta` — which voice, model and language made each generated file.
+- `POST /api/sets/{id}/fill-voices` `{kind, mode: missing|redo}`; `POST /api/fill/continue` `{run_id, job_id}` (`job_id` = `run.sample.job_id`) — first word approved, the run goes on (FUNK-87).
+- `POST /api/voice-languages/{code}/approve` `{voice_id, model}`; `GET /api/voices/outdated?set_id=` — redo count.
 - `GET /api/sets/:id/letters/:L` — always returns normalized entries; additionally synthesizes a legacy `sound` alias from the first track with a file for back-compat.
 - `PUT /api/sets/:id/letters/:L` — accepts either legacy or new shape; always persists new shape.
 - `PUT /api/sets/:id` — accepts `track_order`.

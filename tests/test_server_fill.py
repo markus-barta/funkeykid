@@ -44,7 +44,11 @@ def st(monkeypatch, tmp_path):
     (tmp_path / "images").mkdir()
     (sounds / "a_ameise_de.mp3").write_bytes(b"x")
     track = lambda f="", p="": {"file": f, "enabled": True, "prompt": p, "volume": 100}  # noqa: E731
-    data = {"active_set": "s", "sets": {
+    de = {"voice_id": server.DEFAULT_TTS_VOICES["de"], "model": server.TTS_MODEL_DEFAULT}
+    data = {"active_set": "s",
+            # FUNK-87: an approved voice runs through; the sample pause has its own tests
+            "voice_languages": {"de": {"label": "Deutsch", **de, "approved": dict(de)}},
+            "sets": {
         "s": {"name": "Komplett", "letters": {
             "B": {"entries": [
                 {"id": "ballid01", "word": "Ball", "enabled": True, "tracks": {"FX": track("b_ball.mp3")}},
@@ -78,6 +82,8 @@ def st(monkeypatch, tmp_path):
 
     def worker(job_id, text, voice_id, filename):
         calls.append({"job": job_id, "text": text, "file": filename, "voice": voice_id})
+        if isinstance(voice_id, dict):          # like the real worker: the job says which voice made it (FUNK-87)
+            server.gen_jobs[job_id]["voice"] = {k: voice_id.get(k) for k in ("voice_id", "voice_name", "model", "lang")}
         out = plan.pop(0) if plan else "ok"
         if callable(out):
             out = out() or "ok"
@@ -260,7 +266,7 @@ def test_stop_ends_the_run_after_the_word_it_is_on(st):
 
 
 def test_a_crash_in_the_run_never_leaves_it_running(st, monkeypatch):
-    monkeypatch.setattr(server, "_fill_one", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(server, "_fill_one", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
     _, _, run = start()
     assert run["status"] == "error" and "RuntimeError" in run["error"] and run["finished"]
 
@@ -465,3 +471,238 @@ def test_a_second_failed_save_on_attach_stops_the_run_again(st, monkeypatch):
     _, _, run = start()
     assert run["status"] == "error" and run["failed"] == 1 and len(st.calls) == 1
     assert de(st, "A", "affeid01") == ""
+
+
+# ── FUNK-87: redo voices an older voice made; a new voice starts with one word to approve ─────────
+
+def unapprove(st):
+    st.settings["voice_languages"]["de"].pop("approved", None)
+
+
+@pytest.fixture
+def meta(monkeypatch):
+    m = {}
+    monkeypatch.setattr(server, "_voice_meta_cache", m)
+    return m
+
+
+def made_now(meta, filename):
+    p = server._profile_for_kind("DE")
+    meta[filename] = {"voice_id": p["voice_id"], "model": p["model"], "lang": "de"}
+
+
+def test_redo_takes_the_voices_another_voice_made(st, meta):
+    entry(st, "A", "affeid01")["tracks"]["DE"] = {"file": "a_affe_de.mp3", "enabled": True, "prompt": "", "volume": 100}
+    (st.sounds / "a_affe_de.mp3").write_bytes(b"x")
+    made_now(meta, "a_affe_de.mp3")                          # made by the current voice: left alone
+    assert server._fill_items("s", "DE", "redo") == [("A", "ameiseid")]   # no record: an older voice
+    meta["a_ameise_de.mp3"] = {"voice_id": "Rachel000000000000", "model": "eleven_multilingual_v2", "lang": "de"}
+    assert server._fill_items("s", "DE", "redo") == [("A", "ameiseid")]
+    entry(st, "A", "ameiseid")["tracks"]["DE"]["enabled"] = False            # switched off for this word
+    assert server._fill_items("s", "DE", "redo") == []
+
+
+def test_redo_includes_the_digits(st, meta):
+    st.settings["sets"]["s"]["numbers"] = {"3": {"word": "Drei Bälle", "tracks": {"DE": {"file": "3_drei_de.mp3", "enabled": True, "prompt": "", "volume": 100}}},
+                                           "4": {"word": "Vier", "tracks": {}}}
+    assert ("3", server.NUMBER_ENTRY_ID) in server._fill_items("s", "DE", "redo")
+    assert ("4", server.NUMBER_ENTRY_ID) in server._fill_items("s", "DE", "missing")
+
+
+def test_a_redo_run_swaps_the_old_file_and_keeps_it_in_the_library(st, meta):
+    status, body, run = start({"mode": "redo"})
+    assert status == 200 and run["mode"] == "redo" and run["total"] == 1 and run["done"] == 1
+    new = de(st, "A", "ameiseid")
+    assert new and new != "a_ameise_de.mp3" and (st.sounds / "a_ameise_de.mp3").exists()
+    assert st.calls[0]["text"] == "Ameise"
+
+
+def test_a_redo_never_overwrites_a_choice_made_meanwhile(st, meta):
+    st.plan.append(lambda: entry(st, "A", "ameiseid")["tracks"]["DE"].update(file="mine.mp3"))
+    _, _, run = start({"mode": "redo"})
+    assert de(st, "A", "ameiseid") == "mine.mp3" and run["done"] == 0 and run["skipped"] == 1
+
+
+def test_an_unknown_mode_is_refused(st):
+    status, body, _ = start({"mode": "everything"})
+    assert status == 400 and st.calls == []
+
+
+def with_sample(st, decide, body=None):
+    """Start a run, wait for its first word, let decide(run) act, then wait for the end."""
+    async def go():
+        await server.api_fill_start(Req(body or {}, set_id="s"))
+        run = server.fill_run
+        for _ in range(300):
+            if run.get("phase") == "sample" or run["status"] != "running":
+                break
+            await asyncio.sleep(0.01)
+        sample = dict(run.get("sample") or {})
+        await decide(run)
+        if run.get("_task") is not None:
+            await run["_task"]
+        return sample, server._fill_public(server.fill_run)
+    return asyncio.run(go())
+
+
+def test_a_new_voice_waits_after_the_first_word_then_goes_on(st):
+    unapprove(st)
+    seen = {}
+
+    async def ok(run):
+        seen["before"] = de(st, "A", "affeid01")             # not on the word until approved
+        seen["job"] = dict(server.gen_jobs[run["sample"]["job_id"]])
+        stale = await server.api_fill_continue(Req({"run_id": run["id"], "job_id": "trk_other"}))
+        seen["stale"] = stale.status                          # another sample than the one played: refused
+        r = await server.api_fill_continue(Req({"run_id": run["id"], "job_id": run["sample"]["job_id"]}))
+        seen["status"] = r.status
+    sample, run = with_sample(st, ok)
+    assert sample["word"] == "Affe" and sample["voice_id"] == server._profile_for_kind("DE")["voice_id"]
+    assert seen["before"] == "" and seen["job"].get("target") is None and seen["status"] == 200 and seen["stale"] == 409
+    assert de(st, "A", "affeid01") == sample["file"]          # landed after "Klingt gut"
+    assert run["status"] == "done" and run["done"] == 3 and len(st.calls) == 3
+    assert st.settings["voice_languages"]["de"]["approved"]["voice_id"] == sample["voice_id"]
+    assert server.gen_jobs[sample["job_id"]]["applied"] is True
+
+
+def test_stopping_at_the_first_word_leaves_the_word_alone(st):
+    unapprove(st)
+
+    async def stop(run):
+        await server.api_fill_stop(Req())
+    sample, run = with_sample(st, stop)
+    assert run["status"] == "stopped" and run["phase"] is None and len(st.calls) == 1
+    assert de(st, "A", "affeid01") == "" and (st.sounds / sample["file"]).exists()
+    assert "approved" not in st.settings["voice_languages"]["de"]
+    assert server.gen_jobs[sample["job_id"]].get("target") is None
+
+
+def test_a_voice_chosen_during_the_first_word_stops_the_run(st):
+    unapprove(st)
+
+    async def change_then_go(run):
+        st.settings["voice_languages"]["de"]["voice_id"] = "OtherVoice1234567890"
+        await server.api_fill_continue(Req({"run_id": run["id"], "job_id": run["sample"]["job_id"]}))
+    sample, run = with_sample(st, change_then_go)
+    assert run["status"] == "stopped" and "andere Stimme" in run["error"]
+    assert de(st, "A", "affeid01") == "" and len(st.calls) == 1
+
+
+def test_continue_only_for_the_waiting_run(st):
+    unapprove(st)
+
+    async def wrong_then_stop(run):
+        r = await server.api_fill_continue(Req({"run_id": "fill_other"}))
+        assert r.status == 409
+        await server.api_fill_stop(Req())
+    with_sample(st, wrong_then_stop)
+    assert asyncio.run(server.api_fill_continue(Req({"run_id": "x"}))).status == 409
+
+
+def test_an_approved_voice_runs_through_without_waiting(st):
+    _, _, run = start()
+    assert run["status"] == "done" and run["done"] == 3 and run.get("sample") is None
+
+
+class QReq(Req):
+    def __init__(self, body=None, query=None, **match):
+        super().__init__(body, **match)
+        self.query = query or {}
+
+
+def test_approving_needs_the_voice_that_is_set_now(st, monkeypatch):
+    unapprove(st)
+    p = server._profile_for_kind("DE")
+    assert asyncio.run(server.api_approve_voice_language(Req({"voice_id": "Old", "model": p["model"]}, code="de"))).status == 409
+    r = asyncio.run(server.api_approve_voice_language(Req({"voice_id": p["voice_id"], "model": p["model"]}, code="de")))
+    assert r.status == 200 and next(l for l in json.loads(r.body)["languages"] if l["code"] == "de")["approved"] is True
+    assert server._voice_approved(p)
+
+
+def test_outdated_counts_what_a_redo_would_make(st, meta):
+    meta["a_ameise_de.mp3"] = {"voice_id": "R", "voice_name": "Rachel (amerikanisch)", "model": "eleven_multilingual_v2", "lang": "de"}
+    d = json.loads(asyncio.run(server.api_voice_outdated(QReq(query={"set_id": "s"}))).body)
+    assert d["count"] == 1 and d["chars"] == len("Ameise") and d["by_voice"] == [{"name": "Rachel (amerikanisch)", "count": 1}]
+    assert asyncio.run(server.api_voice_outdated(QReq(query={"set_id": "nope"}))).status == 404
+
+
+
+def test_stopping_while_the_first_word_is_made_ends_the_run(st):
+    unapprove(st)
+    st.plan.append(lambda: server.fill_run.update(stopping=True))   # "Anhalten" while the first word is made
+    _, _, run = start()
+    assert run["status"] == "stopped" and run["phase"] is None and len(st.calls) == 1 and de(st, "A", "affeid01") == ""
+    later = asyncio.run(server.api_fill_stop(Req()))       # a stop after the end changes nothing
+    assert later.status == 200
+
+
+def test_stop_releases_a_waiting_sample_even_when_already_stopping(st):
+    unapprove(st)
+
+    async def stop_twice(run):
+        run["stopping"] = True                              # e.g. "Anhalten" just before the sample landed
+        await server.api_fill_stop(Req())
+    _, run = with_sample(st, stop_twice)
+    assert run["status"] == "stopped"
+
+
+def test_a_redo_keeps_a_choice_made_after_the_run_started(st, meta):
+    entry(st, "A", "affeid01")["tracks"]["DE"] = {"file": "a_affe_de.mp3", "enabled": True, "prompt": "", "volume": 100}
+    (st.sounds / "a_affe_de.mp3").write_bytes(b"x")
+    # the run starts with Affe and Ameise to redo; while Affe is made, the parent picks a file for Ameise
+    st.plan.append(lambda: entry(st, "A", "ameiseid")["tracks"]["DE"].update(file="parent-choice.mp3"))
+    _, _, run = start({"mode": "redo"})
+    assert de(st, "A", "ameiseid") == "parent-choice.mp3" and run["done"] == 1 and run["skipped"] == 1 and len(st.calls) == 1
+
+
+def test_a_digit_voice_that_could_not_be_saved_is_attached_by_the_next_run(st, monkeypatch):
+    st.settings["sets"]["s"]["numbers"] = {"4": {"word": "Vier", "tracks": {}}}
+    for e in [entry(st, "A", "affeid01"), entry(st, "B", "ballid01"), entry(st, "B", "bieneid1")]:
+        e["tracks"]["DE"] = {"file": "x.mp3", "enabled": True, "prompt": "", "volume": 100}
+    real = server.save_settings
+    monkeypatch.setattr(server, "save_settings", lambda: (_ for _ in ()).throw(OSError(28, "full")))
+    _, _, run = start()
+    assert run["status"] == "error" and len(st.calls) == 1
+    monkeypatch.setattr(server, "save_settings", real)
+    _, _, run2 = start()
+    num = st.settings["sets"]["s"]["numbers"]["4"]
+    assert run2["done"] == 1 and len(st.calls) == 1 and num["tracks"]["DE"]["file"] == st.calls[0]["file"]
+
+
+def test_an_approved_sample_that_could_not_be_saved_is_not_paid_again(st, monkeypatch):
+    unapprove(st)
+    real = server.save_settings
+    state = {"fail": False}
+
+    def maybe():
+        if state["fail"]:
+            raise OSError(28, "full")
+        return real()
+    monkeypatch.setattr(server, "save_settings", maybe)
+
+    async def go_with_full_disk(run):
+        state["fail"] = True                                # the approval and the word can not be saved
+        await server.api_fill_continue(Req({"run_id": run["id"], "job_id": run["sample"]["job_id"]}))
+    sample, run = with_sample(st, go_with_full_disk)
+    assert run["status"] == "error" and de(st, "A", "affeid01") == "" and len(st.calls) == 1
+    state["fail"] = False                                   # storage back; the approval was not saved, so the next run
+                                                            # attaches the paid sample and asks again at its next word
+    async def stop(run2):
+        await server.api_fill_stop(Req())
+    sample2, _ = with_sample(st, stop)
+    assert de(st, "A", "affeid01") == sample["file"] and [c["text"] for c in st.calls] == ["Affe", "Ball"]
+    assert sample2["word"] == "Ball"
+
+
+
+def test_a_saved_result_of_an_earlier_voice_is_not_attached_for_a_new_one(st, monkeypatch, meta):
+    real = server.save_settings
+    monkeypatch.setattr(server, "save_settings", lambda: (_ for _ in ()).throw(OSError(28, "full")))
+    _, _, run = start({"mode": "redo"})
+    assert run["status"] == "error" and len(st.calls) == 1             # made with voice A, not saved
+    monkeypatch.setattr(server, "save_settings", real)
+    st.settings["voice_languages"]["de"]["voice_id"] = "VoiceB1234567890ab"   # the parent picks voice B
+    st.settings["voice_languages"]["de"]["approved"] = {"voice_id": "VoiceB1234567890ab", "model": server.TTS_MODEL_DEFAULT}
+    _, _, run2 = start({"mode": "redo"})
+    assert len(st.calls) == 2 and st.calls[1]["voice"]["voice_id"] == "VoiceB1234567890ab"
+    assert de(st, "A", "ameiseid") == st.calls[1]["file"]

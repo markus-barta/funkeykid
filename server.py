@@ -127,6 +127,24 @@ DEFAULT_TTS_VOICES = {
     "de": DEFAULT_NUMBER_VOICE_ID,      # Rachel (existing default)
     "en": "pNInz6obpgDQGcFmaJgB",       # Adam
 }
+# ── Languages and their voices (FUNK-85) ───────────────────────────────────
+# settings.voice_languages is the one source for every spoken track: per language code its label,
+# ElevenLabs voice and model. The track kind is the code in capitals (de → DE). tts_voices and
+# numbers_tts stay as copies for older versions (rollback), never read for generation.
+# eleven_multilingual_v2 guesses the language from the text, so one-word texts ("Ball", "Bär") came out
+# English; models that take language_code are told the language.
+TTS_MODEL_DEFAULT = "eleven_v4"
+TTS_MODELS = {                          # model id → label; the ones in TTS_MODELS_WITH_LANGUAGE take language_code
+    "eleven_v4": "Eleven v4 (beste Qualität)",
+    "eleven_flash_v2_5": "Flash v2.5 (schnell, halber Preis)",
+    "eleven_multilingual_v2": "Multilingual v2 (alt: rät die Sprache)",
+}
+TTS_MODELS_WITH_LANGUAGE = {"eleven_v4", "eleven_v4_turbo", "eleven_v3", "eleven_v3_conversational",
+                            "eleven_flash_v2_5", "eleven_turbo_v2_5"}
+VOICE_LANGUAGE_LABELS = {"de": "Deutsch", "en": "Englisch", "fr": "Französisch", "it": "Italienisch",
+                         "es": "Spanisch", "tr": "Türkisch", "hr": "Kroatisch", "sl": "Slowenisch"}
+KNOWN_VOICE_NAMES = {DEFAULT_NUMBER_VOICE_ID: "Rachel (amerikanisch)", "pNInz6obpgDQGcFmaJgB": "Adam (amerikanisch)"}
+_VOICE_ID_RE = re.compile(r"^[A-Za-z0-9]{8,64}$")
 
 
 def _normalize_tracks(entry, legacy_kind):
@@ -285,14 +303,28 @@ def _get_active_track_order():
     return _normalize_track_order(_get_active_set_cfg().get("track_order"))
 
 
-def _voice_for_kind(kind):
-    """ElevenLabs voice id for a TTS kind (DE/EN). Returns None for non-TTS kinds."""
+def _voice_profile(lang):
+    """What a spoken track in this language is made with (FUNK-85): {lang, voice_id, voice_name, model}."""
+    lang = (lang or "de").lower()
+    cfg = (settings.get("voice_languages") or {}).get(lang) or {}
+    voice_id = cfg.get("voice_id") or DEFAULT_TTS_VOICES.get(lang, DEFAULT_NUMBER_VOICE_ID)
+    model = cfg.get("model") if cfg.get("model") in TTS_MODELS else TTS_MODEL_DEFAULT
+    return {"lang": lang, "voice_id": voice_id, "model": model,
+            "voice_name": cfg.get("voice_name") or KNOWN_VOICE_NAMES.get(voice_id, "")}
+
+
+def _profile_for_kind(kind):
+    """The voice profile of a spoken track kind (DE/EN), or None for FX."""
     meta = TRACK_KIND_META.get(kind, {})
     if meta.get("generator") != "tts":
         return None
-    lang = meta.get("lang", "de")
-    voices = settings.get("tts_voices") or {}
-    return voices.get(lang) or DEFAULT_TTS_VOICES.get(lang, DEFAULT_NUMBER_VOICE_ID)
+    return _voice_profile(meta.get("lang", "de"))
+
+
+def _voice_for_kind(kind):
+    """ElevenLabs voice id for a TTS kind (DE/EN). Returns None for non-TTS kinds."""
+    p = _profile_for_kind(kind)
+    return p["voice_id"] if p else None
 
 
 def _collect_playable_files(entry):
@@ -350,6 +382,12 @@ def load_settings():
     _ensure_numbers_defaults()
     _migrate_to_tracks_v2()
     _migrate_sz_letter()
+    if _ensure_voice_languages():               # FUNK-85
+        try:
+            save_settings()
+            print("[migrate] voice_languages created", flush=True)
+        except Exception as e:
+            print(f"[migrate] voice_languages not saved: {e}", flush=True)
     if _ensure_all_entry_ids():                 # FUNK-72: entries are found by id
         try:
             save_settings()
@@ -439,6 +477,22 @@ def _migrate_to_tracks_v2():
             print("[migrate] tracks v2: settings.json rewritten", flush=True)
         except Exception as e:
             print(f"[migrate] failed: {e}", flush=True)
+
+
+def _ensure_voice_languages():
+    """settings.voice_languages from the older tts_voices (FUNK-85); True if it changed. The voices stay
+    what they were: the parent picks new ones (with free previews) in Einstellungen."""
+    vl = settings.get("voice_languages")
+    if isinstance(vl, dict) and vl:
+        return False
+    old = settings.get("tts_voices") or {}
+    out = {}
+    for lang in ("de", "en"):
+        vid = old.get(lang) or DEFAULT_TTS_VOICES[lang]
+        out[lang] = {"label": VOICE_LANGUAGE_LABELS[lang], "voice_id": vid,
+                     "voice_name": KNOWN_VOICE_NAMES.get(vid, ""), "model": TTS_MODEL_DEFAULT}
+    settings["voice_languages"] = out
+    return True
 
 
 def _ensure_numbers_defaults():
@@ -1526,7 +1580,7 @@ async def api_put_settings(request):
     # keyboard_layout follows the language (PUT /api/language, FUNK-64): never written here
     for k in ("keyboard_device", "volume", "random_sounds_enabled",
               "display_mode", "pixoo_ip", "debounce_seconds", "mqtt", "ai_prompts",
-              "numbers_tts", "battery_low_threshold", "audio_normalize", "audio_normalize_lufs"):
+              "battery_low_threshold", "audio_normalize", "audio_normalize_lufs"):    # numbers_tts: FUNK-85, a copy
         if k in data:
             settings[k] = data[k]
     save_settings()
@@ -4151,41 +4205,91 @@ async def api_generate_image(request):
     return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
 
 
-def _gen_tts_worker(job_id, text, voice_id, filename):
-    """Background worker for ElevenLabs TTS (text-to-speech) — used for number words."""
-    import urllib.request, shutil
+def _tts_request(text, profile):
+    """The ElevenLabs request for one spoken text (FUNK-85): the language's voice and model, and the
+    language itself where the model takes it, so a one-word German text is spoken as German."""
+    import urllib.request
+    body = {"text": text, "model_id": profile["model"],
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "style": 0.0, "use_speaker_boost": True}}
+    if profile["model"] in TTS_MODELS_WITH_LANGUAGE and profile.get("lang"):
+        body["language_code"] = profile["lang"]
+    return urllib.request.Request(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{profile['voice_id']}",
+        data=json.dumps(body).encode(),
+        headers={"xi-api-key": os.environ.get("ELEVENLABS_API_KEY", ""),
+                 "Content-Type": "application/json", "Accept": "audio/mpeg"},
+    )
+
+
+def _tts_bytes(text, profile, timeout=30):
+    """MP3 bytes for text in the profile's voice (blocking)."""
+    import urllib.request
+    with urllib.request.urlopen(_tts_request(text, profile), timeout=timeout) as resp:
+        audio = resp.read()
+    if len(audio) < 1000:
+        raise ValueError("TTS-Ausgabe zu klein")
+    return audio
+
+
+# which voice made which file (FUNK-85): filename → {voice_id, voice_name, model, lang, at}
+_voice_meta_lock = threading.Lock()
+_voice_meta_cache = None
+
+
+def _voice_meta_path():
+    return os.path.join(AI_DIR, "voice_meta.json")
+
+
+def _voice_meta():
+    global _voice_meta_cache
+    if _voice_meta_cache is None:
+        try:
+            with open(_voice_meta_path(), encoding="utf-8") as f:
+                data = json.load(f)
+            _voice_meta_cache = data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            _voice_meta_cache = {}
+    return _voice_meta_cache
+
+
+def _voice_meta_record(filename, profile):
+    """Remember the voice that made filename. A failed write costs only the record, never the file."""
+    with _voice_meta_lock:
+        meta = dict(_voice_meta())
+        meta[filename] = {"voice_id": profile["voice_id"], "voice_name": profile.get("voice_name", ""),
+                          "model": profile["model"], "lang": profile.get("lang", ""), "at": int(time.time())}
+        try:
+            os.makedirs(AI_DIR, exist_ok=True)
+            atomicwrite.replace(_voice_meta_path(), json.dumps(meta, ensure_ascii=False, indent=1).encode("utf-8"))
+        except Exception as e:
+            print(f"[voices] record for {filename} not saved: {e}", flush=True)
+            return
+        global _voice_meta_cache
+        _voice_meta_cache = meta
+
+
+def _gen_tts_worker(job_id, text, voice, filename):
+    """Background worker for ElevenLabs TTS. voice is a profile (_voice_profile) or, for old callers,
+    a bare voice id (then the German profile's model and language)."""
+    profile = voice if isinstance(voice, dict) else dict(_voice_profile("de"), voice_id=voice,
+                                                            voice_name=KNOWN_VOICE_NAMES.get(voice, ""))
+    label = f"elevenlabs/tts/{profile['model']}/{profile.get('lang', '')}/{profile.get('voice_name') or profile['voice_id']}"
     gen_jobs[job_id]["status"] = "generating"
+    gen_jobs[job_id]["voice"] = {k: profile.get(k) for k in ("voice_id", "voice_name", "model", "lang")}
     sse_broadcast("gen_update", gen_jobs[job_id])
-    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
-    _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text, None, "sending")
+    _ai_log_entry("tts", label, text, None, "sending")
     try:
         os.makedirs(AI_SOUNDS_DIR, exist_ok=True)      # inside: a failure ends the job (FUNK-75)
-        payload = json.dumps({
-            "text": text,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "style": 0.0, "use_speaker_boost": True},
-        }).encode()
-        req = urllib.request.Request(
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-            data=payload,
-            headers={
-                "xi-api-key": api_key,
-                "Content-Type": "application/json",
-                "Accept": "audio/mpeg",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            audio_data = resp.read()
-        if len(audio_data) < 1000:
-            raise ValueError("TTS-Ausgabe zu klein")
+        audio_data = _tts_bytes(text, profile)
         normed = _store_generated_sound(audio_data, filename)      # FUNK-73: staged, published exclusively
+        _voice_meta_record(filename, profile)
         gen_jobs[job_id].update({"_done": True, "size": len(audio_data), "path": f"/sounds/{filename}",
                                  "normalized": normed, "finished": time.time()})
-        _ai_log_entry("tts", f"elevenlabs/tts/{voice_id}", text,
+        _ai_log_entry("tts", label, text,
                       f"OK: {len(audio_data)}b → {filename}" + (" (normalized)" if normed else ""),
                       "ok")
     except Exception as e:
-        _job_failed(job_id, "elevenlabs", e, "tts", f"elevenlabs/tts/{voice_id}", text)
+        _job_failed(job_id, "elevenlabs", e, "tts", label, text)
     _job_finished(job_id)
 
 
@@ -4195,9 +4299,9 @@ async def api_generate_tts(request):
     text = (data.get("text") or "").strip()
     if not text:
         return web.json_response({"error": "text fehlt"}, status=400)
-    voice_id = (data.get("voice_id")
-                or settings.get("numbers_tts", {}).get("voice_id")
-                or DEFAULT_NUMBER_VOICE_ID)
+    profile = _voice_profile("de")                  # FUNK-85: the German voice, not numbers_tts
+    if data.get("voice_id") and _VOICE_ID_RE.match(str(data["voice_id"])):
+        profile = dict(profile, voice_id=data["voice_id"], voice_name=KNOWN_VOICE_NAMES.get(data["voice_id"], ""))
     filename = _claim_media_name(data.get("filename"), _slugify(text), "mp3", SOUND_DIRS)
     if not filename:
         return web.json_response({"error": "invalid filename"}, status=400)
@@ -4208,7 +4312,7 @@ async def api_generate_tts(request):
     _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "status": "queued", "started": time.time()})
     sse_broadcast("gen_update", gen_jobs[job_id])
     import threading
-    threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
+    threading.Thread(target=_gen_tts_worker, args=(job_id, text, profile, filename), daemon=True).start()
     return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
 
 
@@ -4274,15 +4378,214 @@ async def api_generate_track(request):
         # For TTS the `prompt` IS the text to speak. If caller didn't pass one,
         # fall back to the word (works for DE; EN callers should send an English word).
         text = want
-        voice_id = data.get("voice_id") or _voice_for_kind(kind)
+        profile = _profile_for_kind(kind)               # FUNK-85: the language's voice, model and code
+        if data.get("voice_id") and _VOICE_ID_RE.match(str(data["voice_id"])):
+            profile = dict(profile, voice_id=data["voice_id"], voice_name=KNOWN_VOICE_NAMES.get(data["voice_id"], ""))
         job_id = f"trk_{uuid.uuid4().hex[:8]}"
         _register_job({"id": job_id, "type": "sound", "word": word, "filename": filename, "kind": kind,
                        "status": "queued", "started": time.time(), "target": target, "text": want})
         sse_broadcast("gen_update", gen_jobs[job_id])
-        threading.Thread(target=_gen_tts_worker, args=(job_id, text, voice_id, filename), daemon=True).start()
+        threading.Thread(target=_gen_tts_worker, args=(job_id, text, profile, filename), daemon=True).start()
         return web.json_response({"ok": True, "job_id": job_id, "filename": filename})
 
     return web.json_response({"error": f"Generator nicht implementiert: {meta['generator']}"}, status=500)
+
+
+# ── Voices per language: list, picker, test (FUNK-85) ───────────────────────
+VOICE_TEST_TEXT = {"de": "Bär. Eis. Ball. Bagger.", "en": "Bear. Ice. Ball. Digger.", "fr": "Ours. Glace. Balle. Pelleteuse."}
+VOICE_LIST_TTL = 600
+_voice_list_cache = {}                  # query → (time, payload)
+_voice_test_inflight = {}               # cache file name → the running generation, shared (one paid call)
+
+
+def _voice_language_view():
+    langs = []
+    for code, cfg in (settings.get("voice_languages") or {}).items():
+        p = _voice_profile(code)
+        langs.append({"code": code, "kind": code.upper(), "label": cfg.get("label") or VOICE_LANGUAGE_LABELS.get(code, code),
+                      "voice_id": p["voice_id"], "voice_name": p["voice_name"], "model": p["model"],
+                      "model_label": TTS_MODELS.get(p["model"], p["model"]),
+                      "sets_language": p["model"] in TTS_MODELS_WITH_LANGUAGE})
+    return {"languages": langs, "models": [{"id": k, "label": v, "sets_language": k in TTS_MODELS_WITH_LANGUAGE}
+                                           for k, v in TTS_MODELS.items()]}
+
+
+async def api_voice_languages(request):
+    return web.json_response(_voice_language_view())
+
+
+async def api_patch_voice_language(request):
+    """Body {voice_id?, voice_name?, model?}: the voice of one language. Copies go to tts_voices (and
+    numbers_tts for German) so an older version after a rollback speaks with the same voice."""
+    code = request.match_info["code"].lower()
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "Ungültige Anfrage"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "Ungültige Anfrage"}, status=400)
+    vl = settings.get("voice_languages") or {}          # read after the await: another save may have landed
+    if code not in vl:
+        return web.json_response({"error": "Unbekannte Sprache"}, status=404)
+    cfg = dict(vl[code])
+    if "voice_id" in data:
+        vid = str(data.get("voice_id") or "")
+        if not _VOICE_ID_RE.match(vid):
+            return web.json_response({"error": "Ungültige Stimmen-ID"}, status=400)
+        cfg["voice_id"] = vid
+        cfg["voice_name"] = str(data.get("voice_name") or KNOWN_VOICE_NAMES.get(vid, ""))[:80]
+    if "model" in data:
+        if data["model"] not in TTS_MODELS:
+            return web.json_response({"error": "Unbekanntes Modell"}, status=400)
+        cfg["model"] = data["model"]
+    import copy
+    before = {k: copy.deepcopy(settings.get(k)) for k in ("voice_languages", "tts_voices", "numbers_tts")}
+    settings["voice_languages"] = dict(vl, **{code: cfg})
+    settings["tts_voices"] = dict(settings.get("tts_voices") or {}, **{code: cfg["voice_id"]})
+    if code == "de":
+        settings["numbers_tts"] = {"voice_id": cfg["voice_id"]}
+    try:
+        save_settings()
+    except Exception as e:                  # not saved: the old voice stays the one in use, and the page says so
+        for k, v in before.items():
+            if v is None:
+                settings.pop(k, None)
+            else:
+                settings[k] = v
+        print(f"[voices] {code} not saved: {e}", flush=True)
+        return web.json_response({"error": "Nicht gespeichert (Speicher nicht beschreibbar)."}, status=500)
+    return web.json_response(_voice_language_view())
+
+
+def _eleven_get(path, timeout=20):
+    import urllib.request
+    req = urllib.request.Request("https://api.elevenlabs.io" + path,
+                                 headers={"xi-api-key": os.environ.get("ELEVENLABS_API_KEY", "")})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.load(resp)
+
+
+def _voice_row(v, shared):
+    labels = v.get("labels") or {}
+    rate = v.get("rate")
+    return {"voice_id": v.get("voice_id"), "name": (v.get("name") or "")[:80],
+            "description": (v.get("descriptive") or labels.get("descriptive") or v.get("description") or "")[:140],
+            "accent": v.get("accent") or labels.get("accent") or "", "locale": v.get("locale") or "",
+            "language": v.get("language") or labels.get("language") or "",
+            "gender": v.get("gender") or labels.get("gender") or "", "age": v.get("age") or labels.get("age") or "",
+            "preview_url": v.get("preview_url") or "", "category": v.get("category") or "",
+            "rate": rate if isinstance(rate, (int, float)) else None, "shared": shared}
+
+
+async def api_voice_list(request):
+    """Voices for the picker: ?source=library (the shared library, ?lang=, ?gender=, ?age=, ?search=) or
+    ?source=mine (the account's own and premade voices). Previews are ElevenLabs' own clips: free."""
+    q = request.query
+    source = q.get("source", "library")
+    lang = (q.get("lang") or "de").lower()[:3]
+    if not os.environ.get("ELEVENLABS_API_KEY"):
+        return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
+    if source == "mine":
+        path = "/v1/voices"
+    else:
+        params = {"language": lang, "page_size": 40}
+        for k in ("gender", "age"):
+            if q.get(k) in ("female", "male", "neutral", "young", "middle_aged", "old"):
+                params[k] = q[k]
+        if q.get("search"):
+            params["search"] = q["search"][:60]
+        import urllib.parse
+        path = "/v1/shared-voices?" + urllib.parse.urlencode(params)
+    hit = _voice_list_cache.get(path)
+    if hit and time.time() - hit[0] < VOICE_LIST_TTL:
+        return web.json_response(hit[1])
+    try:
+        d = await asyncio.get_running_loop().run_in_executor(None, _eleven_get, path)
+    except Exception as e:
+        msg, code, detail = _provider_error("elevenlabs", e)
+        if code in (401, 403) and "voices_read" in (detail or ""):
+            msg = "Der ElevenLabs-Schlüssel darf keine Stimmen auflisten (Berechtigung „Voices: Read“ fehlt)."
+        return web.json_response({"error": msg, "error_code": code}, status=502)
+    rows = [_voice_row(v, source != "mine") for v in (d.get("voices") or []) if v.get("voice_id")]
+    if source == "mine":            # own voices first; premade ones are mostly American/British English
+        rows.sort(key=lambda r: (r["category"] == "premade", r["name"]))
+    payload = {"voices": rows, "source": source, "lang": lang}
+    _voice_list_cache[path] = (time.time(), payload)
+    return web.json_response(payload)
+
+
+def _voice_test_dir():
+    return os.path.join(AI_DIR, "voice-tests")
+
+
+async def api_voice_test(request):
+    """Body {lang, voice_id?, voice_name?, model?}: a few hard words ("Bär. Eis. Ball.") in that voice, so the
+    parent hears it before anything is made in bulk. Cached per voice, model and language: free again."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    lang = str((data or {}).get("lang") or "de").lower()
+    if lang not in (settings.get("voice_languages") or {}):
+        return web.json_response({"error": "Unbekannte Sprache"}, status=404)
+    profile = _voice_profile(lang)
+    if data.get("voice_id"):
+        if not _VOICE_ID_RE.match(str(data["voice_id"])):
+            return web.json_response({"error": "Ungültige Stimmen-ID"}, status=400)
+        profile = dict(profile, voice_id=data["voice_id"], voice_name=str(data.get("voice_name") or "")[:80])
+    if data.get("model"):
+        if data["model"] not in TTS_MODELS:
+            return web.json_response({"error": "Unbekanntes Modell"}, status=400)
+        profile = dict(profile, model=data["model"])
+    text = VOICE_TEST_TEXT.get(lang) or VOICE_TEST_TEXT["en"]
+    import hashlib
+    name = hashlib.sha1(f"{profile['voice_id']}|{profile['model']}|{lang}|{text}".encode()).hexdigest()[:20] + ".mp3"
+    url = f"/api/voices/test-audio/{name}"
+    if _safe_file(_voice_test_dir(), name):
+        return web.json_response({"ok": True, "url": url, "text": text, "cached": True})
+    if not os.environ.get("ELEVENLABS_API_KEY"):
+        return web.json_response({"error": "ELEVENLABS_API_KEY nicht gesetzt"}, status=500)
+    task = _voice_test_inflight.get(name)
+    shared = task is not None
+    if task is None:                        # the same test already running (card and picker): wait for that one
+        task = asyncio.ensure_future(_voice_test_make(name, text, profile, lang))
+        _voice_test_inflight[name] = task
+        task.add_done_callback(lambda _t, n=name: _voice_test_inflight.pop(n, None))
+    err = await asyncio.shield(task)
+    if err:
+        msg, code = err
+        return web.json_response({"error": msg, "error_code": code}, status=502)
+    return web.json_response({"ok": True, "url": url, "text": text, "cached": shared})
+
+
+async def _voice_test_make(name, text, profile, lang):
+    """Make one test file; None when it is there, else (message, code)."""
+    if _safe_file(_voice_test_dir(), name):
+        return None
+    label = f"elevenlabs/tts/{profile['model']}/{lang}/{profile.get('voice_name') or profile['voice_id']}"
+    _ai_log_entry("tts-test", label, text, None, "sending")
+    try:
+        audio = await asyncio.get_running_loop().run_in_executor(None, _tts_bytes, text, profile)
+        os.makedirs(_voice_test_dir(), exist_ok=True)
+        atomicwrite.replace(os.path.join(_voice_test_dir(), name), audio)
+    except Exception as e:
+        msg, code, detail = _provider_error("elevenlabs", e)
+        _ai_log_entry("tts-test", label, text, f"{code or ''} {detail or e}".strip(), "error")
+        return msg, code
+    _ai_log_entry("tts-test", label, text, f"OK: {len(audio)}b", "ok")
+    return None
+
+
+async def api_voice_test_audio(request):
+    path = _safe_file(_voice_test_dir(), request.match_info["name"])
+    if not path:
+        raise web.HTTPNotFound()
+    return web.FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
+
+
+async def api_voice_meta(request):
+    """Which voice made which generated file (FUNK-85)."""
+    return web.json_response(_voice_meta())
 
 
 # ── Fill missing voices (FUNK-75) ───────────────────────────────────────────
@@ -4412,7 +4715,7 @@ def _fill_fatal(job):
     return code in FILL_STOP_CODES or "quota" in (job.get("error_detail") or "").lower()
 
 
-async def _fill_one(run, letter, entry_id, word, text, voice_id):
+async def _fill_one(run, letter, entry_id, word, text, profile):
     """One word of a run: an ordinary DE job with a target, run in a worker thread; its end state."""
     kind = run["kind"]
     filename = _claim_media_name(None, f"{_slugify(letter)}_{_slugify(word)}_{kind.lower()}", "mp3", SOUND_DIRS)
@@ -4422,12 +4725,12 @@ async def _fill_one(run, letter, entry_id, word, text, voice_id):
                    "target": {"set_id": run["set_id"], "letter": letter, "entry_id": entry_id, "kind": kind}})
     sse_broadcast("gen_update", gen_jobs[job_id])
     try:
-        await asyncio.get_running_loop().run_in_executor(None, _gen_tts_worker, job_id, text, voice_id, filename)
+        await asyncio.get_running_loop().run_in_executor(None, _gen_tts_worker, job_id, text, profile, filename)
     except Exception as ex:                 # escaped the worker: the job still ends, so its slot is free again
         job = gen_jobs.get(job_id)
         if job is not None and job.get("status") not in ("done", "error"):
             if not job.get("_done"):
-                _job_failed(job_id, "elevenlabs", ex, "tts", f"elevenlabs/tts/{voice_id}", text)
+                _job_failed(job_id, "elevenlabs", ex, "tts", f"elevenlabs/tts/{profile['voice_id']}", text)
             _job_finished(job_id)           # failed: announced; stored: finalized on the event loop
     # a successful job becomes "done" on the event loop (_finalize_job, scheduled by the worker)
     for _ in range(400):
@@ -4442,7 +4745,7 @@ async def _fill_one(run, letter, entry_id, word, text, voice_id):
 
 
 async def _fill_worker(run, items):
-    kind, voice_id = run["kind"], _voice_for_kind(run["kind"])
+    kind = run["kind"]
     fails_in_row, ended_early = 0, False
     try:
         for letter, entry_id in items:
@@ -4467,7 +4770,8 @@ async def _fill_worker(run, items):
                     break
                 run["current"], run["current_letter"] = word, letter
                 _fill_broadcast(run)
-                job = await _fill_one(run, letter, entry_id, word, text, voice_id)
+                # the voice as it is now (FUNK-85): a voice or model chosen during the run applies to the rest
+                job = await _fill_one(run, letter, entry_id, word, text, _profile_for_kind(kind))
                 if job.get("status") == "error" and job.get("error_code") == 429 and waits and not run["stopping"]:
                     await asyncio.sleep(waits.pop(0))
                     if not run["stopping"]:
@@ -5175,6 +5479,12 @@ def create_app():
     app.router.add_post("/api/generate/image", api_generate_image)
     app.router.add_post("/api/generate/tts", api_generate_tts)
     app.router.add_post("/api/generate/track", api_generate_track)
+    app.router.add_get("/api/voice-languages", api_voice_languages)              # FUNK-85
+    app.router.add_patch("/api/voice-languages/{code}", api_patch_voice_language)
+    app.router.add_get("/api/voices", api_voice_list)
+    app.router.add_post("/api/voices/test", api_voice_test)
+    app.router.add_get("/api/voices/test-audio/{name}", api_voice_test_audio)
+    app.router.add_get("/api/voices/meta", api_voice_meta)
     app.router.add_get("/api/fill", api_fill_get)
     app.router.add_post("/api/fill/stop", api_fill_stop)
     app.router.add_post("/api/sets/{set_id}/fill-voices", api_fill_start)

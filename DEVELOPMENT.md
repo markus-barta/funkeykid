@@ -570,6 +570,17 @@ The Dateien tab shows these uses as chips. A click opens the word or digit in th
 
 Only unused files offer "Archivieren", with a two-step confirm. `POST /api/archive` refuses a name that `_referenced_names()` still finds anywhere in the sets or key maps: 409, naming the first uses. So an entry, digit or key can no longer end up pointing at a missing file. The entry editor's own archive (FUNK-72) is unchanged: it archives only files nothing else uses.
 
+### Voices per language (FUNK-85)
+
+`settings.voice_languages` is the one source for every spoken track. It maps a language code to its label, ElevenLabs `voice_id` and name, and `model`. The track kind is the code in capitals (de → DE).
+- **Requests:** `_voice_profile(lang)` / `_profile_for_kind(kind)` feed `_tts_request`, which sends the voice, the model and `language_code`. Models in `TTS_MODELS_WITH_LANGUAGE` take the code; `eleven_multilingual_v2` does not, it guesses the language from the text. The default model is `eleven_v4`.
+- **Why:** the old default German voice was Rachel (American English) on multilingual v2, so one-word texts ("Ball", "Bär") came out English.
+- **Every path:** the editor, fill runs and the old number endpoint all use the profile.
+- **Old settings:** `tts_voices` and `numbers_tts` are only copies, kept so an older version speaks with the same voice after a rollback. `numbers_tts` is no longer writable through PUT /api/settings.
+- **Record:** `_voice_meta_record` writes which voice, model and language made each generated file to `ai-generated/voice_meta.json` (GET /api/voices/meta).
+- **Picker:** GET /api/voices?source=library|mine proxies ElevenLabs' shared library (filtered by language, gender, age, search) or the account's voices. It needs the key permission "Voices: Read" and is cached for 10 minutes. Previews are ElevenLabs' own clips, so listening is free.
+- **Test:** POST /api/voices/test speaks "Bär. Eis. Ball. Bagger." (per language) in the saved or a candidate voice. The result is cached per voice, model and language under `ai-generated/voice-tests/`.
+
 ### Suggestions belong to their letter (FUNK-84)
 
 `api_suggest_word` checks every answer with `_fits_letter`: the word starts with the letter (Ä is not A), and for ß it contains ß.
@@ -949,7 +960,11 @@ Each entry carries a `tracks` dict keyed by kind. Kinds are defined in
 
 **API routing:**
 
-- `POST /api/generate/track` — unified dispatcher, body `{kind, word, slug_prefix, prompt?}` → returns `{ok, job_id, filename}`. FX routes to SFX worker, DE/EN to TTS worker with kind-specific voice.
+- `POST /api/generate/track` — unified dispatcher, body `{kind, word, slug_prefix, prompt?}` → returns `{ok, job_id, filename}`. FX routes to SFX worker, DE/EN to TTS worker with the language's voice profile (FUNK-85).
+- `GET /api/voice-languages` / `PATCH /api/voice-languages/{code}` `{voice_id?, voice_name?, model?}` — languages, their voices and models (FUNK-85).
+- `GET /api/voices?source=library|mine&lang=&gender=&age=&search=` — voices for the picker (needs "Voices: Read").
+- `POST /api/voices/test` `{lang, voice_id?, voice_name?, model?}` → `{url}` — the test words in that voice, cached; `GET /api/voices/test-audio/{name}`.
+- `GET /api/voices/meta` — which voice, model and language made each generated file.
 - `GET /api/sets/:id/letters/:L` — always returns normalized entries; additionally synthesizes a legacy `sound` alias from the first track with a file for back-compat.
 - `PUT /api/sets/:id/letters/:L` — accepts either legacy or new shape; always persists new shape.
 - `PUT /api/sets/:id` — accepts `track_order`.

@@ -3678,6 +3678,66 @@ async def api_version(request):
     })
 
 
+# ── Release history (FUNK-88) ──────────────────────────────────────────────
+# The committed release-history/history.json (inspr.release-history.v1, see releasehistory.py), loaded and
+# validated once; a broken file only disables these routes (503), never the server.
+import releasehistory  # noqa: E402
+
+RELEASE_HISTORY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), releasehistory.HISTORY_PATH)
+PROCESS_START = releasehistory.rfc3339(releasehistory.utc_now())
+
+
+def _load_release_history(path=None):
+    try:
+        with open(path or RELEASE_HISTORY_PATH, "rb") as f:
+            h = json.loads(f.read().decode("utf-8"))
+        releasehistory.validate(h)
+        return h
+    except Exception as e:
+        print(f"[releases] history unavailable: {e}", flush=True)
+        return None
+
+
+RELEASE_HISTORY = _load_release_history()
+
+
+def _rh_json(obj, status=200):
+    return web.Response(body=(releasehistory.gojson(obj) + "\n").encode("utf-8"), status=status,
+                        content_type="application/json", headers={"Cache-Control": "no-store"})
+
+
+async def api_releases(request):
+    h = RELEASE_HISTORY
+    if h is None:
+        return _rh_json({"error": "release history unavailable"}, 503)
+    return _rh_json({**h, "current": VERSION, "live_since": PROCESS_START})
+
+
+async def api_releases_pending(request):
+    h = RELEASE_HISTORY
+    if h is None:
+        return _rh_json({"error": "release history unavailable"}, 503)
+    p = h.get("pending")
+    if not p or p.get("base_version") != VERSION:
+        p = {"base_version": VERSION, "source_commit": "", "source_ref": "", "changes": [], "changes_omitted": 0,
+             "unavailable": [releasehistory.PENDING_SYNTH]}
+    return _rh_json(p)
+
+
+async def api_release(request):
+    h = RELEASE_HISTORY
+    if h is None:
+        return _rh_json({"error": "release history unavailable"}, 503)
+    v = request.match_info["version"]
+    v = v[1:] if v.startswith("v") else v
+    if not releasehistory.valid_version(v):
+        return _rh_json({"error": "not a calendar version"}, 400)
+    r = next((r for r in h["releases"] if r["version"] == v), None)
+    if r is None:
+        return _rh_json({"error": "no such release in this build's history"}, 404)
+    return _rh_json(r)
+
+
 # ── AI Generation ───────────────────────────────────────────────────────────
 
 AI_DIR = os.path.join(DATA_DIR, "ai-generated")
@@ -5777,6 +5837,9 @@ def create_app():
     app.router.add_get("/api/voices/meta", api_voice_meta)
     app.router.add_post("/api/voice-languages/{code}/approve", api_approve_voice_language)   # FUNK-87
     app.router.add_get("/api/voices/outdated", api_voice_outdated)
+    app.router.add_get("/api/releases", api_releases)                            # FUNK-88
+    app.router.add_get("/api/releases/pending", api_releases_pending)            # before {version}
+    app.router.add_get("/api/releases/{version}", api_release)
     app.router.add_post("/api/fill/continue", api_fill_continue)
     app.router.add_get("/api/fill", api_fill_get)
     app.router.add_post("/api/fill/stop", api_fill_stop)

@@ -114,12 +114,23 @@ funkeykid uses **INSPR Calendar Versioning 3** (`inspr-calver-3`, label `INSPR-C
 ### Release procedure
 
 ```bash
-python3 scripts/reserve_version.py        # current UTC second, strictly later; release_sequence + 1
-git add version.json && git commit -m "release: reserve <version> (inspr-calver-3) for FUNK-n"
-# PR → review gate → merge, then tag the merge commit:
-git tag -a v<version> <merge-sha> -m "funkeykid <version>" && git push origin v<version>
+python3 scripts/release_tickets.py FUNK-n [FUNK-m …] > /tmp/release-tickets.json   # the tickets this release delivers
+python3 scripts/reserve_version.py --tickets /tmp/release-tickets.json             # current UTC second, release_sequence + 1,
+                                          # frozen release-notes/<version>.json, regenerated release-history/history.json
+git add version.json release-notes/<version>.json release-history/history.json
+git commit -m "release: reserve <version> (inspr-calver-3) for FUNK-n"
+# PR → review gate → merge, then tag the merge commit (INSPR annotation: the history reads its headline):
+git tag -a v<version> <merge-sha> -m "funkeykid v<version> · inspr-calver-3 · stable · release_sequence <n> · <headline>"
+git push origin v<version>
 gh run watch                              # release job: tag == version.json → :<version> + :latest (same build) + GitHub release with release-manifest.json
 ```
+
+- **Release history (FUNK-88).** The Versionen page reads `release-history/history.json` (schema `inspr.release-history.v1`, as in hausnetz/Aeon) through `/api/releases`.
+  - At every reservation, the reviewed ticket scope (`scripts/release_tickets.py`: each ticket's EN/DE pill and benefit, exported from PPM) is frozen into `release-notes/<version>.json`, never rewritten. The history is then regenerated from the tags, `version.json` at each tag and the commits between them.
+  - `reserve_version.py` refuses before claiming anything if a visible ticket lacks EN or DE text. List only what the release delivers (`git log --first-parent v<previous>..`); an explicit `[]` means a release without tickets.
+  - The committed history marks its own release as `reserved`; the next reservation, or `python3 scripts/release_history.py` after the tag, marks it `published`. The page also counts every release up to the running one as published.
+  - `python3 scripts/release_history.py --check` (and the test suite) verifies the committed files offline.
+  - Releases up to `261128154900.0.0` predate the captures and say so; they are never backfilled with text that was not recorded then.
 
 - **Main pushes** build and publish only `:<commit-sha>`. **`:latest` moves only with a release**, so hsb1 (which runs `:latest`) only ever receives released artifacts.
 - **Release job order:**
